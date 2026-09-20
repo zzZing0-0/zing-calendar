@@ -212,15 +212,24 @@ button {
 }
 
 .day-number {
+  position: absolute;
+  top: 12px;
+  right: 12px;
   display: grid;
   place-items: center;
   width: 27px;
   height: 27px;
-  margin-left: auto;
-  border-radius: 9px;
+  border-radius: 50%;
   font-size: 13px;
   font-weight: 600;
 }
+
+/* Five deliberately discrete mood states: rose → amber → neutral → sage → green. */
+.day-number.mood-1 { background: #dfb4b7; color: #6f3f44; }
+.day-number.mood-2 { background: #edc99f; color: #714f2d; }
+.day-number.mood-3 { background: #d9d8d0; color: #55564f; }
+.day-number.mood-4 { background: #b9d8c5; color: #365d45; }
+.day-number.mood-5 { background: #79b98f; color: #173f28; }
 
 .day-cell.today .day-number {
   background: #34483e;
@@ -228,9 +237,18 @@ button {
   box-shadow: 0 4px 10px rgba(52, 72, 62, 0.18);
 }
 
-.calendar-grid.mood-view .day-cell:not(.outside-month) {
-  background: #fdfefd;
+.day-cell.today .day-number[class*="mood-"] {
+  color: #26352d;
+  outline: 2px solid #34483e;
+  outline-offset: 2px;
+  box-shadow: none;
 }
+
+.day-cell.today .day-number.mood-1 { background: #dfb4b7; }
+.day-cell.today .day-number.mood-2 { background: #edc99f; }
+.day-cell.today .day-number.mood-3 { background: #d9d8d0; }
+.day-cell.today .day-number.mood-4 { background: #b9d8c5; }
+.day-cell.today .day-number.mood-5 { background: #79b98f; }
 
 .status-line {
   display: flex;
@@ -310,9 +328,15 @@ button {
   }
 
   .day-number {
+    top: 5px;
+    right: 5px;
     width: 24px;
     height: 24px;
     font-size: 12px;
+  }
+
+  .task-preview-list {
+    margin-top: 28px;
   }
 }
 
@@ -326,7 +350,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-top: 7px;
+  margin-top: calc(34px + var(--multi-offset, 0px));
   pointer-events: none;
 }
 
@@ -470,7 +494,7 @@ button {
   display: grid;
   place-items: center;
   min-width: 20px;
-  height: 20px;
+  height: 18px;
   border-radius: 10px;
   background: #eef2ef;
   color: #7e8882;
@@ -738,4 +762,489 @@ button {
 .task-item.status-abandoned .task-card-time {
   color: #8b948f;
   text-decoration: line-through;
+}
+
+/* Mood + journal */
+
+.mood-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.mood-choice { min-width: 0; padding: 9px 5px; border: 1px solid #e1e6e2; border-radius: 10px; background: #fff; color: #66706a; cursor: pointer; font-size: 10px; }
+.mood-choice .mood-swatch { display: block; width: 18px; height: 5px; margin: 0 auto 6px; border-radius: 999px; background: #ddd; }
+.mood-choice.mood-1 .mood-swatch { background: #c97880; }
+.mood-choice.mood-2 .mood-swatch { background: #d99a55; }
+.mood-choice.mood-3 .mood-swatch { background: #92938c; }
+.mood-choice.mood-4 .mood-swatch { background: #73a985; }
+.mood-choice.mood-5 .mood-swatch { background: #3f8658; }
+.mood-choice.active { border-color: #82998c; box-shadow: 0 0 0 2px rgba(112,143,127,.12); color: #334039; font-weight: 700; }
+
+.journal-heading { flex-wrap: wrap; }
+.impact-total { margin-left: auto; color: #8a928d; font-size: 10px; font-weight: 650; }
+.impact-total.positive { color: #688c73; }
+.impact-total.negative { color: #a87974; }
+.journal-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.journal-entry { display: grid; grid-template-columns: 42px 1fr auto; align-items: start; gap: 9px; width: 100%; padding: 10px 11px; border: 1px solid #e3e8e4; border-radius: 10px; background: #fff; color: #3f4944; cursor: pointer; text-align: left; }
+.journal-entry:hover { background: #fafcfa; border-color: #d5ddd7; }
+.journal-meta { padding-top: 1px; color: #9aa29d; font-size: 10px; font-variant-numeric: tabular-nums; }
+.journal-content { overflow: hidden; line-height: 1.45; font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.impact-badge { min-width: 27px; padding: 3px 5px; border-radius: 7px; background: #f0f2f0; color: #7c8580; font-size: 10px; font-weight: 750; text-align: center; }
+.impact-badge.impact--2, .impact-choice.impact--2 { background: #eadada; color: #9c625d; }
+.impact-badge.impact--1, .impact-choice.impact--1 { background: #f0e5df; color: #a37a67; }
+.impact-badge.impact-1, .impact-choice.impact-1 { background: #e6efe7; color: #66856d; }
+.impact-badge.impact-2, .impact-choice.impact-2 { background: #dbe9de; color: #4f775b; }
+
+.journal-time-control { display: flex; align-items: end; gap: 12px; }
+.impact-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.impact-choice { height: 42px; border: 1px solid transparent; border-radius: 10px; background: #f0f2f0; color: #6f7873; cursor: pointer; font-weight: 750; }
+.impact-choice.active { border-color: #7f998a; box-shadow: 0 0 0 2px rgba(112,143,127,.12); }
+.journal-tag-placeholder { padding: 9px 11px; border-radius: 9px; background: #f4f6f4; color: #75817a; font-size: 11px; }
+.journal-tag-placeholder span { margin-left: 7px; color: #a4aaa6; }
+
+@media (max-width: 520px) {
+  .mood-picker { grid-template-columns: 1fr; }
+  .mood-choice { display: flex; align-items: center; gap: 9px; padding: 8px 10px; text-align: left; }
+  .mood-choice .mood-swatch { width: 22px; margin: 0; }
+  .journal-entry { grid-template-columns: 38px 1fr auto; }
+  .journal-time-control { align-items: stretch; flex-direction: column; }
+  .impact-picker { gap: 5px; }
+}
+
+/* v0.2 Mood mini calendar: keep the main task calendar visually quiet. */
+.day-number {
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  outline: none;
+}
+.day-cell.today .day-number {
+  background: #34483e;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(52, 72, 62, 0.18);
+}
+
+.mood-calendar-section { padding-bottom: 30px; }
+.mini-calendar-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+.mini-calendar-header h3 { margin: 3px 0 0; color: #354039; font-size: 14px; }
+.mini-month-navigation { display: flex; align-items: center; gap: 8px; color: #5e6862; }
+.mini-month-navigation strong { min-width: 74px; text-align: center; font-size: 11px; font-weight: 700; }
+.mini-month-navigation button { width: 26px; height: 26px; border: 1px solid #e1e6e2; border-radius: 8px; background: #fff; color: #68716c; cursor: pointer; font-size: 17px; line-height: 1; }
+.mini-weekdays, .mood-mini-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.mini-weekdays { margin-bottom: 5px; color: #a0a8a3; font-size: 9px; font-weight: 700; text-align: center; text-transform: uppercase; }
+.mood-mini-grid { row-gap: 4px; }
+.mood-mini-day { position: relative; height: 34px; padding: 0; border: 0; background: transparent; color: #69726d; cursor: pointer; isolation: isolate; }
+.mood-mini-day.outside { color: #d2d7d4; }
+.mini-day-number { position: relative; z-index: 2; display: grid; place-items: center; width: 28px; height: 28px; margin: 3px auto; border-radius: 50%; font-size: 10px; font-weight: 600; }
+.mood-mini-day.today .mini-day-number { box-shadow: inset 0 0 0 1.5px #34483e; }
+.mood-run { position: absolute; z-index: 1; top: 3px; left: 50%; width: 28px; height: 28px; transform: translateX(-50%); border-radius: 50%; }
+.mood-run.join-left { left: 0; width: calc(50% + 14px); transform: none; border-radius: 0 14px 14px 0; }
+.mood-run.join-right { left: calc(50% - 14px); width: calc(50% + 14px); transform: none; border-radius: 14px 0 0 14px; }
+.mood-run.join-left.join-right { left: 0; width: 100%; transform: none; border-radius: 0; }
+.mood-run.mood-1 { background: #dfb4b7; }
+.mood-run.mood-2 { background: #edc99f; }
+.mood-run.mood-3 { background: #d9d8d0; }
+.mood-run.mood-4 { background: #b9d8c5; }
+.mood-run.mood-5 { background: #79b98f; }
+.mood-mini-day:hover .mini-day-number { box-shadow: inset 0 0 0 1px rgba(52,72,62,.22); }
+
+/* Multi-day tasks: continuous weekly lanes above ordinary single-day tasks. */
+.calendar-grid { position: relative; }
+.multi-day-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  pointer-events: none;
+}
+.multi-day-bar {
+  position: relative;
+  align-self: start;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  min-width: 0;
+  margin: 0 3px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid #e3e9e5;
+  border-radius: 5px;
+  background: #f4f7f5;
+  color: #3f4944;
+  box-shadow: 0 1px 2px rgba(38, 51, 44, .04);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.multi-day-bar > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.multi-day-priority { width: 4px; height: 12px; flex: 0 0 auto; border-radius: 4px; background: #77a285; }
+.multi-day-bar.priority-1 .multi-day-priority { background: #d7b94b; }
+.multi-day-bar.priority-2 .multi-day-priority { background: #d98b43; }
+.multi-day-bar.priority-3 .multi-day-priority { background: #c85c54; }
+.multi-day-bar.status-completed { opacity: .58; text-decoration: line-through; }
+.multi-day-bar.status-abandoned { opacity: .42; text-decoration: line-through; background: #ecefed; }
+.task-range { margin-left: auto; color: #98a09b; font-size: 10px; white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .multi-day-bar { height: 18px; padding-inline: 5px; font-size: 9px; line-height: 18px; }
+}
+
+/* v0.2.0 multi-day layout correction: keep all six week rows equal and anchor
+   the overlay to exactly the same row geometry as the day-cell grid. */
+.calendar-grid {
+  grid-auto-rows: 112px;
+}
+
+.day-cell {
+  min-height: 0;
+  height: 112px;
+}
+
+.multi-day-layer {
+  grid-template-rows: repeat(6, 112px);
+}
+
+/* Date occupies the top-right corner; multi-day lanes start below it. */
+.multi-day-bar {
+  top: calc(42px + var(--lane-offset, 0px));
+}
+
+
+/* Multi-day harmony pass: multi-day and single-day tasks share one visual rhythm. */
+.calendar-grid {
+  grid-auto-rows: 146px;
+}
+
+.day-cell {
+  min-height: 0;
+  height: 146px;
+  overflow: hidden;
+}
+
+.multi-day-layer {
+  grid-template-rows: repeat(6, 146px);
+}
+
+/* The date owns the first ~40px. Multi-day tasks then occupy normal task slots. */
+.multi-day-bar {
+  top: calc(43px + var(--lane-offset, 0px));
+  height: 22px;
+  margin: 0 6px;
+  padding: 4px 6px;
+  gap: 5px;
+  border: 0;
+  border-radius: 6px;
+  background: #f6f8f6;
+  box-shadow: none;
+  color: #3f4944;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
+.multi-day-bar .priority-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #77a285;
+}
+.multi-day-bar.priority-1 .priority-dot { background: #d7b94b; }
+.multi-day-bar.priority-2 .priority-dot { background: #d98b43; }
+.multi-day-bar.priority-3 .priority-dot { background: #c85c54; }
+
+/* Ordinary tasks begin immediately after the week's multi-day slots. */
+.task-preview-list {
+  gap: 4px;
+  margin-top: calc(43px + var(--multi-offset, 0px));
+}
+
+.task-preview {
+  min-height: 22px;
+  padding: 4px 6px;
+}
+
+.more-tasks {
+  line-height: 12px;
+}
+
+@media (max-width: 760px) {
+  .calendar-grid { grid-auto-rows: 118px; }
+  .day-cell { height: 118px; }
+  .multi-day-layer { grid-template-rows: repeat(6, 118px); }
+  .multi-day-bar { top: calc(35px + var(--lane-offset, 0px)); height: 20px; }
+  .task-preview-list { margin-top: calc(35px + var(--multi-offset, 0px)); }
+}
+
+/* Weekly task-slot unification: single-day and multi-day tasks share the same
+   vertical slots and exactly the same visual geometry. */
+.calendar-grid {
+  grid-auto-rows: 180px;
+}
+
+.day-cell {
+  height: 180px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.multi-day-layer {
+  grid-template-rows: repeat(6, 180px);
+}
+
+/* Slot geometry: 22px task + 4px gap, beginning below the date area. */
+.multi-day-bar {
+  top: calc(43px + var(--lane-offset, 0px));
+  height: 22px;
+  margin: 0 6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: #f6f8f6;
+  box-shadow: none;
+  color: #3f4944;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 14px;
+}
+
+/* Do not let the cell's own 12px padding create a second coordinate system.
+   Single-day tasks use the same absolute slot origin/inset as multi-day bars. */
+.task-preview-list {
+  position: absolute;
+  top: calc(43px + var(--multi-offset, 0px));
+  left: 6px;
+  right: 6px;
+  margin: 0;
+  gap: 4px;
+}
+
+.task-preview {
+  box-sizing: border-box;
+  width: 100%;
+  height: 22px;
+  min-height: 22px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: #f6f8f6;
+  color: #3f4944;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 14px;
+}
+
+.more-tasks {
+  height: 14px;
+  padding-left: 6px;
+  line-height: 14px;
+}
+
+@media (max-width: 760px) {
+  .calendar-grid { grid-auto-rows: 154px; }
+  .day-cell { height: 154px; }
+  .multi-day-layer { grid-template-rows: repeat(6, 154px); }
+  .multi-day-bar {
+    top: calc(35px + var(--lane-offset, 0px));
+    height: 20px;
+    margin-inline: 4px;
+    padding: 3px 5px;
+    font-size: 9px;
+    line-height: 14px;
+  }
+  .task-preview-list {
+    top: calc(35px + var(--multi-offset, 0px));
+    left: 4px;
+    right: 4px;
+  }
+  .task-preview {
+    height: 20px;
+    min-height: 20px;
+    padding: 3px 5px;
+    font-size: 9px;
+    line-height: 14px;
+  }
+}
+
+/* Shared tag system */
+.tag-picker { display:flex; flex-wrap:wrap; gap:7px; margin-top:7px; }
+.tag-choice { display:inline-flex; align-items:center; gap:0; border:1px solid #dfe5e1; background:#fff; color:#66716b; border-radius:999px; padding:6px 9px; font:inherit; font-size:11px; cursor:pointer; }
+.tag-choice i { display:none; }
+.tag-choice.active { border-color:var(--tag-color); background:color-mix(in srgb, var(--tag-color) 11%, white); color:#35423b; }
+.entry-tags { display:flex; gap:4px; margin-left:auto; }
+.mini-tag { display:inline-flex; align-items:center; border-radius:999px; padding:2px 6px; background:color-mix(in srgb, var(--tag-color) 12%, white); color:#68736d; font-size:9px; white-space:nowrap; }
+.tag-manager { width:min(620px, calc(100vw - 32px)); }
+.tag-create-row { display:grid; grid-template-columns:1fr 150px auto; gap:8px; }
+.tag-create-row input,.tag-create-row select,.tag-row input,.tag-row select { box-sizing:border-box; width:100%; border:1px solid #dfe5e1; border-radius:9px; background:#fff; padding:9px 10px; color:#39453f; font:inherit; }
+.tag-color-row { display:flex; gap:8px; padding:12px 2px 4px; }
+.tag-color { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
+.tag-color.active { outline:2px solid #334a3e; outline-offset:2px; }
+.tag-list { display:flex; flex-direction:column; gap:8px; margin-top:18px; }
+.tag-row { display:grid; grid-template-columns:16px minmax(0,1fr) 150px auto; gap:9px; align-items:center; padding:9px; border:1px solid #e5e9e6; border-radius:11px; }
+.tag-swatch { width:10px; height:10px; border-radius:50%; }
+.system-tag { color:#9aa39e; font-size:10px; padding:0 8px; }
+.compact-delete { padding:7px 9px; }
+@media (max-width: 620px) { .tag-create-row { grid-template-columns:1fr; } .tag-row { grid-template-columns:16px 1fr auto; } .tag-row select { grid-column:2 / 4; } }
+.tag-color-input { width:18px; height:18px; padding:0; border:0; border-radius:50%; overflow:hidden; background:transparent; cursor:pointer; }
+.tag-color-input::-webkit-color-swatch-wrapper { padding:0; }
+.tag-color-input::-webkit-color-swatch { border:0; border-radius:50%; }
+
+/* Tag manager: fixed palette for both creation and editing. */
+.tag-row {
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 1.45fr) 150px auto;
+}
+.tag-row-colors {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.tag-row-color {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.tag-row-color.active {
+  outline: 2px solid #334a3e;
+  outline-offset: 2px;
+}
+
+/* Keep the compact task row readable when a task spans several dates. */
+.task-range {
+  margin-left: auto;
+  max-width: 112px;
+  padding-right: 12px;
+  overflow: hidden;
+  color: #98a09b;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-range + .task-card-time { padding-left: 0; }
+
+@media (max-width: 620px) {
+  .tag-row { grid-template-columns: 1fr auto; }
+  .tag-row-colors { grid-column: 1 / -1; flex-wrap: wrap; }
+  .tag-row select { grid-column: 1 / 2; }
+}
+
+/* Compact tag color editor: show one swatch; palette opens on demand. */
+.tag-row { grid-template-columns: 26px minmax(0,1fr) 150px auto; overflow: visible; }
+.tag-color-control { position: relative; display:flex; align-items:center; justify-content:center; overflow:visible; }
+.tag-current-color { width:20px; height:20px; padding:0; border:2px solid #fff; border-radius:50%; outline:1px solid #d9e0dc; box-shadow:0 0 0 1px rgba(51,74,62,.08); cursor:pointer; }
+.tag-color-popover { position:absolute; z-index:50; top:30px; left:-8px; width:230px; box-sizing:border-box; padding:12px; border:1px solid #dfe5e1; border-radius:12px; background:#fff; box-shadow:0 10px 28px rgba(42,55,48,.13); }
+.tag-popover-palette { display:flex; gap:8px; align-items:center; }
+.tag-custom-color { display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding-top:10px; border-top:1px solid #edf0ee; color:#78827d; font-size:11px; }
+.tag-custom-color input[type="color"] { width:30px; height:22px; padding:0; border:1px solid #cfd7d2; background:#fff; cursor:pointer; }
+@media (max-width:620px) { .tag-row { grid-template-columns:26px 1fr auto; } .tag-row select { grid-column:2 / 4; } }
+
+/* Tag browsing: tags are useful as a cross-module index, not only metadata. */
+.tag-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:7px; min-width:max-content; }
+.tag-browse-button { border:1px solid #dfe5e1; border-radius:8px; background:#f8faf8; color:#526159; padding:7px 9px; font:inherit; font-size:10px; cursor:pointer; }
+.tag-browse-button:hover { background:#eef3ef; border-color:#ced8d1; }
+.tag-browser { width:min(720px, calc(100vw - 32px)); max-height:min(82vh, 760px); display:flex; flex-direction:column; }
+.tag-browser .editor-body { overflow:auto; }
+.tag-browser-title-wrap h2 { display:flex; align-items:center; gap:9px; }
+.tag-browser-title-wrap h2 i { width:12px; height:12px; border-radius:50%; flex:0 0 auto; }
+.tag-browser-body { display:flex; flex-direction:column; gap:24px; }
+.tag-browser-section + .tag-browser-section { padding-top:22px; border-top:1px solid #edf0ee; }
+.tag-browser-heading { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.tag-browser-heading h3 { margin:0; font-size:14px; color:#344139; }
+.tag-browser-heading span { min-width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:#eef2ef; color:#87918b; font-size:10px; }
+.tag-result-list { display:flex; flex-direction:column; gap:7px; }
+.tag-task-result,.tag-journal-result { width:100%; min-width:0; border:1px solid #e2e7e4; border-radius:10px; background:#fff; color:#3c4841; padding:10px 11px; font:inherit; cursor:pointer; text-align:left; display:grid; align-items:center; gap:9px; }
+.tag-task-result { grid-template-columns:8px minmax(0,1fr) auto; }
+.tag-journal-result { grid-template-columns:78px minmax(0,1fr) auto; }
+.tag-task-result:hover,.tag-journal-result:hover { background:#fafcfa; border-color:#d4ddd7; }
+.tag-result-main { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.tag-result-main strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; }
+.tag-result-main small,.tag-result-date { color:#929c96; font-size:10px; font-weight:400; }
+.tag-result-status { color:#84958b; font-size:15px; }
+.tag-task-result.status-completed,.tag-task-result.status-abandoned { opacity:.58; }
+.tag-task-result.status-completed .tag-result-main strong,.tag-task-result.status-abandoned .tag-result-main strong { text-decoration:line-through; }
+.tag-task-result.priority-0 .priority-dot { background:#79a58a; }
+.tag-task-result.priority-1 .priority-dot { background:#d7b94b; }
+.tag-task-result.priority-2 .priority-dot { background:#d98b43; }
+.tag-task-result.priority-3 .priority-dot { background:#c85c54; }
+@media (max-width:620px) { .tag-journal-result { grid-template-columns:1fr auto; } .tag-result-date { grid-column:1 / -1; } .tag-row-actions { grid-column:2 / 4; justify-content:flex-start; } }
+
+/* Tag detail: unified chronological timeline */
+.tag-browser-body { display:block; }
+.tag-timeline { display:flex; flex-direction:column; gap:22px; }
+.tag-timeline-day { display:grid; grid-template-columns:104px minmax(0,1fr); gap:14px; }
+.tag-timeline-date { padding-top:9px; color:#758078; font-size:12px; font-weight:650; white-space:nowrap; }
+.tag-timeline-items { position:relative; display:flex; flex-direction:column; gap:7px; }
+.tag-timeline-items::before { content:""; position:absolute; left:5px; top:13px; bottom:13px; width:1px; background:#e1e7e3; }
+.tag-timeline-item.tag-task-result,.tag-timeline-item.tag-journal-result { position:relative; z-index:1; grid-template-columns:11px minmax(0,1fr) auto; border:0; border-radius:9px; padding:9px 10px 9px 0; background:transparent; }
+.tag-timeline-item.tag-journal-result { grid-template-columns:11px minmax(0,1fr); }
+.tag-timeline-item:hover { background:#f7faf8; }
+.tag-timeline-item .timeline-node { width:11px; height:11px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px #dce4df; }
+.tag-timeline-item .journal-node { background:#aeb8b2; }
+.tag-timeline-item .journal-node.impact--2 { background:#c8665f; }
+.tag-timeline-item .journal-node.impact--1 { background:#d88b48; }
+.tag-timeline-item .journal-node.impact-0 { background:#9aa59f; }
+.tag-timeline-item .journal-node.impact-1 { background:#789da3; }
+.tag-timeline-item .journal-node.impact-2 { background:#789c86; }
+@media (max-width:620px) { .tag-timeline-day { grid-template-columns:1fr; gap:5px; } .tag-timeline-date { padding-top:0; } }
+
+/* v0.3.6 — priority tint pass
+   Priority is encoded by the task surface as well as the dot. Keep the tint
+   deliberately soft so the month grid stays quiet, but make all four levels
+   distinguishable at a glance. Single-day and multi-day tasks use the exact
+   same palette. */
+.task-preview.priority-0,
+.multi-day-bar.priority-0 { background: #edf5f0; }
+.task-preview.priority-1,
+.multi-day-bar.priority-1 { background: #fbf5df; }
+.task-preview.priority-2,
+.multi-day-bar.priority-2 { background: #faeee2; }
+.task-preview.priority-3,
+.multi-day-bar.priority-3 { background: #f8e8e6; }
+
+/* Preserve status semantics without losing the priority family completely. */
+.task-preview.status-completed,
+.multi-day-bar.status-completed { opacity: .58; }
+.task-preview.status-abandoned,
+.multi-day-bar.status-abandoned { opacity: .44; }
+
+/* v0.3.7 — increase P1/P2 separation without making the calendar loud.
+   P1 stays a clear warm yellow; P2 shifts further toward apricot/orange. */
+.task-preview.priority-1,
+.multi-day-bar.priority-1 { background: #fbf3d2; }
+.task-preview.priority-2,
+.multi-day-bar.priority-2 { background: #f7e2cf; }
+
+
+/* v0.3.8 — stronger P1/P2 separation.
+   Keep P1 unmistakably yellow and move P2 toward a warmer orange/peach. */
+.task-preview.priority-1,
+.multi-day-bar.priority-1 { background: #fbefbd; }
+.task-preview.priority-2,
+.multi-day-bar.priority-2 { background: #f5d4b3; }
+
+/* v0.3.9: stronger P1/P2 separation */
+.task-preview.priority-1,
+.multi-day-bar.priority-1 { background: #f8e9a1; }
+.task-preview.priority-2,
+.multi-day-bar.priority-2 { background: #f3c18d; }
+
+/* v0.3.10: balance P0/P3 tint strength with P1/P2 */
+.task-preview.priority-0,
+.multi-day-bar.priority-0 {
+  background: #cfe5d8;
+}
+
+.task-preview.priority-3,
+.multi-day-bar.priority-3 {
+  background: #f2c8c4;
 }
