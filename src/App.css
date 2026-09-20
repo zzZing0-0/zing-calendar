@@ -1276,3 +1276,225 @@ button {
     font-size: 16px !important;
   }
 }
+
+/* Repeat controls */
+.repeat-interval { display: grid; grid-template-columns: minmax(72px, .45fr) 1fr; gap: 8px; }
+.weekday-picker { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+.weekday-picker button { border: 1px solid var(--line, #d8dedb); background: #fff; border-radius: 9px; padding: 7px 10px; cursor: pointer; }
+.weekday-picker button.active { background: #e4eee8; border-color: #789c86; font-weight: 650; }
+
+.repeat-count { display: flex; align-items: center; gap: 8px; }
+.repeat-count input { min-width: 0; flex: 1; }
+.repeat-count span { color: var(--muted, #718078); white-space: nowrap; }
+
+
+/* v0.5.0 — colorable mood faces shared by picker and mood calendar */
+.mood-face {
+  --mood-color: #92938c;
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 6px;
+  border: 2px solid var(--mood-color);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.mood-face-1 { --mood-color: #c97880; }
+.mood-face-2 { --mood-color: #d99a55; }
+.mood-face-3 { --mood-color: #92938c; }
+.mood-face-4 { --mood-color: #73a985; }
+.mood-face-5 { --mood-color: #3f8658; }
+
+.mood-eye {
+  position: absolute;
+  top: 7px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--mood-color);
+}
+.mood-eye.left { left: 6px; }
+.mood-eye.right { right: 6px; }
+.mood-mouth {
+  position: absolute;
+  left: 50%;
+  width: 11px;
+  height: 6px;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+}
+/* very bad: strong frown */
+.mood-face-1 .mood-mouth {
+  top: 16px;
+  border-top: 2px solid var(--mood-color);
+  border-radius: 50% 50% 0 0;
+}
+/* bad: gentler frown */
+.mood-face-2 .mood-mouth {
+  top: 16px;
+  width: 10px;
+  height: 5px;
+  border-top: 2px solid var(--mood-color);
+  border-radius: 50% 50% 0 0;
+}
+/* neutral */
+.mood-face-3 .mood-mouth {
+  top: 17px;
+  height: 0;
+  border-top: 2px solid var(--mood-color);
+}
+/* okay: gentle smile */
+.mood-face-4 .mood-mouth {
+  top: 13px;
+  border-bottom: 2px solid var(--mood-color);
+  border-radius: 0 0 50% 50%;
+}
+/* happy: fuller smile */
+.mood-face-5 .mood-mouth {
+  top: 12px;
+  width: 12px;
+  height: 8px;
+  border-bottom: 2px solid var(--mood-color);
+  border-radius: 0 0 50% 50%;
+}
+
+.mood-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.mood-choice.active .mood-face {
+  background: color-mix(in srgb, var(--mood-color) 10%, white);
+}
+
+/* Mini calendar: date stays primary; the same face becomes a small colored marker below it. */
+.mood-mini-day {
+  height: 40px;
+}
+.mood-mini-day .mini-day-number {
+  width: 24px;
+  height: 20px;
+  margin: 0 auto;
+}
+.mood-mini-day .mood-face.compact {
+  width: 16px;
+  height: 16px;
+  margin: -1px auto 0;
+  border-width: 1.4px;
+}
+.mood-face.compact .mood-eye {
+  top: 4px;
+  width: 2px;
+  height: 2px;
+}
+.mood-face.compact .mood-eye.left { left: 3px; }
+.mood-face.compact .mood-eye.right { right: 3px; }
+.mood-face.compact .mood-mouth { width: 7px; border-width: 1.3px; }
+.mood-face-1.compact .mood-mouth,
+.mood-face-2.compact .mood-mouth { top: 9px; height: 4px; }
+.mood-face-3.compact .mood-mouth { top: 10px; }
+.mood-face-4.compact .mood-mouth { top: 7px; height: 4px; }
+.mood-face-5.compact .mood-mouth { top: 6px; width: 8px; height: 5px; }
+
+
+/* v0.5.0 — keep the original continuous-color mood calendar. */
+.mood-mini-day { height: 34px; }
+.mood-mini-day .mini-day-number {
+  width: 28px;
+  height: 28px;
+  margin: 3px auto;
+}
+
+/* Distinguish the two extreme moods without relying on system emoji. */
+.mood-eye-mark {
+  position: absolute;
+  top: 3px;
+  color: var(--mood-color);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+.mood-eye-mark.left { left: 5px; }
+.mood-eye-mark.right { right: 5px; }
+.mood-eye-mark.happy {
+  top: 4px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+
+/* v0.5.0 — predictable extreme-mood eyes drawn with CSS, not font glyphs. */
+.mood-eye-x,
+.mood-eye-happy {
+  position: absolute;
+  top: 6px;
+  width: 7px;
+  height: 7px;
+}
+.mood-eye-x.left,
+.mood-eye-happy.left { left: 5px; }
+.mood-eye-x.right,
+.mood-eye-happy.right { right: 5px; }
+
+.mood-eye-x::before,
+.mood-eye-x::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: -1px;
+  width: 2px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--mood-color);
+}
+.mood-eye-x::before { transform: rotate(45deg); }
+.mood-eye-x::after { transform: rotate(-45deg); }
+
+.mood-eye-happy::before,
+.mood-eye-happy::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  width: 2px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--mood-color);
+}
+.mood-eye-happy::before {
+  left: 1px;
+  transform: rotate(45deg);
+  transform-origin: bottom center;
+}
+.mood-eye-happy::after {
+  right: 1px;
+  transform: rotate(-45deg);
+  transform-origin: bottom center;
+}
+
+
+/* v0.5.0 — approved mood faces (inline SVG); mood calendar remains unchanged. */
+.mood-face-svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+  margin: 0 auto 6px;
+  overflow: visible;
+}
+.mood-face-svg * { vector-effect: non-scaling-stroke; }
+.mood-face-svg.mood-face-1 { color: #c97880; }
+.mood-face-svg.mood-face-2 { color: #d99a55; }
+.mood-face-svg.mood-face-3 { color: #92938c; }
+.mood-face-svg.mood-face-4 { color: #73a985; }
+.mood-face-svg.mood-face-5 { color: #3f8658; }
+.mood-ring, .mood-line, .mood-thin {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mood-ring { stroke-width: 2.8; }
+.mood-line { stroke-width: 2.6; }
+.mood-thin { stroke-width: 2.2; }
+.mood-fill { fill: currentColor; }

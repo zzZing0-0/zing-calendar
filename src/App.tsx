@@ -5,6 +5,10 @@ import './App.css'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
+type RecurrenceUnit = 'day' | 'week' | 'month' | 'year'
+type RecurrenceEnd = { type: 'date'; date: string } | { type: 'count'; count: number }
+type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: number[]; end?: RecurrenceEnd }
+type RecurrenceException = { deleted?: boolean; status?: TaskStatus; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; tagIds?: string[]; updatedAt: string }
 
 type CalendarDay = {
   date: Date
@@ -25,6 +29,10 @@ type Task = {
   createdAt: string
   updatedAt: string
   tagIds?: string[]
+  recurrence?: RecurrenceRule
+  recurrenceExceptions?: Record<string, RecurrenceException>
+  seriesId?: string
+  occurrenceDate?: string
 }
 
 type MoodLevel = 1 | 2 | 3 | 4 | 5
@@ -69,6 +77,13 @@ type TaskDraft = {
   deadline: string
   notes: string
   tagIds: string[]
+  repeatPreset: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+  repeatInterval: number
+  repeatUnit: RecurrenceUnit
+  repeatWeekdays: number[]
+  repeatEndMode: 'never' | 'date' | 'count'
+  repeatEndDate: string
+  repeatEndCount: number
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -84,6 +99,52 @@ const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
 const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true }
 const TAG_COLORS = ['#789c86', '#d3b64b', '#d88b48', '#c8665f', '#8798bd', '#9b83ad', '#789da3', '#a58d72']
+
+function MoodFace({ level }: { level: MoodLevel }) {
+  const common = { viewBox: '0 0 64 64', className: `mood-face-svg mood-face-${level}`, 'aria-hidden': true } as const
+
+  if (level === 1) return (
+    <svg {...common}>
+      <circle className="mood-ring" cx="32" cy="32" r="26" />
+      <path className="mood-line" d="M15.5 21.5l10 10M25.5 21.5l-10 10" />
+      <path className="mood-line" d="M38.5 21.5l10 10M48.5 21.5l-10 10" />
+      <path className="mood-line" d="M19 45c3-4 6 4 9 0s6-4 9 0 6 4 9 0" />
+    </svg>
+  )
+  if (level === 2) return (
+    <svg {...common}>
+      <circle className="mood-ring" cx="32" cy="32" r="26" />
+      <path className="mood-thin" d="M16.5 24.5c3.1-2.2 6.6-2.2 9.7 0M37.8 24.5c3.1-2.2 6.6-2.2 9.7 0" />
+      <circle className="mood-fill" cx="21.5" cy="28.5" r="2.1" />
+      <circle className="mood-fill" cx="42.5" cy="28.5" r="2.1" />
+      <path className="mood-line" d="M21 45c5.7-5.6 16.3-5.6 22 0" />
+    </svg>
+  )
+  if (level === 3) return (
+    <svg {...common}>
+      <circle className="mood-ring" cx="32" cy="32" r="26" />
+      <circle className="mood-fill" cx="22" cy="26" r="2.4" />
+      <circle className="mood-fill" cx="42" cy="26" r="2.4" />
+      <path className="mood-line" d="M23 43h18" />
+    </svg>
+  )
+  if (level === 4) return (
+    <svg {...common}>
+      <circle className="mood-ring" cx="32" cy="32" r="26" />
+      <circle className="mood-fill" cx="21.5" cy="27" r="2.2" />
+      <path className="mood-thin" d="M38 27c2.7-1.6 5.5-1.6 8.2 0" />
+      <path className="mood-line" d="M20.5 39.5c5.7 4.4 15.5 5.1 23.5-.8" />
+    </svg>
+  )
+  return (
+    <svg {...common}>
+      <circle className="mood-ring" cx="32" cy="32" r="26" />
+      <path className="mood-line" d="M15.5 28c3-4 8-4 11 0" />
+      <path className="mood-line" d="M37.5 28c3-4 8-4 11 0" />
+      <path className="mood-line" d="M18.5 37c5.5 10.5 21.5 10.5 27 0" />
+    </svg>
+  )
+}
 
 const PRIORITIES: { value: TaskPriority; label: string; hint: string }[] = [
   { value: 0, label: 'P0', hint: '从容' },
@@ -110,6 +171,23 @@ function fromDateKey(value: string) {
 
 function formatDate(date: Date) {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`
+}
+
+function ordinalDay(day: number) {
+  const mod100 = day % 100
+  if (mod100 >= 11 && mod100 <= 13) return `${day}th`
+  const suffix = day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th'
+  return `${day}${suffix}`
+}
+
+function repeatPresetLabels(dateKey: string) {
+  const date = fromDateKey(dateKey)
+  const weekday = WEEKDAYS[(date.getDay() + 6) % 7]
+  return {
+    weekly: `每周（${weekday}）`,
+    monthly: `每月（${ordinalDay(date.getDate())}）`,
+    yearly: `每年（${date.getDate()} ${MONTHS[date.getMonth()]}）`,
+  }
 }
 
 function buildMonth(year: number, month: number): CalendarDay[] {
@@ -144,7 +222,133 @@ function emptyDraft(date: Date): TaskDraft {
     deadline: '',
     notes: '',
     tagIds: [DEFAULT_TAG_ID],
+    repeatPreset: 'none',
+    repeatInterval: 1,
+    repeatUnit: 'week',
+    repeatWeekdays: [(date.getDay() + 6) % 7],
+    repeatEndMode: 'never',
+    repeatEndDate: '',
+    repeatEndCount: 20,
   }
+}
+
+
+function addDaysKey(key: string, days: number) {
+  const date = fromDateKey(key)
+  date.setDate(date.getDate() + days)
+  return toDateKey(date)
+}
+
+function dayDiff(a: string, b: string) {
+  return Math.round((fromDateKey(b).getTime() - fromDateKey(a).getTime()) / 86400000)
+}
+
+function recurrenceEndFromDraft(draft: TaskDraft): RecurrenceEnd | undefined {
+  if (draft.repeatEndMode === 'date' && draft.repeatEndDate) return { type: 'date', date: draft.repeatEndDate }
+  if (draft.repeatEndMode === 'count') return { type: 'count', count: Math.max(1, draft.repeatEndCount || 1) }
+  return undefined
+}
+
+function recurrenceFromDraft(draft: TaskDraft): RecurrenceRule | undefined {
+  if (draft.repeatPreset === 'none') return undefined
+  const end = recurrenceEndFromDraft(draft)
+  if (draft.repeatPreset === 'daily') return { unit: 'day', interval: 1, end }
+  if (draft.repeatPreset === 'weekly') return { unit: 'week', interval: 1, weekdays: [(fromDateKey(draft.date).getDay() + 6) % 7], end }
+  if (draft.repeatPreset === 'monthly') return { unit: 'month', interval: 1, end }
+  if (draft.repeatPreset === 'yearly') return { unit: 'year', interval: 1, end }
+  return { unit: draft.repeatUnit, interval: Math.max(1, draft.repeatInterval || 1), weekdays: draft.repeatUnit === 'week' ? (draft.repeatWeekdays.length ? [...draft.repeatWeekdays].sort() : [(fromDateKey(draft.date).getDay() + 6) % 7]) : undefined, end }
+}
+
+function repeatEndDraft(rule?: RecurrenceRule): Pick<TaskDraft, 'repeatEndMode' | 'repeatEndDate' | 'repeatEndCount'> {
+  if (!rule?.end) return { repeatEndMode: 'never', repeatEndDate: '', repeatEndCount: 20 }
+  if (rule.end.type === 'date') return { repeatEndMode: 'date', repeatEndDate: rule.end.date, repeatEndCount: 20 }
+  return { repeatEndMode: 'count', repeatEndDate: '', repeatEndCount: rule.end.count }
+}
+
+function draftRepeat(task: Task): Pick<TaskDraft, 'repeatPreset' | 'repeatInterval' | 'repeatUnit' | 'repeatWeekdays' | 'repeatEndMode' | 'repeatEndDate' | 'repeatEndCount'> {
+  const rule = task.recurrence
+  const ending = repeatEndDraft(rule)
+  if (!rule) return { repeatPreset: 'none', repeatInterval: 1, repeatUnit: 'week', repeatWeekdays: [], ...ending }
+  if (rule.interval === 1 && rule.unit === 'day') return { repeatPreset: 'daily', repeatInterval: 1, repeatUnit: 'day', repeatWeekdays: [], ...ending }
+  if (rule.interval === 1 && rule.unit === 'week' && (rule.weekdays?.length ?? 0) === 1) return { repeatPreset: 'weekly', repeatInterval: 1, repeatUnit: 'week', repeatWeekdays: rule.weekdays ?? [], ...ending }
+  if (rule.interval === 1 && rule.unit === 'month') return { repeatPreset: 'monthly', repeatInterval: 1, repeatUnit: 'month', repeatWeekdays: [], ...ending }
+  if (rule.interval === 1 && rule.unit === 'year') return { repeatPreset: 'yearly', repeatInterval: 1, repeatUnit: 'year', repeatWeekdays: [], ...ending }
+  return { repeatPreset: 'custom', repeatInterval: rule.interval, repeatUnit: rule.unit, repeatWeekdays: rule.weekdays ?? [], ...ending }
+}
+
+function baseOccursOn(task: Task, key: string) {
+  const rule = task.recurrence
+  if (!rule || key < task.date) return key === task.date
+  const anchor = fromDateKey(task.date)
+  const date = fromDateKey(key)
+  if (rule.unit === 'day') return dayDiff(task.date, key) % rule.interval === 0
+  if (rule.unit === 'week') {
+    const weeks = Math.floor(dayDiff(task.date, key) / 7)
+    const weekday = (date.getDay() + 6) % 7
+    return weeks % rule.interval === 0 && (rule.weekdays?.length ? rule.weekdays.includes(weekday) : weekday === (anchor.getDay() + 6) % 7)
+  }
+  if (rule.unit === 'month') {
+    const months = (date.getFullYear() - anchor.getFullYear()) * 12 + date.getMonth() - anchor.getMonth()
+    return months >= 0 && months % rule.interval === 0 && date.getDate() === anchor.getDate()
+  }
+  const years = date.getFullYear() - anchor.getFullYear()
+  return years >= 0 && years % rule.interval === 0 && date.getMonth() === anchor.getMonth() && date.getDate() === anchor.getDate()
+}
+
+function occurrenceNumber(task: Task, key: string) {
+  let count = 0
+  let cursor = fromDateKey(task.date)
+  const target = fromDateKey(key)
+  while (cursor <= target) {
+    if (baseOccursOn(task, toDateKey(cursor))) count += 1
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return count
+}
+
+function occursOn(task: Task, key: string) {
+  const rule = task.recurrence
+  if (!baseOccursOn(task, key)) return false
+  if (!rule?.end) return true
+  if (rule.end.type === 'date') return key <= rule.end.date
+  return occurrenceNumber(task, key) <= rule.end.count
+}
+
+function materializeOccurrence(series: Task, occurrenceDate: string): Task | null {
+  const exception = series.recurrenceExceptions?.[occurrenceDate]
+  if (exception?.deleted) return null
+  const duration = dayDiff(series.date, taskEndDate(series))
+  const base: Task = {
+    ...series,
+    id: `${series.id}::${occurrenceDate}`,
+    seriesId: series.id,
+    occurrenceDate,
+    date: occurrenceDate,
+    endDate: duration > 0 ? addDaysKey(occurrenceDate, duration) : undefined,
+  }
+  return exception ? { ...base, ...exception, id: base.id, seriesId: series.id, occurrenceDate } : base
+}
+
+function expandTasks(tasks: Task[], startKey: string, endKey: string) {
+  const result: Task[] = []
+  tasks.forEach(task => {
+    if (!task.recurrence) {
+      if (task.date <= endKey && taskEndDate(task) >= startKey) result.push(task)
+      return
+    }
+    const duration = dayDiff(task.date, taskEndDate(task))
+    let cursor = fromDateKey(addDaysKey(startKey, -Math.max(0, duration)))
+    const end = fromDateKey(endKey)
+    while (cursor <= end) {
+      const key = toDateKey(cursor)
+      if (occursOn(task, key)) {
+        const occurrence = materializeOccurrence(task, key)
+        if (occurrence && occurrence.date <= endKey && taskEndDate(occurrence) >= startKey) result.push(occurrence)
+      }
+      cursor.setDate(cursor.getDate() + 1)
+    }
+  })
+  return result
 }
 
 
@@ -227,6 +431,7 @@ function App() {
   const [tasksHydrated, setTasksHydrated] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [editingOccurrenceDate, setEditingOccurrenceDate] = useState<string | null>(null)
   const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(today))
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
@@ -371,11 +576,18 @@ function App() {
     [visibleMonth],
   )
 
+  const displayTasks = useMemo(() => {
+    const start = toDateKey(days[0].date)
+    const end = toDateKey(days[days.length - 1].date)
+    return expandTasks(tasks, start, end)
+  }, [tasks, days])
+
   const selectedTasks = useMemo(() => {
     if (!selectedDate) return []
     const key = toDateKey(selectedDate)
-    return tasks.filter(task => taskCoversDate(task, key)).sort(taskSort)
-  }, [selectedDate, tasks])
+    const pool = key >= toDateKey(days[0].date) && key <= toDateKey(days[days.length - 1].date) ? displayTasks : expandTasks(tasks, key, key)
+    return pool.filter(task => taskCoversDate(task, key)).sort(taskSort)
+  }, [selectedDate, tasks, displayTasks, days])
 
   const selectedJournalEntries = useMemo(() => {
     if (!selectedDate) return []
@@ -394,16 +606,16 @@ function App() {
 
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Task[]>()
-    tasks.filter(task => !isMultiDayTask(task)).forEach(task => {
+    displayTasks.filter(task => !isMultiDayTask(task)).forEach(task => {
       const current = map.get(task.date) ?? []
       current.push(task)
       current.sort(taskSort)
       map.set(task.date, current)
     })
     return map
-  }, [tasks])
+  }, [displayTasks])
 
-  const multiDaySegments = useMemo(() => buildMultiDaySegments(tasks, days), [tasks, days])
+  const multiDaySegments = useMemo(() => buildMultiDaySegments(displayTasks, days), [displayTasks, days])
   // Reserve multi-day lanes per *day*, not per whole week. A short range such as
   // 18–19 must not leave a ghost empty slot on the 20th.
   const multiDayLaneCountsByDay = useMemo(() => days.map(({ date }) => {
@@ -411,8 +623,8 @@ function App() {
     // Reserve space only for multi-day tasks that actually cover this date.
     // This deliberately ignores a lane used on a neighbouring date, so a
     // short 18–19 range can never create a ghost blank row on the 20th.
-    return tasks.filter(task => isMultiDayTask(task) && taskCoversDate(task, key)).length
-  }), [days, tasks])
+    return displayTasks.filter(task => isMultiDayTask(task) && taskCoversDate(task, key)).length
+  }), [days, displayTasks])
 
   const moveMonth = (offset: number) => {
     setVisibleMonth(current => new Date(current.getFullYear(), current.getMonth() + offset, 1))
@@ -434,12 +646,16 @@ function App() {
   const openTaskEditor = () => {
     const date = selectedDate ?? today
     setEditingTaskId(null)
+    setEditingOccurrenceDate(null)
     setDraft(emptyDraft(date))
     setEditorOpen(true)
   }
 
   const editTask = (task: Task) => {
-    setEditingTaskId(task.id)
+    const series = task.seriesId ? tasks.find(item => item.id === task.seriesId) : task
+    if (!series) return
+    setEditingTaskId(series.id)
+    setEditingOccurrenceDate(task.seriesId ? task.occurrenceDate ?? task.date : null)
     setDraft({
       title: task.title,
       date: task.date,
@@ -450,6 +666,7 @@ function App() {
       deadline: task.deadline ?? '',
       notes: task.notes ?? '',
       tagIds: task.tagIds?.length ? task.tagIds : [DEFAULT_TAG_ID],
+      ...draftRepeat(series),
     })
     setEditorOpen(true)
   }
@@ -457,58 +674,95 @@ function App() {
   const closeEditor = () => {
     setEditorOpen(false)
     setEditingTaskId(null)
+    setEditingOccurrenceDate(null)
   }
 
-  const saveTask = () => {
+  const saveTask = (scope: 'occurrence' | 'series' = 'series') => {
     const title = draft.title.trim()
     if (!title) return
+    const now = new Date().toISOString()
 
     if (editingTaskId) {
-      setTasks(current => current.map(task => task.id === editingTaskId ? {
-        ...task,
-        title,
-        date: draft.date,
-        endDate: draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined,
-        priority: draft.priority,
-        allDay: draft.allDay,
-        time: draft.allDay ? undefined : draft.time || undefined,
-        deadline: draft.deadline || undefined,
-        notes: draft.notes.trim() || undefined,
-        tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
-        updatedAt: new Date().toISOString(),
-      } : task))
+      setTasks(current => current.map(task => {
+        if (task.id !== editingTaskId) return task
+        if (editingOccurrenceDate && task.recurrence && scope === 'occurrence') {
+          const exception: RecurrenceException = {
+            title, date: draft.date,
+            endDate: draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined,
+            priority: draft.priority, allDay: draft.allDay,
+            time: draft.allDay ? undefined : draft.time || undefined,
+            deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
+            tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID], updatedAt: now,
+          }
+          return { ...task, recurrenceExceptions: { ...task.recurrenceExceptions, [editingOccurrenceDate]: exception }, updatedAt: now }
+        }
+        // Opening an occurrence edits that occurrence's materialized date in the form.
+        // Saving the whole series must NOT silently re-anchor the series to the
+        // clicked occurrence. Preserve the original series anchor unless the user
+        // actually changed the date (or end date) in the editor.
+        const openedOccurrence = editingOccurrenceDate ? materializeOccurrence(task, editingOccurrenceDate) : null
+        const seriesDate = openedOccurrence && draft.date === openedOccurrence.date ? task.date : draft.date
+        const seriesEndDate = openedOccurrence && (draft.endDate || '') === (openedOccurrence.endDate || '')
+          ? task.endDate
+          : (draft.endDate && draft.endDate > seriesDate ? draft.endDate : undefined)
+        const seriesDraft: TaskDraft = { ...draft, date: seriesDate, endDate: seriesEndDate ?? '' }
+
+        return {
+          ...task, title, date: seriesDate,
+          endDate: seriesEndDate,
+          priority: draft.priority, allDay: draft.allDay,
+          time: draft.allDay ? undefined : draft.time || undefined,
+          deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
+          tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
+          recurrence: recurrenceFromDraft(seriesDraft), updatedAt: now,
+        }
+      }))
     } else {
       const task: Task = {
-        id: crypto.randomUUID(),
-        title,
-        date: draft.date,
+        id: crypto.randomUUID(), title, date: draft.date,
         endDate: draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined,
-        priority: draft.priority,
-        status: 'todo',
-        allDay: draft.allDay,
+        priority: draft.priority, status: 'todo', allDay: draft.allDay,
         time: draft.allDay ? undefined : draft.time || undefined,
-        deadline: draft.deadline || undefined,
-        notes: draft.notes.trim() || undefined,
+        deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
         tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        recurrence: recurrenceFromDraft(draft), createdAt: now, updatedAt: now,
       }
       setTasks(current => [...current, task])
     }
 
-    const taskDate = fromDateKey(draft.date)
+    const savedSeries = editingTaskId ? tasks.find(task => task.id === editingTaskId) : undefined
+    const openedOccurrence = savedSeries && editingOccurrenceDate ? materializeOccurrence(savedSeries, editingOccurrenceDate) : null
+    const savedDateKey = scope === 'series' && savedSeries && openedOccurrence && draft.date === openedOccurrence.date
+      ? savedSeries.date
+      : draft.date
+    const taskDate = fromDateKey(savedDateKey)
     setSelectedDate(taskDate)
     setVisibleMonth(new Date(taskDate.getFullYear(), taskDate.getMonth(), 1))
     closeEditor()
   }
 
-  const setTaskStatus = (id: string, status: TaskStatus) => {
-    setTasks(current => current.map(task => task.id === id ? { ...task, status, updatedAt: new Date().toISOString() } : task))
+  const setTaskStatus = (task: Task, status: TaskStatus) => {
+    const now = new Date().toISOString()
+    if (task.seriesId && task.occurrenceDate) {
+      setTasks(current => current.map(series => series.id === task.seriesId ? {
+        ...series,
+        recurrenceExceptions: { ...series.recurrenceExceptions, [task.occurrenceDate!]: { ...series.recurrenceExceptions?.[task.occurrenceDate!], status, updatedAt: now } },
+        updatedAt: now,
+      } : series))
+    } else setTasks(current => current.map(item => item.id === task.id ? { ...item, status, updatedAt: now } : item))
   }
 
-  const deleteTask = (id: string) => {
-    setTasks(current => current.filter(task => task.id !== id))
+  const deleteTask = (task: Task, scope: 'occurrence' | 'series' = 'series') => {
+    if (task.seriesId && task.occurrenceDate && scope === 'occurrence') {
+      const now = new Date().toISOString()
+      setTasks(current => current.map(series => series.id === task.seriesId ? {
+        ...series,
+        recurrenceExceptions: { ...series.recurrenceExceptions, [task.occurrenceDate!]: { ...series.recurrenceExceptions?.[task.occurrenceDate!], deleted: true, updatedAt: now } },
+        updatedAt: now,
+      } : series))
+    } else setTasks(current => current.filter(item => item.id !== (task.seriesId ?? task.id)))
   }
+
   const toggleDraftTag = (kind: 'task' | 'journal', id: string) => {
     const update = (ids: string[]) => {
       const real = ids.filter(tagId => tagId !== DEFAULT_TAG_ID)
@@ -658,8 +912,7 @@ function App() {
       </section>
 
       <footer className="status-line">
-        <span className="status-dot" aria-hidden="true" />
-        <span>Local first · 任务已保存在此设备</span>
+        <span>Zing Calendar · v0.5.0</span>
       </footer>
 
       {selectedDate && (
@@ -697,7 +950,7 @@ function App() {
                         aria-label={task.status === 'completed' ? `取消完成 ${task.title}` : task.status === 'abandoned' ? `恢复 ${task.title}` : `完成 ${task.title}`}
                         onClick={event => {
                           event.stopPropagation()
-                          setTaskStatus(task.id, task.status === 'todo' ? 'completed' : 'todo')
+                          setTaskStatus(task, task.status === 'todo' ? 'completed' : 'todo')
                         }}
                       >
                         {task.status === 'completed' ? '✓' : task.status === 'abandoned' ? '×' : ''}
@@ -718,7 +971,7 @@ function App() {
               <div className="mood-picker" aria-label="今日心情">
                 {MOODS.map(mood => (
                   <button key={mood.value} type="button" className={`mood-choice mood-${mood.value}${selectedMood?.level === mood.value ? ' active' : ''}`} onClick={() => setMood(mood.value)}>
-                    <span className="mood-swatch" />
+                    <MoodFace level={mood.value} />
                     <span>{mood.label}</span>
                   </button>
                 ))}
@@ -948,13 +1201,21 @@ function App() {
                 )}
               </div>
 
-              <div className="field-grid future-fields">
+              <div className="field-grid repeat-fields">
                 <label className="field">
                   <span>Repeat</span>
-                  <select disabled defaultValue="none"><option value="none">不重复 · 稍后实现</option></select>
+                  <select value={draft.repeatPreset} onChange={event => setDraft(current => ({ ...current, repeatPreset: event.target.value as TaskDraft['repeatPreset'] }))}>
+                    <option value="none">不重复</option><option value="daily">每天</option><option value="weekly">{repeatPresetLabels(draft.date).weekly}</option><option value="monthly">{repeatPresetLabels(draft.date).monthly}</option><option value="yearly">{repeatPresetLabels(draft.date).yearly}</option><option value="custom">自定义</option>
+                  </select>
                 </label>
-
+                {draft.repeatPreset === 'custom' && <label className="field"><span>每隔</span><div className="repeat-interval"><input type="number" min="1" max="999" value={draft.repeatInterval} onChange={event => setDraft(current => ({ ...current, repeatInterval: Math.max(1, Number(event.target.value) || 1) }))} /><select value={draft.repeatUnit} onChange={event => setDraft(current => ({ ...current, repeatUnit: event.target.value as RecurrenceUnit }))}><option value="day">天</option><option value="week">周</option><option value="month">月</option></select></div></label>}
               </div>
+              {draft.repeatPreset === 'custom' && draft.repeatUnit === 'week' && <div className="field full-field"><span>重复星期</span><div className="weekday-picker">{WEEKDAYS.map((day, index) => <button key={day} type="button" className={draft.repeatWeekdays.includes(index) ? 'active' : ''} onClick={() => setDraft(current => ({ ...current, repeatWeekdays: current.repeatWeekdays.includes(index) ? current.repeatWeekdays.filter(value => value !== index) : [...current.repeatWeekdays, index] }))}>{day}</button>)}</div></div>}
+              {draft.repeatPreset !== 'none' && <div className="field-grid repeat-end-fields">
+                <label className="field"><span>Ends</span><select value={draft.repeatEndMode} onChange={event => setDraft(current => ({ ...current, repeatEndMode: event.target.value as TaskDraft['repeatEndMode'] }))}><option value="never">永不</option><option value="date">按日期</option><option value="count">按次数</option></select></label>
+                {draft.repeatEndMode === 'date' && <label className="field"><span>结束日期</span><input type="date" min={draft.date} value={draft.repeatEndDate} onChange={event => setDraft(current => ({ ...current, repeatEndDate: event.target.value }))} /></label>}
+                {draft.repeatEndMode === 'count' && <label className="field"><span>重复次数</span><div className="repeat-count"><input type="number" min="1" max="9999" value={draft.repeatEndCount} onChange={event => setDraft(current => ({ ...current, repeatEndCount: Math.max(1, Number(event.target.value) || 1) }))} /><span>次</span></div></label>}
+              </div>}
 
               <div className="field full-field"><span>Tags</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />#{tag.name}</button>)}</div></div>
 
@@ -967,13 +1228,34 @@ function App() {
             <div className="editor-footer">
               {editingTaskId && (
                 <div className="editor-secondary-actions">
-                  <button type="button" className="abandon-button" onClick={() => { setTaskStatus(editingTaskId, 'abandoned'); closeEditor() }}>放弃任务</button>
-                  <button type="button" className="delete-button" onClick={() => { deleteTask(editingTaskId); closeEditor() }}>删除任务</button>
+                  <button type="button" className="abandon-button" onClick={() => { const series = tasks.find(task => task.id === editingTaskId); if (series) { const shown = editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series; if (shown) setTaskStatus(shown, 'abandoned') }; closeEditor() }}>放弃任务</button>
+                  {editingOccurrenceDate ? (
+                    <>
+                      <button type="button" className="delete-button" onClick={() => {
+                        const series = tasks.find(task => task.id === editingTaskId)
+                        const shown = series ? materializeOccurrence(series, editingOccurrenceDate) : null
+                        if (shown) deleteTask(shown, 'occurrence')
+                        closeEditor()
+                      }}>删除本次</button>
+                      <button type="button" className="delete-button" onClick={() => {
+                        const series = tasks.find(task => task.id === editingTaskId)
+                        if (series) deleteTask(series, 'series')
+                        closeEditor()
+                      }}>删除整个系列</button>
+                    </>
+                  ) : (
+                    <button type="button" className="delete-button" onClick={() => {
+                      const series = tasks.find(task => task.id === editingTaskId)
+                      if (series) deleteTask(series, 'series')
+                      closeEditor()
+                    }}>删除任务</button>
+                  )}
                 </div>
               )}
               <div className="editor-primary-actions">
                 <button className="cancel-button" type="button" onClick={closeEditor}>取消</button>
-                <button className="save-button" type="button" onClick={saveTask} disabled={!draft.title.trim()}>{editingTaskId ? '保存修改' : '保存任务'}</button>
+                {editingOccurrenceDate && <button className="cancel-button" type="button" onClick={() => saveTask('occurrence')} disabled={!draft.title.trim()}>仅修改本次</button>}
+                <button className="save-button" type="button" onClick={() => saveTask('series')} disabled={!draft.title.trim()}>{editingOccurrenceDate ? '修改整个系列' : editingTaskId ? '保存修改' : '保存任务'}</button>
               </div>
             </div>
           </section>
