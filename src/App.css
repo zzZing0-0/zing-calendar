@@ -1253,7 +1253,8 @@ button {
    Keep task names visible in the narrow month grid, hide the priority dot,
    and prevent iOS Safari from auto-zooming focused form controls. */
 @media (max-width: 520px) {
-  .task-preview .priority-dot {
+  .task-preview .priority-dot,
+  .multi-day-bar .priority-dot {
     display: none;
   }
 
