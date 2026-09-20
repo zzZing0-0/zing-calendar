@@ -1248,3 +1248,30 @@ button {
 .multi-day-bar.priority-3 {
   background: #f2c8c4;
 }
+
+/* v0.4.1 — mobile readability pass
+   Keep task names visible in the narrow month grid, hide the priority dot,
+   and prevent iOS Safari from auto-zooming focused form controls. */
+@media (max-width: 520px) {
+  .task-preview .priority-dot {
+    display: none;
+  }
+
+  .task-preview-title {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .task-preview {
+    padding-inline: 4px;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
