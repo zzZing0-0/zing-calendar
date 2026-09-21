@@ -9,7 +9,7 @@ type RecurrenceUnit = 'day' | 'week' | 'month' | 'year'
 type RecurrenceEnd = { type: 'date'; date: string } | { type: 'count'; count: number }
 type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: number[]; end?: RecurrenceEnd }
 type PostponeEvent = { from: string; to: string; at: string }
-type Attachment = { id: string; type: 'image'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string }
+type Attachment = { id: string; type: 'image' | 'audio'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string; duration?: number }
 type RecurrenceException = { deleted?: boolean; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 type CalendarDay = {
@@ -54,11 +54,13 @@ type JournalEntry = {
   id: string
   date: string
   time?: string
+  title: string
   content: string
   impact: JournalImpact
   createdAt: string
   updatedAt: string
   tagIds?: string[]
+  attachments?: Attachment[]
 }
 
 type TagScope = 'task' | 'journal' | 'both'
@@ -68,9 +70,11 @@ type JournalDraft = {
   date: string
   hasTime: boolean
   time: string
+  title: string
   content: string
   impact: JournalImpact
   tagIds: string[]
+  attachments: Attachment[]
 }
 
 type TaskDraft = {
@@ -215,7 +219,7 @@ function currentTime() {
 }
 
 function emptyJournalDraft(date: Date): JournalDraft {
-  return { date: toDateKey(date), hasTime: true, time: currentTime(), content: '', impact: 0, tagIds: [DEFAULT_TAG_ID] }
+  return { date: toDateKey(date), hasTime: true, time: currentTime(), title: '', content: '', impact: 0, tagIds: [DEFAULT_TAG_ID], attachments: [] }
 }
 
 function emptyDraft(date: Date): TaskDraft {
@@ -519,11 +523,57 @@ function AttachmentThumb({ attachment, onRemove, onPreview }: { attachment: Atta
   </div>
 }
 
+function renderInlineMarkdown(text: string) {
+  const tokens = text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*|`[^`]+`)/g)
+  return tokens.map((token, index) => {
+    const link = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/)
+    if (link) return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>
+    if (token.startsWith('**') && token.endsWith('**')) return <strong key={index}>{token.slice(2, -2)}</strong>
+    if (token.startsWith('~~') && token.endsWith('~~')) return <del key={index}>{token.slice(2, -2)}</del>
+    if (token.startsWith('*') && token.endsWith('*')) return <em key={index}>{token.slice(1, -1)}</em>
+    if (token.startsWith('`') && token.endsWith('`')) return <code key={index}>{token.slice(1, -1)}</code>
+    return token
+  })
+}
+
+function MarkdownBody({ content }: { content: string }) {
+  const lines = content.split(/\r?\n/)
+  return <div className="markdown-body">{lines.map((line, index) => {
+    if (/^---+$/.test(line.trim())) return <hr key={index} />
+    const heading = line.match(/^(#{1,3})\s+(.+)$/)
+    if (heading) {
+      const children = renderInlineMarkdown(heading[2])
+      if (heading[1].length === 1) return <h1 key={index}>{children}</h1>
+      if (heading[1].length === 2) return <h2 key={index}>{children}</h2>
+      return <h3 key={index}>{children}</h3>
+    }
+    if (/^>\s?/.test(line)) return <blockquote key={index}>{renderInlineMarkdown(line.replace(/^>\s?/, ''))}</blockquote>
+    if (/^[-*]\s+/.test(line)) return <div className="md-list-line" key={index}>• {renderInlineMarkdown(line.replace(/^[-*]\s+/, ''))}</div>
+    const ordered = line.match(/^(\d+)\.\s+(.+)$/)
+    if (ordered) return <div className="md-list-line" key={index}>{ordered[1]}. {renderInlineMarkdown(ordered[2])}</div>
+    return line ? <p key={index}>{renderInlineMarkdown(line)}</p> : <br key={index} />
+  })}</div>
+}
+
+function AudioAttachment({ attachment }: { attachment: Attachment }) {
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    let active = true, objectUrl = ''
+    getAttachmentBlob(attachment.storageKey).then(blob => {
+      if (!active || !blob) return
+      objectUrl = URL.createObjectURL(blob); setUrl(objectUrl)
+    })
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [attachment.storageKey])
+  return url ? <audio className="journal-audio-player" controls src={url} /> : <span>录音加载中…</span>
+}
+
 function App() {
   const today = new Date()
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksHydrated, setTasksHydrated] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -536,6 +586,10 @@ function App() {
   const [moodsHydrated, setMoodsHydrated] = useState(false)
   const [journalEditorOpen, setJournalEditorOpen] = useState(false)
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null)
+  const [viewingJournalId, setViewingJournalId] = useState<string | null>(null)
+  const [recording, setRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
   const [journalDraft, setJournalDraft] = useState<JournalDraft>(() => emptyJournalDraft(today))
   const [tags, setTags] = useState<Tag[]>([DEFAULT_TAG])
   const [tagsHydrated, setTagsHydrated] = useState(false)
@@ -548,6 +602,15 @@ function App() {
   const [seriesAction, setSeriesAction] = useState<'save' | 'delete' | null>(null)
   const [confirmSingleTask, setConfirmSingleTask] = useState(false)
   const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
+
+  useEffect(() => {
+    if (!recording) return
+    const timer = window.setInterval(() => setRecordingSeconds(value => {
+      if (value >= 1799) { window.setTimeout(stopJournalRecording, 0); return 1800 }
+      return value + 1
+    }), 1000)
+    return () => window.clearInterval(timer)
+  }, [recording, mediaRecorder])
 
   const openImagePreview = async (attachment: Attachment) => {
     const blob = await getAttachmentBlob(attachment.storageKey)
@@ -606,7 +669,7 @@ function App() {
 
   const editJournal = (entry: JournalEntry) => {
   setEditingJournalId(entry.id)
-  setJournalDraft({ date: entry.date, hasTime: Boolean(entry.time), time: entry.time ?? currentTime(), content: entry.content, impact: entry.impact, tagIds: entry.tagIds?.length ? entry.tagIds : [DEFAULT_TAG_ID] })
+  setJournalDraft({ date: entry.date, hasTime: Boolean(entry.time), time: entry.time ?? currentTime(), title: entry.title || entry.content.slice(0, 60) || '记录', content: entry.title ? entry.content : '', impact: entry.impact, tagIds: entry.tagIds?.length ? entry.tagIds : [DEFAULT_TAG_ID], attachments: entry.attachments ?? [] })
   setJournalEditorOpen(true)
   }
 
@@ -616,19 +679,20 @@ function App() {
   }
 
   const saveJournal = () => {
+  const title = journalDraft.title.trim()
+  if (!title) return
   const content = journalDraft.content.trim()
-  if (!content) return
   const now = new Date().toISOString()
+  const fields = {
+    date: journalDraft.date, time: journalDraft.hasTime ? journalDraft.time || undefined : undefined,
+    title, content, impact: journalDraft.impact,
+    tagIds: journalDraft.tagIds.length ? journalDraft.tagIds : [DEFAULT_TAG_ID],
+    attachments: journalDraft.attachments,
+  }
   if (editingJournalId) {
-    setJournalEntries(current => current.map(entry => entry.id === editingJournalId ? {
-      ...entry, date: journalDraft.date, time: journalDraft.hasTime ? journalDraft.time || undefined : undefined,
-      content, impact: journalDraft.impact, tagIds: journalDraft.tagIds.length ? journalDraft.tagIds : [DEFAULT_TAG_ID], updatedAt: now,
-    } : entry))
+    setJournalEntries(current => current.map(entry => entry.id === editingJournalId ? { ...entry, ...fields, updatedAt: now } : entry))
   } else {
-    setJournalEntries(current => [...current, {
-      id: crypto.randomUUID(), date: journalDraft.date, time: journalDraft.hasTime ? journalDraft.time || undefined : undefined,
-      content, impact: journalDraft.impact, tagIds: journalDraft.tagIds.length ? journalDraft.tagIds : [DEFAULT_TAG_ID], createdAt: now, updatedAt: now,
-    }])
+    setJournalEntries(current => [...current, { id: crypto.randomUUID(), ...fields, createdAt: now, updatedAt: now }])
   }
   const entryDate = fromDateKey(journalDraft.date)
   setSelectedDate(entryDate)
@@ -636,7 +700,55 @@ function App() {
   closeJournalEditor()
   }
 
-  const deleteJournal = (id: string) => setJournalEntries(current => current.filter(entry => entry.id !== id))
+  const addJournalImages = async (files: FileList | null) => {
+    if (!files?.length) return
+    const room = Math.max(0, 9 - journalDraft.attachments.filter(a => a.type === 'image').length)
+    const added: Attachment[] = []
+    for (const file of Array.from(files).filter(file => file.type.startsWith('image/')).slice(0, room)) {
+      const blob = await compressImage(file)
+      const id = crypto.randomUUID(), storageKey = `journal:${id}`
+      await putAttachmentBlob(storageKey, blob)
+      added.push({ id, type: 'image', filename: file.name, mimeType: blob.type || 'image/webp', size: blob.size, storageKey, createdAt: new Date().toISOString() })
+    }
+    if (added.length) setJournalDraft(current => ({ ...current, attachments: [...current.attachments, ...added] }))
+  }
+
+  const removeJournalAttachment = async (attachment: Attachment) => {
+    await deleteAttachmentBlob(attachment.storageKey)
+    setJournalDraft(current => ({ ...current, attachments: current.attachments.filter(item => item.id !== attachment.id) }))
+  }
+
+  const startJournalRecording = async () => {
+    if (journalDraft.attachments.some(a => a.type === 'audio') || recording) return
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new MediaRecorder(stream)
+    const chunks: BlobPart[] = []
+    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data) }
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(track => track.stop())
+      const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+      const id = crypto.randomUUID(), storageKey = `journal-audio:${id}`
+      await putAttachmentBlob(storageKey, blob)
+      setJournalDraft(current => ({ ...current, attachments: [...current.attachments.filter(a => a.type !== 'audio'), {
+        id, type: 'audio', filename: `录音-${new Date().toLocaleString()}.webm`, mimeType: blob.type, size: blob.size,
+        storageKey, duration: recordingSeconds, createdAt: new Date().toISOString(),
+      }] }))
+      setRecording(false); setMediaRecorder(null); setRecordingSeconds(0)
+    }
+    recorder.start()
+    setRecordingSeconds(0); setMediaRecorder(recorder); setRecording(true)
+  }
+
+  const stopJournalRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
+  }
+
+  const deleteJournal = (id: string) => {
+    const entry = journalEntries.find(item => item.id === id)
+    void Promise.all((entry?.attachments ?? []).map(a => deleteAttachmentBlob(a.storageKey)))
+    setJournalEntries(current => current.filter(entry => entry.id !== id))
+    setViewingJournalId(current => current === id ? null : current)
+  }
 
   useEffect(() => {
     if (!tasksHydrated) return
@@ -647,7 +759,7 @@ function App() {
     let active = true
     loadJournalEntries<JournalEntry>().then(rows => {
       if (!active) return
-      setJournalEntries(rows)
+      setJournalEntries(rows.map(entry => entry.title ? entry : ({ ...entry, title: entry.content?.slice(0, 60) || '记录', content: '' })))
       setJournalHydrated(true)
     }).catch(error => {
       console.error('Failed to load journal entries from IndexedDB', error)
@@ -1182,7 +1294,7 @@ function App() {
       </section>
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.6.6</span>
+        <span>Zing Calendar · v0.6.9</span>
       </footer>
 
       {selectedDate && (
@@ -1236,6 +1348,7 @@ function App() {
               <button className="add-button" type="button" onClick={openTaskEditor}>＋ 添加任务</button>
             </section>
 
+            {!selectedIsFuture && <>
             <section className="detail-section mood-section">
               <div className="section-heading"><h3>今日心情</h3></div>
               <div className="mood-picker" aria-label="今日心情">
@@ -1248,26 +1361,7 @@ function App() {
               </div>
             </section>
 
-            <section className="detail-section journal-section">
-              <div className="section-heading journal-heading">
-                <h3>记录</h3>
-                {selectedJournalEntries.length > 0 && <span>{selectedJournalEntries.length}</span>}
-                {selectedJournalEntries.length > 0 && <strong className={`impact-total ${selectedImpactTotal > 0 ? 'positive' : selectedImpactTotal < 0 ? 'negative' : ''}`}>事件合计 {selectedImpactTotal > 0 ? '+' : ''}{selectedImpactTotal}</strong>}
-              </div>
-              {selectedJournalEntries.length === 0 ? <p className="empty-state">暂无记录</p> : (
-                <div className="journal-list">
-                  {selectedJournalEntries.map(entry => (
-                    <button key={entry.id} type="button" className="journal-entry" onClick={() => editJournal(entry)}>
-                      <span className="journal-meta">{entry.time ?? '无时间'}</span>
-                      <span className="journal-content">{entry.content}</span>
-                      <span className="entry-tags">{(entry.tagIds ?? [DEFAULT_TAG_ID]).slice(0, 2).map(id => { const tag = tags.find(item => item.id === id); return tag ? <span key={id} className="mini-tag" style={{ '--tag-color': tag.color } as any}>#{tag.name}</span> : null })}</span>
-                      <span className={`impact-badge impact-${entry.impact}`}>{entry.impact > 0 ? '+' : ''}{entry.impact}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button className="add-button" type="button" onClick={openJournalEditor}>＋ 添加记录</button>
-            </section>
+                        </>}
 
             <section className="detail-section mood-calendar-section">
               <div className="mini-calendar-header">
@@ -1296,7 +1390,9 @@ function App() {
                       key={key}
                       type="button"
                       className={`mood-mini-day${inCurrentMonth ? '' : ' outside'}${sameDay(date, today) ? ' today' : ''}`}
+                      disabled={key > toDateKey(today)}
                       onClick={() => {
+                        if (key > toDateKey(today)) return
                         const nextDate = new Date(date)
                         const nextMonth = new Date(date.getFullYear(), date.getMonth(), 1)
                         setSelectedDate(nextDate)
@@ -1312,7 +1408,40 @@ function App() {
                 })}
               </div>
             </section>
-          </aside>
+
+            {!selectedIsFuture && <>
+            <section className="detail-section journal-section">
+              <div className="section-heading journal-heading">
+                <h3>记录</h3>
+                {selectedJournalEntries.length > 0 && <span>{selectedJournalEntries.length}</span>}
+                {selectedJournalEntries.length > 0 && <strong className={`impact-total ${selectedImpactTotal > 0 ? 'positive' : selectedImpactTotal < 0 ? 'negative' : ''}`}>事件合计 {selectedImpactTotal > 0 ? '+' : ''}{selectedImpactTotal}</strong>}
+              </div>
+              {selectedJournalEntries.length === 0 ? <p className="empty-state">暂无记录</p> : (
+                <div className="journal-list">
+                  {selectedJournalEntries.map(entry => {
+                    const entryTagIds = (entry.tagIds ?? [DEFAULT_TAG_ID]).filter(id => id !== DEFAULT_TAG_ID)
+                    const visibleTags = entryTagIds.slice(0, 3)
+                    const extraTags = Math.max(0, entryTagIds.length - visibleTags.length)
+                    const images = (entry.attachments ?? []).filter(a => a.type === 'image').length
+                    const hasAudio = (entry.attachments ?? []).some(a => a.type === 'audio')
+                    return <button key={entry.id} type="button" className="journal-entry journal-card-v067" onClick={() => setViewingJournalId(entry.id)}>
+                      <span className="journal-meta">{entry.time ?? '无时间'}</span>
+                      <strong className="journal-title">{entry.title || '记录'}</strong>
+                      <span className={`impact-badge impact-${entry.impact}`}>{entry.impact > 0 ? '+' : ''}{entry.impact}</span>
+                      <span className="journal-card-bottom">
+                        <span className="entry-tags">{visibleTags.map(id => { const tag = tags.find(item => item.id === id); return tag ? <span key={id} className="mini-tag" style={{ '--tag-color': tag.color } as any}>#{tag.name}</span> : null })}{extraTags > 0 && <span className="extra-tags">+{extraTags}</span>}</span>
+                        <span className="journal-markers">{entry.content && <span title="有正文" aria-label="有正文">≡</span>}{images > 0 && <span title="有图片" aria-label="有图片">▧</span>}{hasAudio && <span title="有录音" aria-label="有录音">●</span>}</span>
+                      </span>
+                    </button>
+                  })}
+                </div>
+              )}
+              <button className="add-button" type="button" onClick={openJournalEditor}>＋ 添加记录</button>
+            </section>
+
+            </>}
+
+                      </aside>
         </>
       )}
 
@@ -1322,7 +1451,7 @@ function App() {
           <section className="task-editor tag-manager" role="dialog" aria-modal="true" aria-labelledby="tag-manager-title">
             <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => setTagManagerOpen(false)}>×</button></div>
             <div className="editor-body">
-              <div className="tag-create-row"><input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="新标签名称" /><select value={newTagScope} onChange={e => setNewTagScope(e.target.value as TagScope)}><option value="both">Task + Journal</option><option value="task">仅 Task</option><option value="journal">仅 Journal</option></select><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
+              <div className="tag-create-row"><input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="新标签名称" /><select value={newTagScope} onChange={e => setNewTagScope(e.target.value as TagScope)}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
               <div className="tag-color-row">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-color${newTagColor === color ? ' active' : ''}`} style={{ background: color }} onClick={() => setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
               <div className="tag-list">{tags.filter(tag => tag.id !== DEFAULT_TAG_ID).map(tag => <div className="tag-row" key={tag.id}>
                 <div className="tag-color-control">
@@ -1333,7 +1462,7 @@ function App() {
                   </div>}
                 </div>
                 <input value={tag.name} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value } : item))} />
-                <select value={tag.scope} disabled={tag.system} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope } : item))}><option value="both">Task + Journal</option><option value="task">仅 Task</option><option value="journal">仅 Journal</option></select>
+                <select value={tag.scope} disabled={tag.system} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope } : item))}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select>
                 <div className="tag-row-actions">
                   <button type="button" className="tag-browse-button" onClick={() => browseTag(tag.id)}>查看</button>
                   {tag.system ? <span className="system-tag">系统</span> : <button type="button" className="delete-button compact-delete" onClick={() => deleteTag(tag.id)}>删除</button>}
@@ -1382,29 +1511,55 @@ function App() {
         </div>
       )}
 
+      {viewingJournalId && (() => {
+        const entry = journalEntries.find(item => item.id === viewingJournalId)
+        if (!entry) return null
+        const images = (entry.attachments ?? []).filter(a => a.type === 'image')
+        const audio = (entry.attachments ?? []).find(a => a.type === 'audio')
+        return <div className="modal-layer journal-detail-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭记录详情" onClick={() => setViewingJournalId(null)} />
+          <article className="task-editor journal-detail" role="dialog" aria-modal="true">
+            <div className="editor-header journal-detail-header"><div className="journal-detail-title-wrap"><span className="eyebrow">JOURNAL</span><h2>{entry.title}</h2></div><div className="journal-detail-header-meta"><span className="journal-impact-face" title={`事件影响 ${entry.impact > 0 ? '+' : ''}${entry.impact}`}><MoodFace level={(entry.impact + 3) as MoodLevel} /></span><small>{formatDate(fromDateKey(entry.date))}{entry.time ? ` · ${entry.time}` : ''}</small></div><button className="close-button" type="button" onClick={() => setViewingJournalId(null)}>×</button></div>
+            <div className="editor-body">
+              {entry.content && <MarkdownBody content={entry.content} />}
+              <div className="journal-detail-tags">{(entry.tagIds ?? []).filter(id => id !== DEFAULT_TAG_ID).map(id => { const tag=tags.find(t=>t.id===id); return tag ? <span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null })}</div>
+              {images.length > 0 && <div className="journal-detail-images">{images.map(image => <AttachmentThumb key={image.id} attachment={image} onRemove={() => {}} onPreview={a => void openImagePreview(a)} />)}</div>}
+              {audio && <AudioAttachment attachment={audio}/>}
+            </div>
+            <div className="editor-footer"><div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={() => deleteJournal(entry.id)}>删除</button></div><div className="editor-primary-actions"><button type="button" onClick={() => { setViewingJournalId(null); editJournal(entry) }}>编辑记录</button></div></div>
+          </article>
+        </div>
+      })()}
+
       {journalEditorOpen && (
         <div className="modal-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭记录编辑器" onClick={closeJournalEditor} />
           <section className="task-editor journal-editor" role="dialog" aria-modal="true" aria-labelledby="journal-editor-title">
             <div className="editor-header">
-              <div><span className="eyebrow">{editingJournalId ? 'JOURNAL DETAIL' : 'NEW JOURNAL'}</span><h2 id="journal-editor-title">{editingJournalId ? '记录详情' : '添加记录'}</h2></div>
+              <div><span className="eyebrow">{editingJournalId ? 'EDIT JOURNAL' : 'NEW JOURNAL'}</span><h2 id="journal-editor-title">{editingJournalId ? '编辑记录' : '添加记录'}</h2></div>
               <button className="close-button" type="button" onClick={closeJournalEditor} aria-label="关闭">×</button>
             </div>
             <div className="editor-body">
-              <label className="field full-field"><span>发生了什么？ *</span><textarea autoFocus rows={6} value={journalDraft.content} onChange={event => setJournalDraft(current => ({ ...current, content: event.target.value }))} placeholder="一句话也可以。" /></label>
-              <div className="field-grid">
-                <label className="field"><span>日期</span><input type="date" value={journalDraft.date} onChange={event => setJournalDraft(current => ({ ...current, date: event.target.value }))} /></label>
-                <div className="journal-time-control">
-                  <label className="check-field"><input type="checkbox" checked={journalDraft.hasTime} onChange={event => setJournalDraft(current => ({ ...current, hasTime: event.target.checked }))} /><span>记录时间</span></label>
-                  {journalDraft.hasTime && <label className="field compact-field"><span>时间</span><input type="time" value={journalDraft.time} onChange={event => setJournalDraft(current => ({ ...current, time: event.target.value }))} /></label>}
-                </div>
-              </div>
+              <label className="field full-field"><span>标题 *</span><input autoFocus value={journalDraft.title} onChange={event => setJournalDraft(current => ({ ...current, title: event.target.value }))} placeholder="给这条记录一个标题" /></label>
               <div className="field full-field"><span>事件影响</span><div className="impact-picker">{IMPACTS.map(impact => <button key={impact} type="button" className={`impact-choice impact-${impact}${journalDraft.impact === impact ? ' active' : ''}`} onClick={() => setJournalDraft(current => ({ ...current, impact }))}>{impact > 0 ? '+' : ''}{impact}</button>)}</div></div>
+              <label className="field full-field"><span>正文 · Markdown</span><textarea rows={10} value={journalDraft.content} onChange={event => setJournalDraft(current => ({ ...current, content: event.target.value }))} placeholder="正文可选。支持标题、粗体、斜体、删除线、列表、引用、行内代码、分隔线和链接。" /></label>
               <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />#{tag.name}</button>)}</div></div>
+              <div className="field full-field"><span>图片 · 最多 9 张</span><input type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} />
+                {journalDraft.attachments.some(a => a.type === 'image') && <div className="attachment-list">{journalDraft.attachments.filter(a => a.type === 'image').map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeJournalAttachment(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
+                <small>自动压缩后保存 · 单张约 1 MB · 最多 9 张</small>
+              </div>
+              <div className="field full-field"><span>录音 · 最多 1 条 / 30 分钟</span>
+                {journalDraft.attachments.find(a => a.type === 'audio') ? (() => { const audio = journalDraft.attachments.find(a => a.type === 'audio')!; return <div className="journal-audio-edit"><AudioAttachment attachment={audio}/><button type="button" onClick={() => void removeJournalAttachment(audio)}>删除录音</button></div> })() :
+                  <button type="button" className="record-button" onClick={recording ? stopJournalRecording : () => void startJournalRecording()}>{recording ? `■ 停止录音 ${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2,'0')}` : '● 开始录音'}</button>}
+              </div>
+              <div className="field-grid journal-date-row">
+                <label className="field"><span>日期</span><input type="date" value={journalDraft.date} onChange={event => setJournalDraft(current => ({ ...current, date: event.target.value }))} /></label>
+                <label className="field"><span>时间</span><input type="time" value={journalDraft.time} onChange={event => setJournalDraft(current => ({ ...current, hasTime: true, time: event.target.value }))} /></label>
+              </div>
             </div>
             <div className="editor-footer">
               {editingJournalId && <div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={() => { deleteJournal(editingJournalId); closeJournalEditor() }}>删除记录</button></div>}
-              <div className="editor-primary-actions"><button className="cancel-button" type="button" onClick={closeJournalEditor}>取消</button><button className="save-button" type="button" onClick={saveJournal} disabled={!journalDraft.content.trim()}>{editingJournalId ? '保存修改' : '保存记录'}</button></div>
+              <div className="editor-primary-actions"><button className="cancel-button" type="button" onClick={closeJournalEditor}>取消</button><button className="save-button" type="button" onClick={saveJournal} disabled={!journalDraft.title.trim()}>{editingJournalId ? '保存修改' : '保存记录'}</button></div>
             </div>
           </section>
         </div>

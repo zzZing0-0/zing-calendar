@@ -1717,3 +1717,96 @@ button {
 .postpone-count-high {
   color: #c65d59;
 }
+
+/* v0.6.7 Journal */
+.journal-card-v067 {
+  display:grid !important;
+  grid-template-columns:76px minmax(0,1fr) auto;
+  grid-template-areas:"time title impact" ". bottom bottom";
+  align-items:center; gap:8px 12px;
+  text-align:left;
+}
+.journal-card-v067 .journal-meta { grid-area:time; }
+.journal-card-v067 .journal-title { grid-area:title; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; color:#3e4943; }
+.journal-card-v067 .impact-badge { grid-area:impact; justify-self:end; }
+.journal-card-bottom { grid-area:bottom; display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; }
+.journal-card-bottom .entry-tags { margin:0; min-width:0; overflow:hidden; display:flex; gap:5px; }
+.extra-tags { color:#9aa39e; font-size:10px; white-space:nowrap; }
+.journal-markers { margin-left:auto; display:flex; gap:8px; color:#84918a; font-size:10px; white-space:nowrap; }
+.journal-detail { width:min(760px,calc(100vw - 28px)); max-height:90vh; }
+.journal-detail-meta { display:flex; justify-content:space-between; align-items:center; color:#8a948f; font-size:11px; }
+.journal-detail-tags { display:flex; flex-wrap:wrap; gap:6px; }
+.markdown-body { color:#3f4944; font-size:13px; line-height:1.75; overflow-wrap:anywhere; }
+.markdown-body p { margin:8px 0; }
+.markdown-body h1,.markdown-body h2,.markdown-body h3 { margin:18px 0 8px; }
+.markdown-body blockquote { margin:10px 0; padding:4px 12px; border-left:3px solid #b7c8be; color:#68736d; }
+.markdown-body code { padding:2px 5px; border-radius:5px; background:#f1f3f1; }
+.markdown-body a { color:#587d69; }
+.md-list-line { padding-left:10px; margin:4px 0; }
+.journal-detail-images { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.journal-detail-images .attachment-card { grid-template-rows:110px 0; }
+.journal-detail-images .attachment-card-info,.journal-detail-images .attachment-remove-button { display:none !important; }
+.journal-audio-player { width:100%; }
+.journal-audio-edit { display:flex; gap:10px; align-items:center; }
+.record-button { min-height:42px; border:1px solid #d8dfdb; border-radius:10px; background:#fff; color:#56625b; padding:0 14px; }
+.journal-date-row { opacity:.85; }
+@media(max-width:620px){
+ .journal-card-v067 { grid-template-columns:54px minmax(0,1fr) auto; gap:7px; }
+ .journal-detail-images { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+/* v0.6.8 refinements */
+.tag-create-row > input,
+.tag-create-row > select,
+.tag-create-row > button {
+  box-sizing:border-box;
+  height:46px !important;
+  min-height:46px !important;
+}
+.tag-create-row > button { align-self:stretch; padding-top:0; padding-bottom:0; }
+
+.journal-markers span {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:14px; height:14px; font-size:11px; line-height:1;
+  color:#89948e; font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;
+}
+.journal-markers span[aria-label="有录音"] { font-size:7px; }
+
+.mood-mini-day:disabled {
+  cursor:default;
+  opacity:.38;
+}
+.mood-mini-day:disabled:hover { background:transparent; }
+
+.journal-detail-header {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto 32px;
+  align-items:start;
+  gap:12px;
+}
+.journal-detail-header-meta {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:5px;
+  padding-top:3px;
+  color:#98a19c;
+  white-space:nowrap;
+}
+.journal-detail-header-meta small { font-size:10px; font-weight:500; }
+.journal-detail .editor-body { padding-top:8px; }
+.journal-detail .markdown-body { margin-top:0; }
+.journal-detail .markdown-body > :first-child { margin-top:0; }
+.journal-detail-tags { margin-top:12px; }
+
+/* v0.6.9 final Journal polish */
+.journal-card-v067 {
+  grid-template-columns:52px minmax(0,1fr) auto !important;
+  gap:7px 8px !important;
+}
+.journal-card-v067 .journal-meta { padding-left:0; }
+.journal-impact-face { width:30px; height:30px; display:block; }
+.journal-impact-face .mood-face-svg { width:30px; height:30px; }
+@media(max-width:620px){
+  .journal-card-v067 { grid-template-columns:46px minmax(0,1fr) auto !important; gap:6px 7px !important; }
+}
