@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { loadDailyMoods, loadJournalEntries, loadTasks, loadTags, saveDailyMoods, saveJournalEntries, saveTags, saveTasks } from './db/calendar'
+import { deleteAttachmentBlob, getAttachmentBlob, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveDailyMoods, saveJournalEntries, saveTags, saveTasks } from './db/calendar'
 import './App.css'
 
 type TaskPriority = 0 | 1 | 2 | 3
@@ -8,7 +8,9 @@ type TaskStatus = 'todo' | 'completed' | 'abandoned'
 type RecurrenceUnit = 'day' | 'week' | 'month' | 'year'
 type RecurrenceEnd = { type: 'date'; date: string } | { type: 'count'; count: number }
 type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: number[]; end?: RecurrenceEnd }
-type RecurrenceException = { deleted?: boolean; status?: TaskStatus; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; tagIds?: string[]; updatedAt: string }
+type PostponeEvent = { from: string; to: string; at: string }
+type Attachment = { id: string; type: 'image'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string }
+type RecurrenceException = { deleted?: boolean; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 type CalendarDay = {
   date: Date
@@ -28,6 +30,10 @@ type Task = {
   notes?: string
   createdAt: string
   updatedAt: string
+  completedAt?: string
+  originalDate?: string
+  postponeHistory?: PostponeEvent[]
+  attachments?: Attachment[]
   tagIds?: string[]
   recurrence?: RecurrenceRule
   recurrenceExceptions?: Record<string, RecurrenceException>
@@ -77,6 +83,7 @@ type TaskDraft = {
   deadline: string
   notes: string
   tagIds: string[]
+  attachments: Attachment[]
   repeatPreset: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
   repeatInterval: number
   repeatUnit: RecurrenceUnit
@@ -217,11 +224,12 @@ function emptyDraft(date: Date): TaskDraft {
     date: toDateKey(date),
     endDate: '',
     priority: 1,
-    allDay: true,
+    allDay: false,
     time: '',
     deadline: '',
     notes: '',
     tagIds: [DEFAULT_TAG_ID],
+    attachments: [],
     repeatPreset: 'none',
     repeatInterval: 1,
     repeatUnit: 'week',
@@ -314,6 +322,42 @@ function occursOn(task: Task, key: string) {
   return occurrenceNumber(task, key) <= rule.end.count
 }
 
+function secondOccurrenceDate(task: Task): string | null {
+  if (!task.recurrence) return null
+  let cursor = fromDateKey(task.date)
+  // Search far enough for yearly/custom yearly rules while respecting recurrence end.
+  const limit = new Date(cursor)
+  limit.setFullYear(limit.getFullYear() + 20)
+  let seen = 0
+  while (cursor <= limit) {
+    const key = toDateKey(cursor)
+    if (occursOn(task, key)) {
+      seen += 1
+      if (seen === 2) return key
+    }
+    // A date-ended rule cannot produce anything after its end date.
+    if (task.recurrence.end?.type === 'date' && key >= task.recurrence.end.date) break
+    // A count-ended rule with count <= 1 is necessarily a single occurrence.
+    if (task.recurrence.end?.type === 'count' && task.recurrence.end.count <= 1) break
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return null
+}
+
+function normalizeSingleOccurrenceSeries(task: Task): Task {
+  if (!task.recurrence || secondOccurrenceDate(task)) return task
+  const first = task.recurrenceExceptions?.[task.date]
+  return {
+    ...task,
+    ...(first ?? {}),
+    id: task.id,
+    seriesId: undefined,
+    occurrenceDate: undefined,
+    recurrence: undefined,
+    recurrenceExceptions: undefined,
+  }
+}
+
 function materializeOccurrence(series: Task, occurrenceDate: string): Task | null {
   const exception = series.recurrenceExceptions?.[occurrenceDate]
   if (exception?.deleted) return null
@@ -391,6 +435,10 @@ function deadlineStage(task: Task, now = new Date()) {
   if (progress >= 0.5) return 'deadline-yellow'
   return 'deadline-normal'
 }
+ 
+function isTaskOverdue(task: Task, todayKey = toDateKey(new Date())) {
+  return task.status === 'todo' && taskEndDate(task) < todayKey
+}
 
 function taskEndDate(task: Task) { return task.endDate || task.date }
 function taskCoversDate(task: Task, key: string) { return task.date <= key && taskEndDate(task) >= key }
@@ -422,6 +470,55 @@ function buildMultiDaySegments(tasks: Task[], days: CalendarDay[]): MultiDaySegm
   return segments
 }
 
+async function compressImage(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file)
+  const maxSide = 1800
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  const toBlob = (quality: number) => new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image compression failed')), 'image/webp', quality))
+  let blob = await toBlob(0.84)
+  if (blob.size > 1024 * 1024) blob = await toBlob(0.70)
+  return blob
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function AttachmentThumb({ attachment, onRemove, onPreview }: { attachment: Attachment; onRemove: () => void; onPreview: (attachment: Attachment) => void }) {
+  const [url, setUrl] = useState<string>('')
+  useEffect(() => {
+    let active = true
+    let objectUrl = ''
+    getAttachmentBlob(attachment.storageKey).then(blob => {
+      if (!active || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setUrl(objectUrl)
+    })
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [attachment.storageKey])
+
+  return <div className="attachment-card">
+    <button className="attachment-image-button" type="button" onClick={() => onPreview(attachment)} disabled={!url} aria-label={`预览 ${attachment.filename}`}>
+      {url ? <img src={url} alt="" /> : <span className="attachment-loading">加载中…</span>}
+    </button>
+    <div className="attachment-card-info">
+      <span className="attachment-card-name" title={attachment.filename}>{attachment.filename}</span>
+      <span className="attachment-card-size">压缩后 {formatFileSize(attachment.size)}</span>
+    </div>
+    <button className="attachment-remove-button" type="button" onClick={onRemove} aria-label={`删除 ${attachment.filename}`}>×</button>
+  </div>
+}
+
 function App() {
   const today = new Date()
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
@@ -448,6 +545,26 @@ function App() {
   const [newTagScope, setNewTagScope] = useState<TagScope>('both')
   const [openTagColorId, setOpenTagColorId] = useState<string | null>(null)
   const [browsingTagId, setBrowsingTagId] = useState<string | null>(null)
+  const [seriesAction, setSeriesAction] = useState<'save' | 'delete' | null>(null)
+  const [confirmSingleTask, setConfirmSingleTask] = useState(false)
+  const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
+
+  const openImagePreview = async (attachment: Attachment) => {
+    const blob = await getAttachmentBlob(attachment.storageKey)
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    setImagePreview(current => {
+      if (current?.url) URL.revokeObjectURL(current.url)
+      return { url, name: attachment.filename }
+    })
+  }
+
+  const closeImagePreview = () => {
+    setImagePreview(current => {
+      if (current?.url) URL.revokeObjectURL(current.url)
+      return null
+    })
+  }
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
   // It can still be browsed independently afterwards with its own month arrows.
@@ -666,6 +783,7 @@ function App() {
       deadline: task.deadline ?? '',
       notes: task.notes ?? '',
       tagIds: task.tagIds?.length ? task.tagIds : [DEFAULT_TAG_ID],
+      attachments: task.attachments ?? [],
       ...draftRepeat(series),
     })
     setEditorOpen(true)
@@ -677,90 +795,238 @@ function App() {
     setEditingOccurrenceDate(null)
   }
 
-  const saveTask = (scope: 'occurrence' | 'series' = 'series') => {
+  const saveTask = (scope: 'occurrence' | 'future' | 'series' = 'series') => {
     const title = draft.title.trim()
     if (!title) return
     const now = new Date().toISOString()
+    const buildFields = (date: string, endDate?: string) => ({
+      title, date, endDate,
+      priority: draft.priority, allDay: draft.allDay,
+      time: draft.allDay ? undefined : draft.time || undefined,
+      deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
+      tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
+      attachments: draft.attachments,
+    })
 
     if (editingTaskId) {
-      setTasks(current => current.map(task => {
-        if (task.id !== editingTaskId) return task
-        if (editingOccurrenceDate && task.recurrence && scope === 'occurrence') {
-          const exception: RecurrenceException = {
-            title, date: draft.date,
-            endDate: draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined,
-            priority: draft.priority, allDay: draft.allDay,
-            time: draft.allDay ? undefined : draft.time || undefined,
-            deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
-            tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID], updatedAt: now,
-          }
-          return { ...task, recurrenceExceptions: { ...task.recurrenceExceptions, [editingOccurrenceDate]: exception }, updatedAt: now }
+      setTasks(current => {
+        const series = current.find(task => task.id === editingTaskId)
+        if (!series) return current
+        const occurrence = editingOccurrenceDate && series.recurrence ? materializeOccurrence(series, editingOccurrenceDate) : null
+
+        if (occurrence && scope === 'occurrence') {
+          const exception: RecurrenceException = { ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined), updatedAt: now }
+          return current.map(task => task.id === series.id
+            ? { ...task, recurrenceExceptions: { ...task.recurrenceExceptions, [editingOccurrenceDate!]: exception }, updatedAt: now }
+            : task)
         }
-        // Opening an occurrence edits that occurrence's materialized date in the form.
-        // Saving the whole series must NOT silently re-anchor the series to the
-        // clicked occurrence. Preserve the original series anchor unless the user
-        // actually changed the date (or end date) in the editor.
-        const openedOccurrence = editingOccurrenceDate ? materializeOccurrence(task, editingOccurrenceDate) : null
-        const seriesDate = openedOccurrence && draft.date === openedOccurrence.date ? task.date : draft.date
-        const seriesEndDate = openedOccurrence && (draft.endDate || '') === (openedOccurrence.endDate || '')
-          ? task.endDate
+
+        if (occurrence && scope === 'future') {
+          const splitDate = editingOccurrenceDate!
+          const previousDate = addDaysKey(splitDate, -1)
+          const oldExceptions = Object.fromEntries(Object.entries(series.recurrenceExceptions ?? {}).filter(([key]) => key < splitDate))
+          const futureExceptions = Object.fromEntries(Object.entries(series.recurrenceExceptions ?? {}).filter(([key]) => key >= splitDate))
+
+          // End the old series immediately before this occurrence. Its past history/exceptions remain intact.
+          const oldSeries = normalizeSingleOccurrenceSeries({
+            ...series,
+            recurrence: series.recurrence ? { ...series.recurrence, end: { type: 'date', date: previousDate } } : undefined,
+            recurrenceExceptions: oldExceptions,
+            updatedAt: now,
+          })
+
+          // "不重复" from this occurrence forward means: keep this occurrence as one ordinary task,
+          // and discard the future recurrence branch/exceptions.
+          if (draft.repeatPreset === 'none') {
+            const ordinary: Task = {
+              ...series,
+              ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
+              id: crypto.randomUUID(), status: occurrence.status, completedAt: occurrence.completedAt,
+              originalDate: draft.date, recurrence: undefined, recurrenceExceptions: undefined,
+              createdAt: now, updatedAt: now,
+            }
+            return [...current.filter(task => task.id !== series.id), oldSeries, ordinary]
+          }
+
+          // Otherwise split into a new independent series beginning at the selected occurrence.
+          const newSeries: Task = {
+            ...series,
+            ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
+            id: crypto.randomUUID(), status: 'todo', completedAt: undefined,
+            originalDate: draft.date, recurrence: recurrenceFromDraft(draft),
+            recurrenceExceptions: futureExceptions, createdAt: now, updatedAt: now,
+          }
+          return [...current.filter(task => task.id !== series.id), oldSeries, newSeries]
+        }
+
+        // Whole-series edit. If Repeat becomes "不重复", this is a real conversion:
+        // recurrence and every old occurrence exception are removed, so nothing can later "revive".
+        const seriesDate = occurrence && draft.date === occurrence.date ? series.date : draft.date
+        const seriesEndDate = occurrence && (draft.endDate || '') === (occurrence.endDate || '')
+          ? series.endDate
           : (draft.endDate && draft.endDate > seriesDate ? draft.endDate : undefined)
         const seriesDraft: TaskDraft = { ...draft, date: seriesDate, endDate: seriesEndDate ?? '' }
-
-        return {
-          ...task, title, date: seriesDate,
-          endDate: seriesEndDate,
-          priority: draft.priority, allDay: draft.allDay,
-          time: draft.allDay ? undefined : draft.time || undefined,
-          deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
-          tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
-          recurrence: recurrenceFromDraft(seriesDraft), updatedAt: now,
-        }
-      }))
+        const nextRecurrence = recurrenceFromDraft(seriesDraft)
+        return current.map(task => task.id === series.id ? normalizeSingleOccurrenceSeries({
+          ...task, ...buildFields(seriesDate, seriesEndDate),
+          recurrence: nextRecurrence,
+          recurrenceExceptions: nextRecurrence ? task.recurrenceExceptions : undefined,
+          updatedAt: now,
+        }) : task)
+      })
     } else {
       const task: Task = {
-        id: crypto.randomUUID(), title, date: draft.date,
-        endDate: draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined,
-        priority: draft.priority, status: 'todo', allDay: draft.allDay,
-        time: draft.allDay ? undefined : draft.time || undefined,
-        deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
-        tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
-        recurrence: recurrenceFromDraft(draft), createdAt: now, updatedAt: now,
+        id: crypto.randomUUID(),
+        ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
+        status: 'todo', originalDate: draft.date, recurrence: recurrenceFromDraft(draft),
+        createdAt: now, updatedAt: now,
       }
-      setTasks(current => [...current, task])
+      setTasks(current => [...current, normalizeSingleOccurrenceSeries(task)])
     }
 
-    const savedSeries = editingTaskId ? tasks.find(task => task.id === editingTaskId) : undefined
-    const openedOccurrence = savedSeries && editingOccurrenceDate ? materializeOccurrence(savedSeries, editingOccurrenceDate) : null
-    const savedDateKey = scope === 'series' && savedSeries && openedOccurrence && draft.date === openedOccurrence.date
-      ? savedSeries.date
-      : draft.date
-    const taskDate = fromDateKey(savedDateKey)
+    const taskDate = fromDateKey(draft.date)
     setSelectedDate(taskDate)
     setVisibleMonth(new Date(taskDate.getFullYear(), taskDate.getMonth(), 1))
     closeEditor()
   }
 
+  const convertOccurrenceToSingleTask = () => {
+    if (!editingTaskId || !editingOccurrenceDate) return
+    const title = draft.title.trim()
+    if (!title) return
+    const now = new Date().toISOString()
+    setTasks(current => {
+      const series = current.find(task => task.id === editingTaskId)
+      if (!series?.recurrence) return current
+      const occurrence = materializeOccurrence(series, editingOccurrenceDate)
+      if (!occurrence) return current
+      const previousDate = addDaysKey(editingOccurrenceDate, -1)
+      const oldExceptions = Object.fromEntries(
+        Object.entries(series.recurrenceExceptions ?? {}).filter(([key]) => key < editingOccurrenceDate)
+      )
+      const oldSeries = normalizeSingleOccurrenceSeries({
+        ...series,
+        recurrence: { ...series.recurrence, end: { type: 'date', date: previousDate } },
+        recurrenceExceptions: oldExceptions,
+        updatedAt: now,
+      })
+      const ordinary: Task = {
+        ...occurrence,
+        id: crypto.randomUUID(),
+        seriesId: undefined,
+        occurrenceDate: undefined,
+        title,
+        date: draft.date,
+        endDate: draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined,
+        priority: draft.priority,
+        allDay: draft.allDay,
+        time: draft.allDay ? undefined : draft.time || undefined,
+        deadline: draft.deadline || undefined,
+        notes: draft.notes.trim() || undefined,
+        tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
+        attachments: draft.attachments,
+        originalDate: draft.date,
+        recurrence: undefined,
+        recurrenceExceptions: undefined,
+        createdAt: now,
+        updatedAt: now,
+      }
+      return [...current.filter(task => task.id !== series.id), oldSeries, ordinary]
+    })
+    setConfirmSingleTask(false)
+    closeEditor()
+  }
+
   const setTaskStatus = (task: Task, status: TaskStatus) => {
     const now = new Date().toISOString()
+    const completedAt = status === 'completed' ? now : undefined
     if (task.seriesId && task.occurrenceDate) {
       setTasks(current => current.map(series => series.id === task.seriesId ? {
         ...series,
-        recurrenceExceptions: { ...series.recurrenceExceptions, [task.occurrenceDate!]: { ...series.recurrenceExceptions?.[task.occurrenceDate!], status, updatedAt: now } },
+        recurrenceExceptions: { ...series.recurrenceExceptions, [task.occurrenceDate!]: { ...series.recurrenceExceptions?.[task.occurrenceDate!], status, completedAt, updatedAt: now } },
         updatedAt: now,
       } : series))
-    } else setTasks(current => current.map(item => item.id === task.id ? { ...item, status, updatedAt: now } : item))
+    } else setTasks(current => current.map(item => item.id === task.id ? { ...item, status, completedAt, updatedAt: now } : item))
   }
 
-  const deleteTask = (task: Task, scope: 'occurrence' | 'series' = 'series') => {
-    if (task.seriesId && task.occurrenceDate && scope === 'occurrence') {
-      const now = new Date().toISOString()
+  const postponeTask = (task: Task, newDate: string) => {
+    if (!newDate || newDate <= task.date) return
+    const now = new Date().toISOString()
+    const duration = dayDiff(task.date, taskEndDate(task))
+    const event: PostponeEvent = { from: task.date, to: newDate, at: now }
+    if (task.seriesId && task.occurrenceDate) {
       setTasks(current => current.map(series => series.id === task.seriesId ? {
         ...series,
-        recurrenceExceptions: { ...series.recurrenceExceptions, [task.occurrenceDate!]: { ...series.recurrenceExceptions?.[task.occurrenceDate!], deleted: true, updatedAt: now } },
+        recurrenceExceptions: {
+          ...series.recurrenceExceptions,
+          [task.occurrenceDate!]: {
+            ...series.recurrenceExceptions?.[task.occurrenceDate!],
+            date: newDate,
+            endDate: duration > 0 ? addDaysKey(newDate, duration) : undefined,
+            postponeHistory: [...(task.postponeHistory ?? []), event], updatedAt: now,
+          },
+        }, updatedAt: now,
+      } : series))
+    } else setTasks(current => current.map(item => item.id === task.id ? {
+      ...item, originalDate: item.originalDate ?? item.date, date: newDate,
+      endDate: duration > 0 ? addDaysKey(newDate, duration) : undefined,
+      postponeHistory: [...(item.postponeHistory ?? []), event], updatedAt: now,
+    } : item))
+  }
+
+  const addTaskImages = async (files: FileList | null) => {
+    if (!files?.length) return
+    const added: Attachment[] = []
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue
+      const blob = await compressImage(file)
+      const id = crypto.randomUUID()
+      const storageKey = `attachment:${id}`
+      await putAttachmentBlob(storageKey, blob)
+      added.push({ id, type: 'image', filename: file.name, mimeType: blob.type || 'image/webp', size: blob.size, storageKey, createdAt: new Date().toISOString() })
+    }
+    if (added.length) setDraft(current => ({ ...current, attachments: [...current.attachments, ...added] }))
+  }
+
+  const removeTaskImage = async (attachment: Attachment) => {
+    await deleteAttachmentBlob(attachment.storageKey)
+    setDraft(current => ({ ...current, attachments: current.attachments.filter(item => item.id !== attachment.id) }))
+  }
+
+  const deleteTask = (task: Task, scope: 'occurrence' | 'future' | 'series' = 'series') => {
+    const seriesId = task.seriesId ?? task.id
+    const occurrenceDate = task.occurrenceDate
+    const now = new Date().toISOString()
+    if (occurrenceDate && scope === 'occurrence') {
+      setTasks(current => current.map(series => series.id === seriesId ? {
+        ...series,
+        recurrenceExceptions: { ...series.recurrenceExceptions, [occurrenceDate]: { ...series.recurrenceExceptions?.[occurrenceDate], deleted: true, updatedAt: now } },
         updatedAt: now,
       } : series))
-    } else setTasks(current => current.filter(item => item.id !== (task.seriesId ?? task.id)))
+      return
+    }
+    if (occurrenceDate && scope === 'future') {
+      const previousDate = addDaysKey(occurrenceDate, -1)
+      setTasks(current => current.map(series => series.id === seriesId ? normalizeSingleOccurrenceSeries({
+        ...series,
+        recurrence: series.recurrence ? { ...series.recurrence, end: { type: 'date', date: previousDate } } : undefined,
+        recurrenceExceptions: Object.fromEntries(Object.entries(series.recurrenceExceptions ?? {}).filter(([key]) => key < occurrenceDate)),
+        updatedAt: now,
+      }) : series))
+      return
+    }
+    setTasks(current => current.filter(item => item.id !== seriesId))
+  }
+
+  const stopRepeating = (series: Task, occurrenceDate: string) => {
+    const now = new Date().toISOString()
+    setTasks(current => current.map(item => item.id === series.id ? normalizeSingleOccurrenceSeries({
+      ...item,
+      recurrence: item.recurrence ? { ...item.recurrence, end: { type: 'date', date: occurrenceDate } } : undefined,
+      recurrenceExceptions: Object.fromEntries(Object.entries(item.recurrenceExceptions ?? {}).filter(([key]) => key <= occurrenceDate)),
+      updatedAt: now,
+    }) : item))
+    closeEditor()
   }
 
   const toggleDraftTag = (kind: 'task' | 'journal', id: string) => {
@@ -792,7 +1058,7 @@ function App() {
     setJournalEntries(current => current.map(entry => ({ ...entry, tagIds: clean(entry.tagIds) })))
   }
 
-  const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => tag.scope === 'both' || tag.scope === kind)
+  const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => tag.scope === 'both' || tag.scope === kind).sort((a, b) => Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID))
 
   const browsingTag = browsingTagId ? tags.find(tag => tag.id === browsingTagId) ?? null : null
   const taggedTasks = browsingTag ? tasks
@@ -865,7 +1131,11 @@ function App() {
             // slots only on dates they actually cover; the remaining slots are
             // available to ordinary tasks. This avoids showing “+1” while the
             // lower half of an otherwise empty cell is still unused.
-            const previewCapacity = Math.max(0, 5 - multiDayLaneCountsByDay[dayIndex])
+            const occupiedLanes = multiDayLaneCountsByDay[dayIndex]
+            const availableSlots = Math.max(0, 5 - occupiedLanes)
+            // If everything fits, show every single-day task. If anything overflows,
+            // reserve the final visible slot for a complete +x row.
+            const previewCapacity = dayTasks.length <= availableSlots ? availableSlots : Math.max(0, availableSlots - 1)
             const visibleDayTasks = dayTasks.slice(0, previewCapacity)
             const hiddenDayTaskCount = Math.max(0, dayTasks.length - visibleDayTasks.length)
             return (
@@ -912,7 +1182,7 @@ function App() {
       </section>
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.5.0</span>
+        <span>Zing Calendar · v0.6.6</span>
       </footer>
 
       {selectedDate && (
@@ -940,7 +1210,7 @@ function App() {
                   {selectedTasks.map(task => (
                     <article
                       key={task.id}
-                      className={`task-item priority-${task.priority} status-${task.status} ${deadlineStage(task)}`}
+                      className={`task-item priority-${task.priority} status-${task.status} ${deadlineStage(task)}${isTaskOverdue(task) ? ' task-overdue' : ''}`}
                       onClick={() => editTask(task)}
                     >
                       <span className="task-priority-bar" />
@@ -1054,7 +1324,7 @@ function App() {
             <div className="editor-body">
               <div className="tag-create-row"><input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="新标签名称" /><select value={newTagScope} onChange={e => setNewTagScope(e.target.value as TagScope)}><option value="both">Task + Journal</option><option value="task">仅 Task</option><option value="journal">仅 Journal</option></select><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
               <div className="tag-color-row">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-color${newTagColor === color ? ' active' : ''}`} style={{ background: color }} onClick={() => setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
-              <div className="tag-list">{tags.map(tag => <div className="tag-row" key={tag.id}>
+              <div className="tag-list">{tags.filter(tag => tag.id !== DEFAULT_TAG_ID).map(tag => <div className="tag-row" key={tag.id}>
                 <div className="tag-color-control">
                   <button type="button" className="tag-current-color" style={{ background: tag.color }} onClick={() => setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={`修改 ${tag.name} 的颜色`} />
                   {openTagColorId === tag.id && <div className="tag-color-popover">
@@ -1087,19 +1357,19 @@ function App() {
             </div>
             <div className="editor-body tag-browser-body">
               {taggedTimelineGroups.length === 0 ? <p className="empty-state">还没有带这个标签的任务或记录。</p> : (
-                <div className="tag-timeline">
+                <div className={browsingTag.id === DEFAULT_TAG_ID ? 'default-tag-plain-list' : 'tag-timeline'}>
                   {taggedTimelineGroups.map(group => <section key={group.date} className="tag-timeline-day">
                     <div className="tag-timeline-date">{formatDate(fromDateKey(group.date))}</div>
                     <div className="tag-timeline-items">
                       {group.items.map(item => item.kind === 'task' ? (
                         <button key={`task-${item.task.id}`} type="button" className={`tag-timeline-item tag-task-result priority-${item.task.priority} status-${item.task.status}`} onClick={() => openTaggedTask(item.task)}>
-                          <span className="timeline-node priority-dot" />
+                          {browsingTag.id !== DEFAULT_TAG_ID && <span className="timeline-node priority-dot" />}
                           <span className="tag-result-main"><strong>{item.task.title}</strong><small>任务 · {isMultiDayTask(item.task) ? `${formatDate(fromDateKey(item.task.date))} → ${formatDate(fromDateKey(taskEndDate(item.task)))}` : (!item.task.allDay && item.task.time ? item.task.time : '全天')}</small></span>
                           <span className="tag-result-status">{item.task.status === 'completed' ? '✓' : item.task.status === 'abandoned' ? '×' : ''}</span>
                         </button>
                       ) : (
                         <button key={`journal-${item.entry.id}`} type="button" className="tag-timeline-item tag-journal-result" onClick={() => openTaggedJournal(item.entry)}>
-                          <span className={`timeline-node journal-node impact-${item.entry.impact}`} />
+                          {browsingTag.id !== DEFAULT_TAG_ID && <span className={`timeline-node journal-node impact-${item.entry.impact}`} />}
                           <span className="tag-result-main"><strong>{item.entry.content}</strong><small>记录 · {item.entry.impact > 0 ? '+' : ''}{item.entry.impact}{item.entry.time ? ` · ${item.entry.time}` : ''}</small></span>
                         </button>
                       ))}
@@ -1130,7 +1400,7 @@ function App() {
                 </div>
               </div>
               <div className="field full-field"><span>事件影响</span><div className="impact-picker">{IMPACTS.map(impact => <button key={impact} type="button" className={`impact-choice impact-${impact}${journalDraft.impact === impact ? ' active' : ''}`} onClick={() => setJournalDraft(current => ({ ...current, impact }))}>{impact > 0 ? '+' : ''}{impact}</button>)}</div></div>
-              <div className="field full-field"><span>Tags</span><div className="tag-picker">{tagsFor('journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />#{tag.name}</button>)}</div></div>
+              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />#{tag.name}</button>)}</div></div>
             </div>
             <div className="editor-footer">
               {editingJournalId && <div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={() => { deleteJournal(editingJournalId); closeJournalEditor() }}>删除记录</button></div>}
@@ -1153,26 +1423,58 @@ function App() {
             </div>
 
             <div className="editor-body">
-              <label className="field full-field">
+              <label className="field full-field task-title-field">
                 <span>任务名称 *</span>
-                <input autoFocus value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} placeholder="要做什么？" />
+                <div className="task-title-input-wrap">
+                  <input autoFocus value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} placeholder="要做什么？" />
+                  {editingTaskId && (() => {
+                    const series = tasks.find(task => task.id === editingTaskId)
+                    const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
+                    const count = shown?.postponeHistory?.length ?? 0
+                    return count > 0 ? <small className={`postpone-count${count > 3 ? ' postpone-count-high' : ''}`}>↪ 已延期 {count} 次</small> : null
+                  })()}
+                </div>
               </label>
 
-              <div className="field-grid">
-                <label className="field">
-                  <span>开始日期</span>
-                  <input type="date" value={draft.date} onChange={event => setDraft(current => ({ ...current, date: event.target.value, endDate: current.endDate && current.endDate < event.target.value ? '' : current.endDate }))} />
-                </label>
-                <label className="field">
-                  <span>结束日期 · 可选</span>
-                  <input type="date" min={draft.date} value={draft.endDate} onChange={event => setDraft(current => ({ ...current, endDate: event.target.value }))} />
+              <div className="time-row task-timing-toggle">
+                <label className="check-field">
+                  <input type="checkbox" checked={draft.allDay} onChange={event => setDraft(current => ({ ...current, allDay: event.target.checked, endDate: event.target.checked ? current.endDate : '' }))} />
+                  <span>全天</span>
                 </label>
               </div>
-              <div className="field-grid">
+
+              {draft.allDay ? (
+                <div className="field-grid">
+                  <label className="field"><span>开始日期</span><input type="date" value={draft.date} onChange={event => setDraft(current => ({ ...current, date: event.target.value, endDate: current.endDate && current.endDate < event.target.value ? '' : current.endDate }))} /></label>
+                  <label className="field"><span>结束日期 · 可选</span><input type="date" min={draft.date} value={draft.endDate} onChange={event => setDraft(current => ({ ...current, endDate: event.target.value }))} /></label>
+                </div>
+              ) : (
+                <div className="field-grid">
+                  <label className="field"><span>日期</span><input type="date" value={draft.date} onChange={event => setDraft(current => ({ ...current, date: event.target.value, endDate: '' }))} /></label>
+                  <label className="field"><span>时间</span><input type="time" value={draft.time} onChange={event => setDraft(current => ({ ...current, time: event.target.value }))} /></label>
+                </div>
+              )}
+              {editingTaskId && (() => {
+                const series = tasks.find(task => task.id === editingTaskId)
+                const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
+                if (!shown) return null
+                return <div className="task-history-strip">
+                  {shown.completedAt && <span>✓ 完成于 {new Date(shown.completedAt).toLocaleString()}</span>}
+                </div>
+              })()}
+
+              <div className="field-grid deadline-postpone-row">
                 <label className="field">
                   <span>Deadline</span>
                   <input type="date" value={draft.deadline} onChange={event => setDraft(current => ({ ...current, deadline: event.target.value }))} />
                 </label>
+                {editingTaskId && (() => {
+                  const series = tasks.find(task => task.id === editingTaskId)
+                  const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
+                  return shown && shown.status === 'todo' && taskEndDate(shown) < toDateKey(new Date()) ? (
+                    <label className="field postpone-field"><span>延期到</span><div className="postpone-inline"><input type="date" min={toDateKey(new Date())} defaultValue={toDateKey(new Date())} id="postpone-date" /><button type="button" onClick={() => { const input = document.getElementById('postpone-date') as HTMLInputElement | null; if (input?.value && input.value > taskEndDate(shown)) { postponeTask(shown, input.value); closeEditor() } }}>延期</button></div></label>
+                  ) : null
+                })()}
               </div>
 
               <div className="field full-field">
@@ -1188,22 +1490,24 @@ function App() {
                 </div>
               </div>
 
-              <div className="time-row">
-                <label className="check-field">
-                  <input type="checkbox" checked={draft.allDay} onChange={event => setDraft(current => ({ ...current, allDay: event.target.checked }))} />
-                  <span>全天</span>
-                </label>
-                {!draft.allDay && (
-                  <label className="field compact-field">
-                    <span>时间</span>
-                    <input type="time" value={draft.time} onChange={event => setDraft(current => ({ ...current, time: event.target.value }))} />
-                  </label>
-                )}
+
+              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />#{tag.name}</button>)}</div></div>
+
+              <div className="field full-field attachment-field">
+                <span>图片附件</span>
+                <label className="attachment-add">＋ 添加图片<input type="file" accept="image/*" multiple onChange={event => { void addTaskImages(event.target.files); event.currentTarget.value = '' }} /></label>
+                {draft.attachments.length > 0 && <div className="attachment-grid">{draft.attachments.map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeTaskImage(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
+                <small>自动压缩后保存 · 单张上限 1 MB</small>
               </div>
+
+              <label className="field full-field">
+                <span>备注</span>
+                <textarea rows={4} value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} placeholder="可选" />
+              </label>
 
               <div className="field-grid repeat-fields">
                 <label className="field">
-                  <span>Repeat</span>
+                  <span>重复</span>
                   <select value={draft.repeatPreset} onChange={event => setDraft(current => ({ ...current, repeatPreset: event.target.value as TaskDraft['repeatPreset'] }))}>
                     <option value="none">不重复</option><option value="daily">每天</option><option value="weekly">{repeatPresetLabels(draft.date).weekly}</option><option value="monthly">{repeatPresetLabels(draft.date).monthly}</option><option value="yearly">{repeatPresetLabels(draft.date).yearly}</option><option value="custom">自定义</option>
                   </select>
@@ -1212,53 +1516,104 @@ function App() {
               </div>
               {draft.repeatPreset === 'custom' && draft.repeatUnit === 'week' && <div className="field full-field"><span>重复星期</span><div className="weekday-picker">{WEEKDAYS.map((day, index) => <button key={day} type="button" className={draft.repeatWeekdays.includes(index) ? 'active' : ''} onClick={() => setDraft(current => ({ ...current, repeatWeekdays: current.repeatWeekdays.includes(index) ? current.repeatWeekdays.filter(value => value !== index) : [...current.repeatWeekdays, index] }))}>{day}</button>)}</div></div>}
               {draft.repeatPreset !== 'none' && <div className="field-grid repeat-end-fields">
-                <label className="field"><span>Ends</span><select value={draft.repeatEndMode} onChange={event => setDraft(current => ({ ...current, repeatEndMode: event.target.value as TaskDraft['repeatEndMode'] }))}><option value="never">永不</option><option value="date">按日期</option><option value="count">按次数</option></select></label>
+                <label className="field"><span>结束</span><select value={draft.repeatEndMode} onChange={event => setDraft(current => ({ ...current, repeatEndMode: event.target.value as TaskDraft['repeatEndMode'] }))}><option value="never">永不</option><option value="date">按日期</option><option value="count">按次数</option></select></label>
                 {draft.repeatEndMode === 'date' && <label className="field"><span>结束日期</span><input type="date" min={draft.date} value={draft.repeatEndDate} onChange={event => setDraft(current => ({ ...current, repeatEndDate: event.target.value }))} /></label>}
                 {draft.repeatEndMode === 'count' && <label className="field"><span>重复次数</span><div className="repeat-count"><input type="number" min="1" max="9999" value={draft.repeatEndCount} onChange={event => setDraft(current => ({ ...current, repeatEndCount: Math.max(1, Number(event.target.value) || 1) }))} /><span>次</span></div></label>}
               </div>}
-
-              <div className="field full-field"><span>Tags</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />#{tag.name}</button>)}</div></div>
-
-              <label className="field full-field">
-                <span>备注</span>
-                <textarea rows={4} value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} placeholder="可选" />
-              </label>
             </div>
 
             <div className="editor-footer">
               {editingTaskId && (
                 <div className="editor-secondary-actions">
-                  <button type="button" className="abandon-button" onClick={() => { const series = tasks.find(task => task.id === editingTaskId); if (series) { const shown = editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series; if (shown) setTaskStatus(shown, 'abandoned') }; closeEditor() }}>放弃任务</button>
-                  {editingOccurrenceDate ? (
-                    <>
-                      <button type="button" className="delete-button" onClick={() => {
-                        const series = tasks.find(task => task.id === editingTaskId)
-                        const shown = series ? materializeOccurrence(series, editingOccurrenceDate) : null
-                        if (shown) deleteTask(shown, 'occurrence')
-                        closeEditor()
-                      }}>删除本次</button>
-                      <button type="button" className="delete-button" onClick={() => {
-                        const series = tasks.find(task => task.id === editingTaskId)
-                        if (series) deleteTask(series, 'series')
-                        closeEditor()
-                      }}>删除整个系列</button>
-                    </>
-                  ) : (
-                    <button type="button" className="delete-button" onClick={() => {
+                  {editingOccurrenceDate && tasks.find(task => task.id === editingTaskId)?.recurrence && (
+                    <button type="button" className="abandon-button" onClick={() => {
                       const series = tasks.find(task => task.id === editingTaskId)
-                      if (series) deleteTask(series, 'series')
-                      closeEditor()
-                    }}>删除任务</button>
+                      if (series) stopRepeating(series, editingOccurrenceDate)
+                    }}>停止重复</button>
                   )}
+                  <button type="button" className="abandon-button" onClick={() => { const series = tasks.find(task => task.id === editingTaskId); if (series) { const shown = editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series; if (shown) setTaskStatus(shown, 'abandoned') }; closeEditor() }}>放弃任务</button>
+                  <button type="button" className="delete-button" onClick={() => {
+                    const series = tasks.find(task => task.id === editingTaskId)
+                    if (!series) return
+                    if (editingOccurrenceDate && series.recurrence) setSeriesAction('delete')
+                    else { void Promise.all((series.attachments ?? []).map(a => deleteAttachmentBlob(a.storageKey))); deleteTask(series, 'series'); closeEditor() }
+                  }}>删除</button>
                 </div>
               )}
               <div className="editor-primary-actions">
                 <button className="cancel-button" type="button" onClick={closeEditor}>取消</button>
-                {editingOccurrenceDate && <button className="cancel-button" type="button" onClick={() => saveTask('occurrence')} disabled={!draft.title.trim()}>仅修改本次</button>}
-                <button className="save-button" type="button" onClick={() => saveTask('series')} disabled={!draft.title.trim()}>{editingOccurrenceDate ? '修改整个系列' : editingTaskId ? '保存修改' : '保存任务'}</button>
+                <button className="save-button" type="button" onClick={() => {
+                  const series = editingTaskId ? tasks.find(task => task.id === editingTaskId) : null
+                  if (editingOccurrenceDate && series?.recurrence && draft.repeatPreset === 'none') setConfirmSingleTask(true)
+                  else if (editingOccurrenceDate && series?.recurrence) setSeriesAction('save')
+                  else saveTask('series')
+                }} disabled={!draft.title.trim()}>{editingTaskId ? '保存修改' : '保存任务'}</button>
               </div>
             </div>
           </section>
+        </div>
+      )}
+      {confirmSingleTask && editingTaskId && editingOccurrenceDate && (
+        <div className="scope-layer" role="presentation">
+          <button className="scope-backdrop" type="button" aria-label="关闭" onClick={() => setConfirmSingleTask(false)} />
+          <section className="scope-dialog" role="dialog" aria-modal="true">
+            <h3>改为单次任务？</h3>
+            <p>当前重复系列将在这次任务之前结束；当前这次会保留为单次任务，此前的任务记录保留，之后的重复任务不再生成。</p>
+            <div className="scope-actions">
+              <button type="button" onClick={() => setConfirmSingleTask(false)}>取消</button>
+              <button type="button" className="save-button" onClick={convertOccurrenceToSingleTask}>改为单次任务</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {seriesAction && editingTaskId && editingOccurrenceDate && (
+        <div className="scope-layer" role="presentation">
+          <button className="scope-backdrop" type="button" aria-label="关闭" onClick={() => setSeriesAction(null)} />
+          <section className="scope-dialog" role="dialog" aria-modal="true">
+            <h3>{seriesAction === 'save' ? '修改重复任务' : '删除重复任务'}</h3>
+            <p>{seriesAction === 'save' ? '这次修改应用到哪里？' : '要删除哪些重复任务？'}</p>
+            <div className="scope-actions scope-actions-three">
+              <button type="button" onClick={() => {
+                if (seriesAction === 'save') saveTask('occurrence')
+                else {
+                  const series = tasks.find(t => t.id === editingTaskId)
+                  const shown = series ? materializeOccurrence(series, editingOccurrenceDate) : null
+                  if (shown) deleteTask(shown, 'occurrence')
+                  closeEditor()
+                }
+                setSeriesAction(null)
+              }}>仅本次</button>
+              <button type="button" onClick={() => {
+                if (seriesAction === 'save') saveTask('future')
+                else {
+                  const series = tasks.find(t => t.id === editingTaskId)
+                  const shown = series ? materializeOccurrence(series, editingOccurrenceDate) : null
+                  if (shown) deleteTask(shown, 'future')
+                  closeEditor()
+                }
+                setSeriesAction(null)
+              }}>本次及以后</button>
+              <button type="button" className={seriesAction === 'delete' ? 'delete-button' : 'save-button'} onClick={() => {
+                const series = tasks.find(t => t.id === editingTaskId)
+                if (seriesAction === 'save') saveTask('series')
+                else if (series) {
+                  void Promise.all((series.attachments ?? []).map(a => deleteAttachmentBlob(a.storageKey)))
+                  deleteTask(series, 'series')
+                  closeEditor()
+                }
+                setSeriesAction(null)
+              }}>整个系列</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {imagePreview && (
+        <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={imagePreview.name}>
+          <button className="image-lightbox-backdrop" type="button" aria-label="关闭图片" onClick={closeImagePreview} />
+          <img src={imagePreview.url} alt={imagePreview.name} />
+          <button className="image-lightbox-close" type="button" onClick={closeImagePreview} aria-label="关闭">×</button>
         </div>
       )}
     </main>

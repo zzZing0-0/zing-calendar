@@ -1498,3 +1498,222 @@ button {
 .mood-line { stroke-width: 2.6; }
 .mood-thin { stroke-width: 2.2; }
 .mood-fill { fill: currentColor; }
+
+/* v0.6 data-model finishing: task history, postpone and image attachments */
+.task-history-strip { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:10px 12px; border-radius:12px; background:var(--surface-soft, #f5f5f2); font-size:13px; }
+.postpone-control { display:flex; gap:7px; align-items:center; margin-left:auto; }
+.postpone-control input { width:auto; }
+.postpone-control button, .attachment-add { border:1px solid #d7d9d4; background:#fff; border-radius:9px; padding:7px 10px; cursor:pointer; }
+.attachment-field > small { color:#888; margin-top:6px; }
+.attachment-add { display:inline-flex; width:max-content; align-items:center; }
+.attachment-add input { display:none; }
+.attachment-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; margin-top:10px; }
+.attachment-thumb { position:relative; min-width:0; }
+.attachment-thumb a, .attachment-loading { display:block; aspect-ratio:4/3; border-radius:10px; overflow:hidden; background:#f1f1ee; }
+.attachment-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.attachment-thumb > button { position:absolute; right:5px; top:5px; width:24px; height:24px; border:0; border-radius:50%; background:rgba(255,255,255,.92); cursor:pointer; }
+.attachment-thumb small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:4px; }
+.default-tag-list .tag-timeline-day { border-left:0 !important; padding-left:0 !important; }
+.default-tag-list .timeline-node { display:none !important; }
+.default-tag-list .tag-timeline-items { gap:6px; }
+@media (max-width: 640px) { .postpone-control { width:100%; margin-left:0; flex-wrap:wrap; } .attachment-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* v0.6 refinement: default tag is a plain list, not a timeline. */
+.default-tag-plain-list { display: flex; flex-direction: column; gap: 18px; width: 100%; }
+.default-tag-plain-list .tag-timeline-day { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 24px; width: 100%; }
+.default-tag-plain-list .tag-timeline-items { border-left: 0 !important; padding-left: 0 !important; width: 100%; }
+.default-tag-plain-list .tag-timeline-item { width: 100%; grid-template-columns: minmax(0, 1fr) auto; }
+.default-tag-plain-list .tag-result-main { min-width: 0; }
+.default-tag-plain-list .tag-result-main strong,
+.default-tag-plain-list .tag-result-main small { white-space: normal; overflow-wrap: anywhere; }
+
+.attachment-preview-button { border: 0 !important; padding: 0 !important; background: transparent !important; cursor: zoom-in; width: 100%; }
+.image-lightbox { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 32px; }
+.image-lightbox-backdrop { position: absolute; inset: 0; border: 0; background: rgba(25,31,28,.78); }
+.image-lightbox img { position: relative; z-index: 1; max-width: min(94vw, 1600px); max-height: 90vh; object-fit: contain; border-radius: 12px; box-shadow: 0 20px 70px rgba(0,0,0,.35); }
+.image-lightbox-close { position: fixed; z-index: 2; top: max(18px, env(safe-area-inset-top)); right: 20px; width: 44px; height: 44px; border-radius: 50%; border: 0; font-size: 28px; cursor: pointer; }
+
+.scope-layer { z-index: 260; }
+.scope-dialog { position: relative; z-index: 1; width: min(420px, calc(100vw - 32px)); background: var(--panel, #fff); border-radius: 18px; padding: 24px; box-shadow: 0 18px 60px rgba(0,0,0,.18); }
+.scope-dialog h3 { margin: 0 0 8px; }
+.scope-dialog p { margin: 0 0 20px; opacity: .72; }
+.scope-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.scope-actions button { min-height: 42px; padding: 0 16px; border-radius: 12px; }
+
+@media (max-width: 620px) {
+  .default-tag-plain-list .tag-timeline-day { grid-template-columns: 1fr; gap: 8px; }
+  .image-lightbox { padding: 12px; }
+}
+
+/* v0.6 layout pass */
+.task-timing-toggle { margin-top: -2px; margin-bottom: 12px; }
+.deadline-postpone-row { align-items: end; }
+.postpone-inline { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; }
+.postpone-inline button { min-height: 44px; padding: 0 16px; border: 1px solid var(--line, #dbe2de); border-radius: 12px; background: #fff; cursor: pointer; }
+
+.scope-layer { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; }
+.scope-backdrop { position: absolute; inset: 0; z-index: 0; border: 0; background: rgba(27,34,31,.46); cursor: default; }
+.scope-dialog { position: relative; z-index: 2; width: min(420px, calc(100vw - 32px)); background: #fff; color: #36413c; border: 1px solid #dbe2de; border-radius: 18px; padding: 24px; box-shadow: 0 22px 70px rgba(0,0,0,.24); }
+.scope-actions { position: relative; z-index: 3; display: flex; justify-content: flex-end; gap: 10px; }
+.scope-actions button { position: relative; z-index: 4; pointer-events: auto; cursor: pointer; min-height: 44px; padding: 0 18px; border: 1px solid #d7dfda; border-radius: 12px; background: #fff; color: #39443f; }
+.scope-actions .save-button { background: #36594b; color: #fff; border-color: #36594b; }
+.scope-actions .delete-button { color: #a95751; }
+
+@media (max-width: 620px) {
+  .deadline-postpone-row { grid-template-columns: 1fr; }
+  .deadline-postpone-row > div:empty { display: none; }
+}
+
+/* v0.6 UI cleanup */
+.deadline-postpone-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: end;
+}
+.deadline-postpone-row > .field {
+  margin: 0;
+  align-self: end;
+}
+.deadline-postpone-row .postpone-field {
+  align-self: end;
+}
+.deadline-postpone-row .postpone-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+.deadline-postpone-row .postpone-inline input,
+.deadline-postpone-row .postpone-inline button {
+  min-height: 52px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 620px) {
+  .deadline-postpone-row { grid-template-columns: 1fr; gap: 14px; }
+}
+
+/* v0.6 hotfix: never show an empty task-history strip. */
+.task-history-strip:empty {
+  display: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.task-history-strip:not(:has(> *)) {
+  display: none !important;
+}
+
+/* v0.6.2 attachment UI */
+.attachment-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px !important;
+  margin-top: 12px;
+}
+.attachment-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: 132px auto;
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid #dbe2de;
+  border-radius: 14px;
+  background: #fff;
+}
+.attachment-image-button {
+  display: block;
+  width: 100%;
+  height: 132px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  overflow: hidden;
+  background: #f4f6f4 !important;
+  cursor: zoom-in;
+}
+.attachment-image-button img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+.attachment-card-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 38px 10px 12px;
+}
+.attachment-card-name {
+  overflow: hidden;
+  color: #35413b;
+  font-size: 14px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-card-size {
+  color: #929a96;
+  font-size: 12px;
+}
+.attachment-remove-button {
+  position: absolute;
+  right: 8px;
+  bottom: 10px;
+  width: 26px !important;
+  height: 26px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #dbe2de !important;
+  border-radius: 50% !important;
+  background: rgba(255,255,255,.94) !important;
+  color: #68736e;
+  font-size: 18px;
+  line-height: 22px;
+  cursor: pointer;
+}
+.attachment-loading {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: #98a19d;
+  font-size: 13px;
+}
+@media (max-width: 620px) {
+  .attachment-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .attachment-card { grid-template-rows: 104px auto; }
+  .attachment-image-button { height: 104px; }
+}
+
+/* v0.6.3 recurrence scope */
+.scope-actions-three { flex-wrap: wrap; }
+.scope-actions-three button { flex: 1 1 110px; }
+
+/* v0.6.6: compact postpone history beside task title */
+.task-title-input-wrap {
+  position: relative;
+}
+.task-title-input-wrap input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 112px;
+}
+.postpone-count {
+  position: absolute;
+  right: 11px;
+  bottom: 7px;
+  color: #929a95;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.postpone-count-high {
+  color: #c65d59;
+}

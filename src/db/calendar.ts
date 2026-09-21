@@ -1,9 +1,10 @@
 const DB_NAME = 'zing-calendar'
-const DB_VERSION = 3
+const DB_VERSION = 4
 const TASK_STORE = 'tasks'
 const JOURNAL_STORE = 'journalEntries'
 const MOOD_STORE = 'dailyMoods'
 const TAG_STORE = 'tags'
+const ATTACHMENT_STORE = 'attachments'
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -15,6 +16,7 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(JOURNAL_STORE)) db.createObjectStore(JOURNAL_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(MOOD_STORE)) db.createObjectStore(MOOD_STORE, { keyPath: 'date' })
       if (!db.objectStoreNames.contains(TAG_STORE)) db.createObjectStore(TAG_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(ATTACHMENT_STORE)) db.createObjectStore(ATTACHMENT_STORE)
     }
 
     request.onsuccess = () => resolve(request.result)
@@ -62,3 +64,16 @@ export const saveDailyMoods = <T,>(rows: T[]) => replaceAll(MOOD_STORE, rows)
 
 export const loadTags = <T,>() => loadAll<T>(TAG_STORE)
 export const saveTags = <T,>(rows: T[]) => replaceAll(TAG_STORE, rows)
+
+export async function putAttachmentBlob(key: string, blob: Blob): Promise<void> {
+  const db = await openDatabase()
+  try { await new Promise<void>((resolve, reject) => { const tx = db.transaction(ATTACHMENT_STORE, 'readwrite'); tx.objectStore(ATTACHMENT_STORE).put(blob, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error) }) } finally { db.close() }
+}
+export async function getAttachmentBlob(key: string): Promise<Blob | undefined> {
+  const db = await openDatabase()
+  try { return await new Promise((resolve, reject) => { const req = db.transaction(ATTACHMENT_STORE, 'readonly').objectStore(ATTACHMENT_STORE).get(key); req.onsuccess = () => resolve(req.result as Blob | undefined); req.onerror = () => reject(req.error) }) } finally { db.close() }
+}
+export async function deleteAttachmentBlob(key: string): Promise<void> {
+  const db = await openDatabase()
+  try { await new Promise<void>((resolve, reject) => { const tx = db.transaction(ATTACHMENT_STORE, 'readwrite'); tx.objectStore(ATTACHMENT_STORE).delete(key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error) }) } finally { db.close() }
+}
