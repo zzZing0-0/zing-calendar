@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getStorageStats, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks } from './db/calendar'
+import { cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks } from './db/calendar'
 import './App.css'
 
 type TaskPriority = 0 | 1 | 2 | 3
@@ -92,7 +92,7 @@ type AnniversaryDraft = {
 }
 
 type TagScope = 'task' | 'journal' | 'both'
-type Tag = { id: string; name: string; color: string; scope: TagScope; system?: boolean }
+type Tag = { id: string; name: string; color: string; scope: TagScope; system?: boolean; systemKind?: 'default' | 'import-source'; sourceKey?: string }
 
 type JournalDraft = {
   date: string
@@ -136,7 +136,12 @@ const MOODS: { value: MoodLevel; label: string }[] = [
 ]
 const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
-const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true }
+const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true, systemKind: 'default' }
+const IMPORT_SOURCE_TAG_PREFIX = 'system-import-source:'
+const DIDA_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida`
+const DIDA_SOURCE_TAG: Tag = { id: DIDA_SOURCE_TAG_ID, name: '从滴答导入', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'dida' }
+function isImportSourceTagId(id:string) { return id.startsWith(IMPORT_SOURCE_TAG_PREFIX) }
+function isImportSourceTag(tag:Tag) { return tag.systemKind === 'import-source' || isImportSourceTagId(tag.id) }
 const TAG_COLORS = ['#789c86', '#d3b64b', '#d88b48', '#c8665f', '#8798bd', '#9b83ad', '#789da3', '#a58d72']
 
 const ANNIVERSARY_TYPES: { value: AnniversaryType; label: string; icon: string }[] = [
@@ -486,13 +491,11 @@ function taskSort(a: Task, b: Task) {
   const statusDifference = statusRank(a) - statusRank(b)
   if (statusDifference !== 0) return statusDifference
 
-  if (a.status === 'todo' && b.status === 'todo') {
-    const aHasTime = !a.allDay && Boolean(a.time)
-    const bHasTime = !b.allDay && Boolean(b.time)
-    if (aHasTime !== bHasTime) return aHasTime ? -1 : 1
-    if (aHasTime && bHasTime && a.time !== b.time) return (a.time ?? '').localeCompare(b.time ?? '')
-    if (!aHasTime && !bHasTime && a.priority !== b.priority) return b.priority - a.priority
-  }
+  const aHasTime = !a.allDay && Boolean(a.time)
+  const bHasTime = !b.allDay && Boolean(b.time)
+  if (aHasTime !== bHasTime) return aHasTime ? -1 : 1
+  if (aHasTime && bHasTime && a.time !== b.time) return (a.time ?? '').localeCompare(b.time ?? '')
+  if (a.priority !== b.priority) return b.priority - a.priority
 
   return a.createdAt.localeCompare(b.createdAt)
 }
@@ -731,6 +734,183 @@ function solarToLunar(date: Date): LunarDateParts {
   }
 }
 
+
+type ZipEntry = { path: string; bytes: Uint8Array }
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff
+  for (const byte of bytes) {
+    crc ^= byte
+    for (let i=0;i<8;i+=1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1))
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+function zipDateTime(date: Date) {
+  const year=Math.max(1980,date.getFullYear())
+  return { time:(date.getHours()<<11)|(date.getMinutes()<<5)|(date.getSeconds()>>1), date:((year-1980)<<9)|((date.getMonth()+1)<<5)|date.getDate() }
+}
+function concatBytes(parts: Uint8Array[]) {
+  const total=parts.reduce((sum,part)=>sum+part.length,0), out=new Uint8Array(total); let offset=0
+  parts.forEach(part=>{ out.set(part,offset); offset+=part.length }); return out
+}
+function u16(value:number) { const b=new Uint8Array(2); new DataView(b.buffer).setUint16(0,value,true); return b }
+function u32(value:number) { const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,value>>>0,true); return b }
+function makeZip(entries: ZipEntry[]): Blob {
+  const encoder=new TextEncoder(), locals:Uint8Array[]=[], centrals:Uint8Array[]=[]; let offset=0
+  const stamp=zipDateTime(new Date())
+  entries.forEach(entry=>{
+    const name=encoder.encode(entry.path), crc=crc32(entry.bytes), size=entry.bytes.length
+    const local=concatBytes([u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(stamp.time),u16(stamp.date),u32(crc),u32(size),u32(size),u16(name.length),u16(0),name,entry.bytes])
+    locals.push(local)
+    centrals.push(concatBytes([u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(stamp.time),u16(stamp.date),u32(crc),u32(size),u32(size),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset),name]))
+    offset+=local.length
+  })
+  const centralBytes=concatBytes(centrals)
+  const end=concatBytes([u32(0x06054b50),u16(0),u16(0),u16(entries.length),u16(entries.length),u32(centralBytes.length),u32(offset),u16(0)])
+  const blobParts: BlobPart[] = [...locals, centralBytes, end].map(bytes => {
+    const copy = new Uint8Array(bytes.byteLength)
+    copy.set(bytes)
+    return copy.buffer
+  })
+  return new Blob(blobParts,{type:'application/zip'})
+}
+function safeBackupFilename(name:string) { return name.replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,' ').trim() || 'attachment' }
+function attachmentExtension(attachment: Attachment) {
+  const match=attachment.filename.match(/(\.[A-Za-z0-9]{1,8})$/)
+  if (match) return match[1].toLowerCase()
+  if (attachment.mimeType==='image/webp') return '.webp'
+  if (attachment.mimeType==='image/png') return '.png'
+  if (attachment.mimeType==='image/jpeg') return '.jpg'
+  if (attachment.mimeType.includes('webm')) return '.webm'
+  if (attachment.mimeType.includes('mp4')) return '.m4a'
+  return attachment.type==='image' ? '.img' : '.audio'
+}
+
+
+type BackupPreview = {
+  file: File
+  manifest: any
+  tasks: Task[]
+  journals: JournalEntry[]
+  moods: DailyMood[]
+  tags: Tag[]
+  anniversaries: Anniversary[]
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean }
+  attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
+}
+function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
+function readU32(view:DataView,offset:number){ return view.getUint32(offset,true) }
+async function readZingZip(file:File): Promise<Map<string,Uint8Array>> {
+  const bytes=new Uint8Array(await file.arrayBuffer()), view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength)
+  const decoder=new TextDecoder(), entries=new Map<string,Uint8Array>(); let offset=0
+  while (offset+4<=bytes.length) {
+    const signature=readU32(view,offset)
+    if (signature===0x02014b50 || signature===0x06054b50) break
+    if (signature!==0x04034b50) throw new Error('ZIP 结构无法识别')
+    const flags=readU16(view,offset+6), method=readU16(view,offset+8), compressedSize=readU32(view,offset+18), uncompressedSize=readU32(view,offset+22)
+    const nameLength=readU16(view,offset+26), extraLength=readU16(view,offset+28)
+    if (flags & 0x0008) throw new Error('不支持 data descriptor ZIP')
+    if (method!==0) throw new Error('备份 ZIP 使用了不支持的压缩方式')
+    const nameStart=offset+30, dataStart=nameStart+nameLength+extraLength, dataEnd=dataStart+compressedSize
+    if (dataEnd>bytes.length) throw new Error('ZIP 文件不完整')
+    const name=decoder.decode(bytes.slice(nameStart,nameStart+nameLength))
+    const payload=bytes.slice(dataStart,dataEnd)
+    if (payload.length!==uncompressedSize) throw new Error(`文件大小异常：${name}`)
+    entries.set(name,payload); offset=dataEnd
+  }
+  return entries
+}
+function decodeBackupJson<T>(entries:Map<string,Uint8Array>,path:string):T {
+  const bytes=entries.get(path); if (!bytes) throw new Error(`缺少 ${path}`)
+  try { return JSON.parse(new TextDecoder().decode(bytes)) as T } catch { throw new Error(`${path} 无法解析`) }
+}
+
+
+function csvCell(value:unknown) {
+  const text=value==null?'':String(value)
+  return `"${text.replace(/"/g,'""')}"`
+}
+function downloadTextFile(filename:string,text:string,mimeType:string) {
+  const blob=new Blob(['\ufeff',text],{type:mimeType}), url=URL.createObjectURL(blob), link=document.createElement('a')
+  link.href=url; link.download=filename; document.body.appendChild(link); link.click(); link.remove()
+  setTimeout(()=>URL.revokeObjectURL(url),1000)
+}
+
+
+type ExternalImportStage = 'sources' | 'dida-file' | 'dida-preview'
+type DidaImportPreview = {
+  fileName:string
+  total:number
+  tasks:Task[]
+  tags:Tag[]
+  duplicateCount:number
+  skippedNoDate:number
+  strippedAttachmentCount:number
+  ignoredChecklistCount:number
+}
+function parseCsvRows(text:string): string[][] {
+  const rows:string[][]=[]; let row:string[]=[], field='', quoted=false
+  const pushField=()=>{ row.push(field); field='' }
+  const pushRow=()=>{ pushField(); if(row.some(cell=>cell.length>0)) rows.push(row); row=[] }
+  for(let i=0;i<text.length;i++){
+    const ch=text[i]
+    if(quoted){
+      if(ch==='"' && text[i+1]==='"'){ field+='"'; i++ }
+      else if(ch==='"') quoted=false
+      else field+=ch
+    } else {
+      if(ch==='"') quoted=true
+      else if(ch===',') pushField()
+      else if(ch==='\n') pushRow()
+      else if(ch==='\r') { if(text[i+1]==='\n') i++; pushRow() }
+      else field+=ch
+    }
+  }
+  if(field.length || row.length) pushRow()
+  return rows
+}
+function didaIso(value:string) {
+  if(!value) return ''
+  return value.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')
+}
+function zonedParts(value:string, timeZone:string) {
+  if(!value) return null
+  const date=new Date(didaIso(value))
+  if(Number.isNaN(date.getTime())) return null
+  try {
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:timeZone||'UTC',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date)
+    const get=(type:string)=>parts.find(part=>part.type===type)?.value ?? ''
+    return { date:`${get('year')}-${get('month')}-${get('day')}`, time:`${get('hour')}:${get('minute')}` }
+  } catch {
+    return { date:date.toISOString().slice(0,10), time:date.toISOString().slice(11,16) }
+  }
+}
+function cleanDidaContent(value:string) {
+  const attachmentPattern=/!\[[^\]]*\]\([^)]*\)/g
+  const matches=value.match(attachmentPattern)?.length ?? 0
+  const text=value.replace(attachmentPattern,'').replace(/\r\n?/g,'\n').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim()
+  return { text, removed:matches }
+}
+function parseDidaRecurrence(value:string): RecurrenceRule | undefined {
+  if(!value) return undefined
+  const parts=Object.fromEntries(value.split(';').map(piece=>{ const [key,...rest]=piece.split('='); return [key,rest.join('=')] }))
+  const freq=(parts.FREQ||'').toUpperCase()
+  const unit:RecurrenceUnit|undefined=freq==='DAILY'?'day':freq==='WEEKLY'?'week':freq==='MONTHLY'?'month':freq==='YEARLY'?'year':undefined
+  if(!unit) return undefined
+  const count=Number.parseInt(parts.COUNT||'',10)
+  if(Number.isFinite(count) && count<=1) return undefined
+  const interval=Math.max(1,Number.parseInt(parts.INTERVAL||'1',10)||1)
+  const dayMap:Record<string,number>={MO:1,TU:2,WE:3,TH:4,FR:5,SA:6,SU:0}
+  const weekdays=parts.BYDAY?.split(',').map(day=>dayMap[day]).filter(day=>day!==undefined)
+  let end:RecurrenceEnd|undefined
+  if(Number.isFinite(count) && count>1) end={type:'count',count}
+  else if(/^\d{8}$/.test(parts.UNTIL||'')) end={type:'date',date:`${parts.UNTIL.slice(0,4)}-${parts.UNTIL.slice(4,6)}-${parts.UNTIL.slice(6,8)}`}
+  return {unit,interval,...(weekdays?.length?{weekdays}:{}),...(end?{end}:{})}
+}
+function splitImportedTagNames(value:string) {
+  return value.split(/[;,\n]+/).map(item=>item.trim()).filter(Boolean)
+}
+
 function App() {
   const today = new Date()
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
@@ -743,6 +923,17 @@ function App() {
   const [showEndedTasks, setShowEndedTasks] = useState(() => localStorage.getItem('zing:showEndedTasks') !== 'false')
   const [storageStats, setStorageStats] = useState({ total:0, images:0, audio:0, data:0, attachmentCount:0 })
   const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
+  const [backupExporting, setBackupExporting] = useState(false)
+  const [backupMessage, setBackupMessage] = useState('')
+  const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
+  const [backupRestoring, setBackupRestoring] = useState(false)
+  const backupInputRef = useRef<HTMLInputElement|null>(null)
+  const [externalImportOpen, setExternalImportOpen] = useState(false)
+  const [externalImportStage, setExternalImportStage] = useState<ExternalImportStage>('sources')
+  const [didaImportPreview, setDidaImportPreview] = useState<DidaImportPreview|null>(null)
+  const [externalImportBusy, setExternalImportBusy] = useState(false)
+  const [externalImportMessage, setExternalImportMessage] = useState('')
+  const externalImportInputRef = useRef<HTMLInputElement|null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFilter, setSearchFilter] = useState<'all' | 'task' | 'journal' | 'anniversary'>('all')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -1123,18 +1314,36 @@ function App() {
   }, [displayTasks])
 
   const multiDaySegments = useMemo(() => buildMultiDaySegments(displayTasks, days), [displayTasks, days])
-  // Reserve multi-day lanes per *day*, not per whole week. A short range such as
-  // 18–19 must not leave a ghost empty slot on the 20th.
-  const multiDayLaneCountsByDay = useMemo(() => days.map(({ date }) => {
-    const key = toDateKey(date)
-    // Reserve space only for multi-day tasks that actually cover this date.
-    // This deliberately ignores a lane used on a neighbouring date, so a
-    // short 18–19 range can never create a ghost blank row on the 20th.
-    return displayTasks.filter(task => isMultiDayTask(task) && task.status === 'todo' && taskCoversDate(task, key)).length
-  }), [days, displayTasks])
+  // Reserve exact physical multi-day lane indices for each date.
+  const occupiedMultiLanesByDay = useMemo(() => days.map((_, dayIndex) => {
+    const week = Math.floor(dayIndex / 7)
+    const column = dayIndex % 7
+    return new Set(multiDaySegments
+      .filter(segment => segment.week === week && column >= segment.startColumn && column < segment.startColumn + segment.span)
+      .map(segment => segment.lane)
+      .filter(lane => lane >= 0 && lane < 5))
+  }), [days, multiDaySegments])
+
+  const endedTasksViewToggle = (className='') => (
+    <label className={`ended-view-toggle ${className}`.trim()} title="显示或隐藏已完成和已放弃任务">
+      <span>已结束</span>
+      <input type="checkbox" checked={showEndedTasks} onChange={event=>setShowEndedTasks(event.target.checked)} />
+      <i aria-hidden="true" />
+    </label>
+  )
 
   const moveMonth = (offset: number) => {
     setVisibleMonth(current => new Date(current.getFullYear(), current.getMonth() + offset, 1))
+  }
+
+  const openMultiDaySegmentDate = (event: React.MouseEvent<HTMLButtonElement>, segment: MultiDaySegment) => {
+    event.stopPropagation()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const relativeX = Math.max(0, Math.min(rect.width - 0.001, event.clientX - rect.left))
+    const columnOffset = Math.min(segment.span - 1, Math.floor(relativeX / (rect.width / segment.span)))
+    const dayIndex = segment.week * 7 + segment.startColumn + columnOffset
+    const clickedDay = days[dayIndex]?.date
+    if (clickedDay) openDay(clickedDay)
   }
 
   const goToday = () => {
@@ -1459,10 +1668,11 @@ function App() {
 
   const toggleDraftTag = (kind: 'task' | 'journal', id: string) => {
     const update = (ids: string[]) => {
-      const real = ids.filter(tagId => tagId !== DEFAULT_TAG_ID)
-      if (id === DEFAULT_TAG_ID) return [DEFAULT_TAG_ID]
+      const managed = ids.filter(isImportSourceTagId)
+      const real = ids.filter(tagId => tagId !== DEFAULT_TAG_ID && !isImportSourceTagId(tagId))
+      if (id === DEFAULT_TAG_ID) return [DEFAULT_TAG_ID, ...managed]
       const next = real.includes(id) ? real.filter(tagId => tagId !== id) : [...real, id]
-      return next.length ? next : [DEFAULT_TAG_ID]
+      return next.length ? [...next, ...managed] : [DEFAULT_TAG_ID, ...managed]
     }
     if (kind === 'task') setDraft(current => ({ ...current, tagIds: update(current.tagIds) }))
     else setJournalDraft(current => ({ ...current, tagIds: update(current.tagIds) }))
@@ -1476,7 +1686,7 @@ function App() {
   }
 
   const deleteTag = (id: string) => {
-    if (id === DEFAULT_TAG_ID) return
+    if (id === DEFAULT_TAG_ID || tags.find(tag=>tag.id===id)?.system) return
     setTags(current => current.filter(tag => tag.id !== id))
     const clean = (ids?: string[]) => {
       const next = (ids ?? []).filter(tagId => tagId !== id && tagId !== DEFAULT_TAG_ID)
@@ -1486,7 +1696,7 @@ function App() {
     setJournalEntries(current => current.map(entry => ({ ...entry, tagIds: clean(entry.tagIds) })))
   }
 
-  const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => tag.scope === 'both' || tag.scope === kind).sort((a, b) => Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID))
+  const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => !isImportSourceTag(tag) && (tag.scope === 'both' || tag.scope === kind)).sort((a, b) => Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID))
 
   const browsingTag = browsingTagId ? tags.find(tag => tag.id === browsingTagId) ?? null : null
   const taggedTasks = browsingTag ? tasks
@@ -1665,6 +1875,236 @@ function App() {
   }, [tasks, journalEntries])
   const browsedAttachments = storageBrowser ? allStoredAttachments.filter(item => item.type === storageBrowser) : []
 
+  const openExternalImport = () => {
+    setExternalImportOpen(true); setExternalImportStage('sources'); setDidaImportPreview(null); setExternalImportMessage('')
+  }
+  const closeExternalImport = () => {
+    if(externalImportBusy) return
+    setExternalImportOpen(false); setExternalImportStage('sources'); setDidaImportPreview(null); setExternalImportMessage('')
+    if(externalImportInputRef.current) externalImportInputRef.current.value=''
+  }
+  const inspectDidaCsv = async (file:File) => {
+    setExternalImportBusy(true); setExternalImportMessage('正在解析滴答清单…')
+    try {
+      const text=await file.text(), rows=parseCsvRows(text)
+      const headerIndex=rows.findIndex(row=>row[0]==='Folder Name' && row.includes('Title') && row.includes('taskId'))
+      if(headerIndex<0) throw new Error('没有找到滴答清单 CSV 表头')
+      const header=rows[headerIndex]
+      const sourceRows=rows.slice(headerIndex+1).filter(row=>row.some(cell=>cell.trim()))
+      const existingIds=new Set(tasks.map(task=>task.id))
+      const tagByName=new Map<string,Tag>(tags.filter(tag=>!isImportSourceTag(tag)).map(tag=>[tag.name.trim().toLowerCase(),tag] as [string,Tag]))
+      const importedTags:Tag[]=[]
+      let duplicateCount=0, skippedNoDate=0, strippedAttachmentCount=0, ignoredChecklistCount=0
+      const converted:Task[]=[]
+      sourceRows.forEach((row,rowIndex)=>{
+        const get=(name:string)=>row[header.indexOf(name)] ?? ''
+        const taskId=get('taskId').trim() || `row-${rowIndex+1}`
+        const id=`import:dida:${taskId}`
+        if(existingIds.has(id)){ duplicateCount++; return }
+        const timezone=get('Timezone') || 'Asia/Shanghai'
+        const start=zonedParts(get('Start Date'),timezone), due=zonedParts(get('Due Date'),timezone)
+        const base=start ?? due
+        if(!base){ skippedNoDate++; return }
+        const allDay=get('Is All Day').toLowerCase()==='true'
+        const content=cleanDidaContent(get('Content')); strippedAttachmentCount+=content.removed
+        if(get('Kind')==='CHECKLIST' || get('Is Check list')==='Y') ignoredChecklistCount++
+        const ordinaryTagIds:string[]=[]
+        splitImportedTagNames(get('Tags')).forEach(name=>{
+          const key=name.toLowerCase()
+          let tag=tagByName.get(key)
+          if(!tag){
+            tag={id:`import:dida:tag:${crypto.randomUUID()}`,name,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'task'}
+            tagByName.set(key,tag); importedTags.push(tag)
+          }
+          ordinaryTagIds.push(tag.id)
+        })
+        const tagIds=ordinaryTagIds.length ? [...new Set([...ordinaryTagIds,DIDA_SOURCE_TAG_ID])] : [DEFAULT_TAG_ID,DIDA_SOURCE_TAG_ID]
+        const statusRaw=get('Status')
+        const status:TaskStatus=statusRaw==='2'?'completed':statusRaw==='-1'?'abandoned':'todo'
+        const priorityRaw=Number.parseInt(get('Priority')||'0',10)
+        const priority:TaskPriority=priorityRaw>=5?3:priorityRaw>=3?2:priorityRaw>=1?1:0
+        const createdRaw=didaIso(get('Created Time'))
+        const completedRaw=didaIso(get('Completed Time'))
+        const recurrence=parseDidaRecurrence(get('Repeat'))
+        const endDate=due && due.date!==base.date ? due.date : undefined
+        converted.push({
+          id,title:get('Title').trim() || '未命名任务',date:base.date,...(endDate?{endDate}:{}),priority,status,allDay,
+          ...(!allDay?{time:base.time}:{}),
+          ...(content.text?{notes:content.text}:{}),
+          createdAt:createdRaw && !Number.isNaN(new Date(createdRaw).getTime()) ? new Date(createdRaw).toISOString() : new Date().toISOString(),
+          updatedAt:new Date().toISOString(),
+          ...(status==='completed' && completedRaw && !Number.isNaN(new Date(completedRaw).getTime())?{completedAt:new Date(completedRaw).toISOString()}:{}),
+          tagIds,...(recurrence?{recurrence}:{})
+        })
+      })
+      const finalTags=tags.some(tag=>tag.id===DIDA_SOURCE_TAG_ID) ? importedTags : [DIDA_SOURCE_TAG,...importedTags]
+      setDidaImportPreview({fileName:file.name,total:sourceRows.length,tasks:converted,tags:finalTags,duplicateCount,skippedNoDate,strippedAttachmentCount,ignoredChecklistCount})
+      setExternalImportStage('dida-preview'); setExternalImportMessage('')
+    } catch(error) {
+      console.error('Failed to inspect Dida CSV',error)
+      setDidaImportPreview(null); setExternalImportMessage(error instanceof Error?`无法读取：${error.message}`:'无法读取这个文件')
+    } finally {
+      setExternalImportBusy(false)
+      if(externalImportInputRef.current) externalImportInputRef.current.value=''
+    }
+  }
+  const importDidaCsv = async () => {
+    if(!didaImportPreview || externalImportBusy) return
+    setExternalImportBusy(true); setExternalImportMessage('正在导入…')
+    try {
+      const mergedTasks=[...tasks,...didaImportPreview.tasks]
+      const existingTagIds=new Set(tags.map(tag=>tag.id))
+      const mergedTags=[...tags,...didaImportPreview.tags.filter(tag=>!existingTagIds.has(tag.id))]
+      await Promise.all([saveTasks(mergedTasks),saveTags(mergedTags)])
+      setTasks(mergedTasks); setTags(mergedTags)
+      const imported=didaImportPreview.tasks.length
+      setDidaImportPreview(null); setExternalImportMessage(`已导入 ${imported} 条任务`)
+      setExternalImportStage('sources')
+    } catch(error) {
+      console.error('Failed to import Dida CSV',error)
+      setExternalImportMessage(error instanceof Error?`导入失败：${error.message}`:'导入失败')
+    } finally { setExternalImportBusy(false) }
+  }
+
+  const exportTasksCsv = () => {
+    const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
+    const rows=[
+      ['id','title','start_date','end_date','all_day','time','priority','status','deadline','completed_at','original_date','postpone_count','repeat_rule','tags','notes','attachment_count','created_at','updated_at'],
+      ...tasks.map(task=>[
+        task.id,task.title,task.date,task.endDate??'',task.allDay,task.time??'',`P${task.priority}`,task.status,task.deadline??'',task.completedAt??'',task.originalDate??'',
+        task.postponeHistory?.length??0,task.recurrence?JSON.stringify(task.recurrence):'',(task.tagIds??[]).map(tagName).join(' | '),task.notes??'',task.attachments?.length??0,task.createdAt,task.updatedAt
+      ])
+    ]
+    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
+    downloadTextFile(`zing-tasks-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
+    setBackupMessage(`任务 CSV 已导出 · ${tasks.length} 条`)
+  }
+
+  const exportJournalsCsv = () => {
+    const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
+    const rows=[
+      ['id','date','time','title','event_impact','tags','body_markdown','image_count','audio_count','created_at','updated_at'],
+      ...journalEntries.map(entry=>[
+        entry.id,entry.date,entry.time??'',entry.title,entry.impact,(entry.tagIds??[]).map(tagName).join(' | '),entry.content??'',
+        (entry.attachments??[]).filter(item=>item.type==='image').length,(entry.attachments??[]).filter(item=>item.type==='audio').length,entry.createdAt,entry.updatedAt
+      ])
+    ]
+    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
+    downloadTextFile(`zing-journals-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
+    setBackupMessage(`记录 CSV 已导出 · ${journalEntries.length} 条`)
+  }
+
+  const exportFullBackup = async () => {
+    if (backupExporting) return
+    setBackupExporting(true); setBackupMessage('正在整理备份…')
+    try {
+      const encoder=new TextEncoder()
+      const json=(value:unknown)=>encoder.encode(JSON.stringify(value,null,2))
+      const exportedAt=new Date().toISOString()
+      const attachmentRows:{ storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string }[]=[]
+      const entries:ZipEntry[]=[
+        {path:'data/tasks.json',bytes:json(tasks)},
+        {path:'data/journals.json',bytes:json(journalEntries)},
+        {path:'data/moods.json',bytes:json(dailyMoods)},
+        {path:'data/tags.json',bytes:json(tags)},
+        {path:'data/anniversaries.json',bytes:json(anniversaries)},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks})},
+      ]
+      for (let index=0; index<allStoredAttachments.length; index+=1) {
+        const attachment=allStoredAttachments[index]
+        setBackupMessage(`正在读取附件 ${index+1}/${allStoredAttachments.length}…`)
+        const blob=await getAttachmentBlob(attachment.storageKey)
+        if (!blob) throw new Error(`找不到附件：${attachment.filename}`)
+        const base=safeBackupFilename(attachment.filename.replace(/\.[A-Za-z0-9]{1,8}$/,''))
+        const path=`attachments/${String(index+1).padStart(4,'0')}-${base}${attachmentExtension(attachment)}`
+        entries.push({path,bytes:new Uint8Array(await blob.arrayBuffer())})
+        attachmentRows.push({storageKey:attachment.storageKey,path,filename:attachment.filename,mimeType:attachment.mimeType,size:blob.size,type:attachment.type,duration:attachment.duration,createdAt:attachment.createdAt})
+      }
+      const manifest={format:'zing-calendar-backup',schemaVersion:1,appVersion:'0.6.22',exportedAt,
+        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,tags:tags.length,anniversaries:anniversaries.length,attachments:attachmentRows.length},
+        attachments:attachmentRows}
+      entries.unshift({path:'manifest.json',bytes:json(manifest)})
+      setBackupMessage('正在生成 ZIP…')
+      const zip=makeZip(entries), url=URL.createObjectURL(zip), link=document.createElement('a')
+      const d=new Date(), stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}-${String(d.getMinutes()).padStart(2,'0')}`
+      link.href=url; link.download=`zing-backup-${stamp}.zip`; document.body.appendChild(link); link.click(); link.remove()
+      setTimeout(()=>URL.revokeObjectURL(url),1000)
+      setBackupMessage(`备份完成 · ${formatBytes(zip.size)}`)
+    } catch (error) {
+      console.error('Failed to export Zing backup',error)
+      setBackupMessage(error instanceof Error ? `备份失败：${error.message}` : '备份失败')
+    } finally { setBackupExporting(false) }
+  }
+
+
+  const inspectBackupFile = async (file:File) => {
+    setBackupMessage('正在验证备份…')
+    try {
+      const entries=await readZingZip(file)
+      const manifest=decodeBackupJson<any>(entries,'manifest.json')
+      if (manifest?.format!=='zing-calendar-backup' || manifest?.schemaVersion!==1) throw new Error('这不是可识别的 Zing Backup v1')
+      const tasks=decodeBackupJson<Task[]>(entries,'data/tasks.json')
+      const journals=decodeBackupJson<JournalEntry[]>(entries,'data/journals.json')
+      const moods=decodeBackupJson<DailyMood[]>(entries,'data/moods.json')
+      const restoredTags=decodeBackupJson<Tag[]>(entries,'data/tags.json')
+      const restoredAnniversaries=decodeBackupJson<Anniversary[]>(entries,'data/anniversaries.json')
+      const settings=decodeBackupJson<BackupPreview['settings']>(entries,'data/settings.json')
+      if (![tasks,journals,moods,restoredTags,restoredAnniversaries].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
+      const rows=Array.isArray(manifest.attachments)?manifest.attachments:[]
+      const attachments=rows.map((row:any)=>{
+        if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
+        const bytes=entries.get(row.path); if (!bytes) throw new Error(`缺少附件：${row.filename ?? row.path}`)
+        if (typeof row.size==='number' && bytes.length!==row.size) throw new Error(`附件大小不一致：${row.filename ?? row.path}`)
+        return {...row,bytes}
+      })
+      const expected=manifest.counts ?? {}
+      if ((expected.tasks??tasks.length)!==tasks.length || (expected.journals??journals.length)!==journals.length ||
+          (expected.moods??moods.length)!==moods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
+          (expected.anniversaries??restoredAnniversaries.length)!==restoredAnniversaries.length ||
+          (expected.attachments??attachments.length)!==attachments.length) throw new Error('备份数量校验失败')
+      setBackupPreview({file,manifest,tasks,journals,moods,tags:restoredTags,anniversaries:restoredAnniversaries,settings,attachments})
+      setBackupMessage('')
+    } catch(error) {
+      console.error('Failed to inspect backup',error)
+      setBackupPreview(null); setBackupMessage(error instanceof Error?`备份无效：${error.message}`:'备份无效')
+    } finally {
+      if (backupInputRef.current) backupInputRef.current.value=''
+    }
+  }
+
+  const restoreBackup = async () => {
+    if (!backupPreview || backupRestoring) return
+    setBackupRestoring(true); setBackupMessage('正在恢复数据…')
+    try {
+      // The archive is fully parsed and validated before any local write begins.
+      await replaceZingData({
+        tasks:backupPreview.tasks,journals:backupPreview.journals,moods:backupPreview.moods,
+        tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,
+        attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
+          const copy = new Uint8Array(item.bytes.byteLength)
+          copy.set(item.bytes)
+          return copy.buffer
+        })()],{type:item.mimeType})}))
+      })
+      const s=backupPreview.settings ?? {}
+      if (s.greeting!==undefined) localStorage.setItem('zing:greeting',s.greeting || 'Hello, Zing')
+      if (s.weekStart) localStorage.setItem('zing:weekStart',s.weekStart)
+      if (s.dateFormat) localStorage.setItem('zing:dateFormat',s.dateFormat)
+      if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
+      setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods)
+      setTags(backupPreview.tags); setAnniversaries(backupPreview.anniversaries)
+      if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
+      if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
+      if (s.dateFormat) setDateFormat(s.dateFormat)
+      if (typeof s.showEndedTasks==='boolean') setShowEndedTasks(s.showEndedTasks)
+      setBackupPreview(null); setBackupMessage('恢复完成')
+      setStorageStats(await getStorageStats())
+    } catch(error) {
+      console.error('Failed to restore backup',error)
+      setBackupMessage(error instanceof Error?`恢复失败：${error.message}`:'恢复失败')
+    } finally { setBackupRestoring(false) }
+  }
+
   const browseTag = (id: string) => {
     setOpenTagColorId(null)
     setTagManagerOpen(false)
@@ -1715,7 +2155,7 @@ function App() {
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>Today</button>
           </div>
-
+          {endedTasksViewToggle('calendar-ended-toggle')}
         </div>
 
         <div className="weekday-row">
@@ -1732,19 +2172,18 @@ function App() {
             // slots only on dates they actually cover; the remaining slots are
             // available to ordinary tasks. This avoids showing “+1” while the
             // lower half of an otherwise empty cell is still unused.
-            const occupiedLanes = multiDayLaneCountsByDay[dayIndex]
-            const availableSlots = Math.max(0, 5 - occupiedLanes)
-            // If everything fits, show every single-day task. If anything overflows,
-            // reserve the final visible slot for a complete +x row.
-            const previewCapacity = dayTasks.length <= availableSlots ? availableSlots : Math.max(0, availableSlots - 1)
-            const visibleDayTasks = dayTasks.slice(0, previewCapacity)
+            const occupiedLanes = occupiedMultiLanesByDay[dayIndex]
+            const freeSlots = [0, 1, 2, 3, 4].filter(slot => !occupiedLanes.has(slot))
+            const visibleCapacity = dayTasks.length <= freeSlots.length ? freeSlots.length : Math.max(0, freeSlots.length - 1)
+            const visibleDayTasks = dayTasks.slice(0, visibleCapacity)
+            const visibleTaskSlots = freeSlots.slice(0, visibleDayTasks.length)
             const hiddenDayTaskCount = Math.max(0, dayTasks.length - visibleDayTasks.length)
+            const overflowSlot = hiddenDayTaskCount > 0 ? freeSlots[visibleDayTasks.length] : undefined
             return (
               <button
                 key={key}
                 type="button"
                 className={`day-cell${inCurrentMonth ? '' : ' outside-month'}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}`}
-                style={{ '--multi-offset': `${multiDayLaneCountsByDay[dayIndex] * 26}px` } as any}
                 aria-label={formatDate(date)}
                 onClick={() => openDay(date)}
               >
@@ -1767,14 +2206,14 @@ function App() {
                 )}
                 {dayTasks.length > 0 && (
                   <span className="task-preview-list">
-                    {visibleDayTasks.map(task => (
-                      <span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`}>
-                        <span className="priority-dot" />
+                    {visibleDayTasks.map((task, visibleIndex) => (
+                      <span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{ '--calendar-slot': visibleTaskSlots[visibleIndex] } as any}>
+                        {task.status === 'todo' ? <span className="priority-dot" /> : <span className="calendar-status-mark" aria-label={task.status === 'completed' ? '已完成' : '已放弃'}>{task.status === 'completed' ? '✓' : '×'}</span>}
                         <span className="task-preview-title">{task.title}</span>
                         {!task.allDay && task.time && <span className="task-preview-time">{task.time}</span>}
                       </span>
                     ))}
-                    {hiddenDayTaskCount > 0 && <span className="more-tasks">+{hiddenDayTaskCount}</span>}
+                    {hiddenDayTaskCount > 0 && overflowSlot !== undefined && <span className="more-tasks" style={{ '--calendar-slot': overflowSlot } as any}>+{hiddenDayTaskCount}</span>}
                   </span>
                 )}
               </button>
@@ -1787,11 +2226,11 @@ function App() {
                 type="button"
                 className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`}
                 style={{ gridColumn: `${segment.startColumn + 1} / span ${segment.span}`, gridRow: segment.week + 1, '--lane-offset': `${segment.lane * 26}px` } as CSSProperties}
-                onClick={event => { event.stopPropagation(); editTask(segment.task) }}
+                onClick={event => openMultiDaySegmentDate(event, segment)}
                 title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}
               >
-                <span className="priority-dot" />
-                <span>{segment.task.title}</span>
+                {segment.task.status === 'todo' ? <span className="priority-dot" /> : <span className="calendar-status-mark" aria-label={segment.task.status === 'completed' ? '已完成' : '已放弃'}>{segment.task.status === 'completed' ? '✓' : '×'}</span>}
+                <span className="multi-day-title">{segment.task.title}</span>
               </button>
             ))}
           </div>
@@ -1864,12 +2303,100 @@ function App() {
               <small>任务 {tasks.length} · 记录 {journalEntries.length} · 纪念日 {anniversaries.length} · 附件 {storageStats.attachmentCount}</small>
             </div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务与记录共用的标签。</small></span><b>›</b></button>
-            <button className="settings-link-row coming-soon" type="button"><span><strong>数据与备份</strong><small>导入、导出与备份将在下一阶段加入。</small></span><b>›</b></button>
+            <div className="backup-settings-block">
+              <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
+                <span><strong>导出完整备份</strong><small>任务、记录、心情、标签、纪念日、设置与所有附件打包为 ZIP。</small></span>
+                <b>{backupExporting?'…':'↓'}</b>
+              </button>
+              <button className="settings-link-row backup-import-row" type="button" onClick={()=>backupInputRef.current?.click()}>
+                <span><strong>恢复完整备份</strong><small>先验证 ZIP 并显示摘要，确认后才替换当前设备数据。</small></span><b>↑</b>
+              </button>
+              <input ref={backupInputRef} className="backup-file-input" type="file" accept=".zip,application/zip" onChange={event=>{ const file=event.target.files?.[0]; if(file) void inspectBackupFile(file) }} />
+              <button className="settings-link-row external-import-row" type="button" onClick={openExternalImport}>
+                <span><strong>从外部导入</strong><small>选择数据来源并预览后导入；外部数据只映射 Zing 支持的字段。</small></span><b>›</b>
+              </button>
+              <div className="plain-export-heading"><strong>通用导出</strong><small>CSV 可直接用 Numbers、Excel 或其他软件打开，不用于 Zing 完整恢复。</small></div>
+              <div className="plain-export-actions">
+                <button type="button" onClick={exportTasksCsv}><span>任务 CSV</span><b>↓</b></button>
+                <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
+              </div>
+              {backupMessage && <div className="backup-status" role="status">{backupMessage}</div>}
+            </div>
           </div>
         </section>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !browsingTagId && !viewingJournalId && !storageBrowser && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {externalImportOpen && (
+        <div className="modal-layer external-import-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭外部导入" onClick={closeExternalImport} />
+          <section className="task-editor external-import-modal" role="dialog" aria-modal="true" aria-label="从外部导入">
+            <div className="editor-header">
+              <div><span className="eyebrow">IMPORT</span><h2>从外部导入</h2></div>
+              <button className="close-button" type="button" onClick={closeExternalImport} disabled={externalImportBusy}>×</button>
+            </div>
+            <div className="editor-body">
+              {externalImportStage==='sources' && <>
+                <p className="external-import-intro">外部数据会适配 Zing 的数据模型；Zing 没有的字段不会强行保存，需要时请回原 App 查看。</p>
+                <button className="import-source-card" type="button" onClick={()=>{setExternalImportStage('dida-file');setExternalImportMessage('')}}>
+                  <span className="import-source-icon">滴</span><span><strong>滴答清单</strong><small>TickTick / Dida CSV 备份</small></span><b>›</b>
+                </button>
+                <div className="import-source-placeholder"><strong>其他来源</strong><small>以后可以继续添加 Todoist、Microsoft To Do 或其他格式，不需要改动这个入口。</small></div>
+              </>}
+              {externalImportStage==='dida-file' && <>
+                <button className="import-back-link" type="button" onClick={()=>setExternalImportStage('sources')}>‹ 返回来源</button>
+                <div className="import-file-panel">
+                  <strong>滴答清单 CSV</strong>
+                  <p>只导入 Zing 能表达的任务字段。滴答内部附件路径会被丢弃，不占用备注；导入记录会自动带系统标签「从滴答导入」。</p>
+                  <button className="save-button" type="button" disabled={externalImportBusy} onClick={()=>externalImportInputRef.current?.click()}>{externalImportBusy?'正在解析…':'选择 CSV 文件'}</button>
+                  <input ref={externalImportInputRef} className="backup-file-input" type="file" accept=".csv,text/csv" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectDidaCsv(file)}} />
+                </div>
+              </>}
+              {externalImportStage==='dida-preview' && didaImportPreview && <>
+                <button className="import-back-link" type="button" onClick={()=>{setExternalImportStage('dida-file');setDidaImportPreview(null)}}>‹ 重新选择</button>
+                <div className="import-preview-header"><strong>{didaImportPreview.fileName}</strong><small>解析完成，确认后才会写入 Zing。</small></div>
+                <div className="import-preview-grid">
+                  <span>识别记录<b>{didaImportPreview.total}</b></span>
+                  <span>将导入<b>{didaImportPreview.tasks.length}</b></span>
+                  <span>重复跳过<b>{didaImportPreview.duplicateCount}</b></span>
+                  <span>无日期跳过<b>{didaImportPreview.skippedNoDate}</b></span>
+                  <span>附件路径丢弃<b>{didaImportPreview.strippedAttachmentCount}</b></span>
+                  <span>清单型任务<b>{didaImportPreview.ignoredChecklistCount}</b></span>
+                </div>
+                <div className="import-rule-note">
+                  <strong>本次规则</strong>
+                  <p>标题、日期/时间、优先级、状态、完成时间、备注、重复规则与可识别标签会迁入；Zing 不支持的字段直接忽略。清单型任务保留文字内容，但不保留滴答的清单结构。系统标签由程序维护，普通任务不会出现「从滴答导入」。</p>
+                </div>
+                <div className="backup-restore-actions">
+                  <button type="button" onClick={closeExternalImport} disabled={externalImportBusy}>取消</button>
+                  <button className="primary" type="button" onClick={()=>void importDidaCsv()} disabled={externalImportBusy || didaImportPreview.tasks.length===0}>{externalImportBusy?'正在导入…':`导入 ${didaImportPreview.tasks.length} 条`}</button>
+                </div>
+              </>}
+              {externalImportMessage && <div className="backup-status" role="status">{externalImportMessage}</div>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {backupPreview && (
+        <div className="backup-restore-backdrop" role="presentation">
+          <section className="backup-restore-modal" role="dialog" aria-modal="true" aria-label="确认恢复备份">
+            <h2>Zing Backup</h2>
+            <p className="backup-restore-date">{new Date(backupPreview.manifest.exportedAt).toLocaleString()}</p>
+            <div className="backup-summary-grid">
+              <span>任务 <b>{backupPreview.tasks.length}</b></span><span>记录 <b>{backupPreview.journals.length}</b></span>
+              <span>心情 <b>{backupPreview.moods.length}</b></span><span>标签 <b>{backupPreview.tags.length}</b></span>
+              <span>纪念日 <b>{backupPreview.anniversaries.length}</b></span><span>附件 <b>{backupPreview.attachments.length}</b></span>
+            </div>
+            <p className="backup-restore-warning">恢复后将替换当前设备中的 Zing Calendar 数据。请确认当前数据已经另行备份。</p>
+            <div className="backup-restore-actions">
+              <button type="button" onClick={()=>setBackupPreview(null)} disabled={backupRestoring}>取消</button>
+              <button className="primary" type="button" onClick={()=>void restoreBackup()} disabled={backupRestoring}>{backupRestoring?'正在恢复…':'恢复此备份'}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !browsingTagId && !viewingJournalId && !storageBrowser && !backupPreview && !externalImportOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => setMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => setMainView('anniversaries')}><span>🎂</span>纪念日</button>
@@ -1894,7 +2421,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.6.21.5.3.1</span>
+        <span>Zing Calendar · v0.6.25.6.1</span>
       </footer>
 
       {selectedDate && (
@@ -1927,9 +2454,9 @@ function App() {
             )}
 
             <section className="detail-section task-section">
-              <div className="section-heading">
-                <h3>任务</h3>
-                {selectedTasks.length > 0 && <span>{selectedTasks.length}</span>}
+              <div className="section-heading task-section-heading">
+                <div className="task-heading-title"><h3>任务</h3>{selectedTasks.length > 0 && <span>{selectedTasks.length}</span>}</div>
+                {endedTasksViewToggle('detail-ended-toggle')}
               </div>
 
               {selectedTasks.length === 0 ? (
@@ -2093,15 +2620,15 @@ function App() {
             <div className="editor-body">
               <div className="tag-create-row"><input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="新标签名称" /><select value={newTagScope} onChange={e => setNewTagScope(e.target.value as TagScope)}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
               <div className="tag-color-row">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-color${newTagColor === color ? ' active' : ''}`} style={{ background: color }} onClick={() => setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
-              <div className="tag-list">{tags.filter(tag => tag.id !== DEFAULT_TAG_ID).map(tag => <div className="tag-row" key={tag.id}>
+              <div className="tag-list">{tags.filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag)).map(tag => <div className="tag-row" key={tag.id}>
                 <div className="tag-color-control">
-                  <button type="button" className="tag-current-color" style={{ background: tag.color }} onClick={() => setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={`修改 ${tag.name} 的颜色`} />
-                  {openTagColorId === tag.id && <div className="tag-color-popover">
+                  <button type="button" className="tag-current-color" style={{ background: tag.color }} disabled={tag.system} onClick={() => !tag.system && setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={tag.system?`${tag.name} 为系统标签`:`修改 ${tag.name} 的颜色`} />
+                  {!tag.system && openTagColorId === tag.id && <div className="tag-color-popover">
                     <div className="tag-popover-palette">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-row-color${tag.color === color ? ' active' : ''}`} style={{ background: color }} onClick={() => { setTags(current => current.map(item => item.id === tag.id ? { ...item, color } : item)); setOpenTagColorId(null) }} aria-label={`设为 ${color}`} />)}</div>
                     <div className="tag-custom-color"><span>自定义</span><input type="color" value={tag.color} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, color: e.target.value } : item))} /></div>
                   </div>}
                 </div>
-                <input value={tag.name} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value } : item))} />
+                <input value={tag.name} disabled={tag.system} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value } : item))} />
                 <select value={tag.scope} disabled={tag.system} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope } : item))}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select>
                 <div className="tag-row-actions">
                   <button type="button" className="tag-browse-button" onClick={() => browseTag(tag.id)}>查看</button>
@@ -2286,7 +2813,9 @@ function App() {
               </div>
 
 
-              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />#{tag.name}</button>)}</div></div>
+              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />#{tag.name}</button>)}</div>
+                {draft.tagIds.some(isImportSourceTagId) && <div className="task-source-readonly">{draft.tagIds.filter(isImportSourceTagId).map(id => { const tag=tags.find(item=>item.id===id); return tag ? <span key={id} className="task-source-tag">#{tag.name}</span> : null })}<small>来源标签由系统管理</small></div>}
+              </div>
 
               <div className="field full-field attachment-field">
                 <span>图片附件</span>

@@ -126,3 +126,25 @@ export async function cleanupOrphanAttachmentBlobs(referencedKeys: string[]): Pr
     })
   } finally { db.close() }
 }
+
+
+export async function replaceZingData(payload: {
+  tasks:any[]; journals:any[]; moods:any[]; tags:any[]; anniversaries:any[];
+  attachments:{key:string;blob:Blob}[]
+}): Promise<void> {
+  const db=await openDatabase()
+  const stores=[TASK_STORE,JOURNAL_STORE,MOOD_STORE,TAG_STORE,ANNIVERSARY_STORE,ATTACHMENT_STORE]
+  try {
+    await new Promise<void>((resolve,reject)=>{
+      const tx=db.transaction(stores,'readwrite')
+      const replace=(name:string,rows:any[])=>{ const store=tx.objectStore(name); store.clear(); rows.forEach(row=>store.put(row)) }
+      replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(MOOD_STORE,payload.moods)
+      replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries)
+      const attachments=tx.objectStore(ATTACHMENT_STORE); attachments.clear()
+      payload.attachments.forEach(item=>attachments.put(item.blob,item.key))
+      tx.oncomplete=()=>resolve()
+      tx.onerror=()=>reject(tx.error ?? new Error('恢复事务失败'))
+      tx.onabort=()=>reject(tx.error ?? new Error('恢复事务已回滚'))
+    })
+  } finally { db.close() }
+}
