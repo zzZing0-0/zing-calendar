@@ -606,7 +606,7 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
 
   return { bundle: parsed as SyncBundle, sha: file.sha }
 }
-async function writeGitHubBundleFile(config: GitHubSyncConfig, bundle: SyncBundle, sha?: string): Promise<void> {
+async function writeGitHubBundleFile(config: GitHubSyncConfig, bundle: SyncBundle, sha?: string): Promise<'ok' | 'conflict'> {
   const branch = config.branch?.trim() || 'main'
   const path = githubSyncPath(config)
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`
@@ -621,7 +621,9 @@ async function writeGitHubBundleFile(config: GitHubSyncConfig, bundle: SyncBundl
     headers: { ...githubHeaders(config), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!response.ok) throw new Error(`GitHub 同步写入失败（HTTP ${response.status}）`)
+  if (response.ok) return 'ok'
+  if (response.status === 409 || response.status === 422) return 'conflict'
+  throw new Error(`GitHub 同步写入失败（HTTP ${response.status}）`)
 }
 
 export type GitHubSyncResult = {
@@ -636,29 +638,43 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
   if (!config.owner.trim() || !config.repo.trim()) throw new Error('GitHub 数据仓库信息不完整')
   if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
 
-  const remote = await readGitHubBundleFile(config)
-  let pulled = { upserts: 0, deletes: 0 }
+  const maxAttempts = 3
+  let initializedRemote = false
+  let totalPulledUpserts = 0
+  let totalPulledDeletes = 0
 
-  if (remote.bundle) {
-    const plan = await planSyncMerge(remote.bundle)
-    await applySyncMerge(plan)
-    pulled = { upserts: plan.upserts.length, deletes: plan.deletes.length }
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    // Every attempt re-reads both the latest remote bundle and its SHA.
+    // If another device wrote between our GET and PUT, the next attempt
+    // merges that new remote state before trying again.
+    const remote = await readGitHubBundleFile(config)
+    if (attempt === 1) initializedRemote = !remote.bundle
+
+    if (remote.bundle) {
+      const plan = await planSyncMerge(remote.bundle)
+      await applySyncMerge(plan)
+      totalPulledUpserts += plan.upserts.length
+      totalPulledDeletes += plan.deletes.length
+    }
+
+    const mergedLocal = await createSyncBundle()
+    const writeResult = await writeGitHubBundleFile(config, mergedLocal, remote.sha)
+
+    if (writeResult === 'ok') {
+      const finishedAt = new Date().toISOString()
+      const state = await loadSyncState()
+      await saveSyncState({ ...state, lastSuccessfulSyncAt: finishedAt })
+      return {
+        initializedRemote,
+        pulled: { upserts: totalPulledUpserts, deletes: totalPulledDeletes },
+        pushedRecords: mergedLocal.records.length,
+        pushedTombstones: mergedLocal.tombstones.length,
+        finishedAt,
+      }
+    }
   }
 
-  const mergedLocal = await createSyncBundle()
-  await writeGitHubBundleFile(config, mergedLocal, remote.sha)
-
-  const finishedAt = new Date().toISOString()
-  const state = await loadSyncState()
-  await saveSyncState({ ...state, lastSuccessfulSyncAt: finishedAt })
-
-  return {
-    initializedRemote: !remote.bundle,
-    pulled,
-    pushedRecords: mergedLocal.records.length,
-    pushedTombstones: mergedLocal.tombstones.length,
-    finishedAt,
-  }
+  throw new Error(`GitHub 同步冲突：连续 ${maxAttempts} 次写入期间云端都发生变化，请稍后再同步`)
 }
 
 
