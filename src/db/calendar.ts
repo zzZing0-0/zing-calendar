@@ -1,10 +1,11 @@
 const DB_NAME = 'zing-calendar'
-const DB_VERSION = 4
+const DB_VERSION = 5
 const TASK_STORE = 'tasks'
 const JOURNAL_STORE = 'journalEntries'
 const MOOD_STORE = 'dailyMoods'
 const TAG_STORE = 'tags'
 const ATTACHMENT_STORE = 'attachments'
+const ANNIVERSARY_STORE = 'anniversaries'
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -17,6 +18,7 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(MOOD_STORE)) db.createObjectStore(MOOD_STORE, { keyPath: 'date' })
       if (!db.objectStoreNames.contains(TAG_STORE)) db.createObjectStore(TAG_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(ATTACHMENT_STORE)) db.createObjectStore(ATTACHMENT_STORE)
+      if (!db.objectStoreNames.contains(ANNIVERSARY_STORE)) db.createObjectStore(ANNIVERSARY_STORE, { keyPath: 'id' })
     }
 
     request.onsuccess = () => resolve(request.result)
@@ -55,6 +57,8 @@ async function replaceAll<T>(storeName: string, rows: T[]): Promise<void> {
   }
 }
 
+export const loadAnniversaries = <T,>() => loadAll<T>(ANNIVERSARY_STORE)
+export const saveAnniversaries = <T,>(rows: T[]) => replaceAll(ANNIVERSARY_STORE, rows)
 export const loadTasks = <T,>() => loadAll<T>(TASK_STORE)
 export const saveTasks = <T,>(rows: T[]) => replaceAll(TASK_STORE, rows)
 export const loadJournalEntries = <T,>() => loadAll<T>(JOURNAL_STORE)
@@ -76,4 +80,49 @@ export async function getAttachmentBlob(key: string): Promise<Blob | undefined> 
 export async function deleteAttachmentBlob(key: string): Promise<void> {
   const db = await openDatabase()
   try { await new Promise<void>((resolve, reject) => { const tx = db.transaction(ATTACHMENT_STORE, 'readwrite'); tx.objectStore(ATTACHMENT_STORE).delete(key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error) }) } finally { db.close() }
+}
+
+export type ZingStorageStats = { total:number; images:number; audio:number; data:number; attachmentCount:number }
+export async function getStorageStats(): Promise<ZingStorageStats> {
+  const db = await openDatabase()
+  try {
+    const blobs = await new Promise<Blob[]>((resolve,reject) => {
+      const req = db.transaction(ATTACHMENT_STORE,'readonly').objectStore(ATTACHMENT_STORE).getAll()
+      req.onsuccess=()=>resolve((req.result ?? []) as Blob[])
+      req.onerror=()=>reject(req.error)
+    })
+    let images=0, audio=0
+    blobs.forEach(blob => { if (blob.type.startsWith('image/')) images += blob.size; else if (blob.type.startsWith('audio/')) audio += blob.size })
+    let data=0
+    for (const storeName of [TASK_STORE,JOURNAL_STORE,MOOD_STORE,TAG_STORE,ANNIVERSARY_STORE]) {
+      const rows = await loadAll<any>(storeName)
+      data += new Blob([JSON.stringify(rows)]).size
+    }
+    return { total:images+audio+data, images, audio, data, attachmentCount:blobs.length }
+  } finally { db.close() }
+}
+
+export async function cleanupOrphanAttachmentBlobs(referencedKeys: string[]): Promise<number> {
+  const db = await openDatabase()
+  try {
+    const referenced = new Set(referencedKeys)
+    return await new Promise<number>((resolve,reject) => {
+      const tx = db.transaction(ATTACHMENT_STORE,'readwrite')
+      const store = tx.objectStore(ATTACHMENT_STORE)
+      const request = store.openCursor()
+      let removed = 0
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return
+        if (!referenced.has(String(cursor.key))) {
+          cursor.delete()
+          removed += 1
+        }
+        cursor.continue()
+      }
+      request.onerror = () => reject(request.error)
+      tx.oncomplete = () => resolve(removed)
+      tx.onerror = () => reject(tx.error)
+    })
+  } finally { db.close() }
 }

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { deleteAttachmentBlob, getAttachmentBlob, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveDailyMoods, saveJournalEntries, saveTags, saveTasks } from './db/calendar'
+import { cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getStorageStats, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks } from './db/calendar'
 import './App.css'
 
 type TaskPriority = 0 | 1 | 2 | 3
@@ -63,6 +63,34 @@ type JournalEntry = {
   attachments?: Attachment[]
 }
 
+type AnniversaryType = 'birthday' | 'anniversary' | 'important' | 'other'
+type AnniversaryCalendar = 'solar' | 'lunar'
+type Anniversary = {
+  id: string
+  title: string
+  type: AnniversaryType
+  calendar: AnniversaryCalendar
+  year?: number
+  month: number
+  day: number
+  isLeapMonth?: boolean
+  repeatYearly: boolean
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+type AnniversaryDraft = {
+  title: string
+  type: AnniversaryType
+  calendar: AnniversaryCalendar
+  year: string
+  month: number
+  day: number
+  isLeapMonth: boolean
+  repeatYearly: boolean
+  notes: string
+}
+
 type TagScope = 'task' | 'journal' | 'both'
 type Tag = { id: string; name: string; color: string; scope: TagScope; system?: boolean }
 
@@ -110,6 +138,59 @@ const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
 const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true }
 const TAG_COLORS = ['#789c86', '#d3b64b', '#d88b48', '#c8665f', '#8798bd', '#9b83ad', '#789da3', '#a58d72']
+
+const ANNIVERSARY_TYPES: { value: AnniversaryType; label: string; icon: string }[] = [
+  { value: 'birthday', label: '生日', icon: '🎂' },
+  { value: 'anniversary', label: '纪念日', icon: '❤️' },
+  { value: 'important', label: '重要日期', icon: '⭐' },
+  { value: 'other', label: '其他', icon: '📌' },
+]
+function anniversaryIcon(type: AnniversaryType) { return ANNIVERSARY_TYPES.find(item => item.value === type)?.icon ?? '📌' }
+function emptyAnniversaryDraft(date: Date): AnniversaryDraft {
+  return { title:'', type:'birthday', calendar:'solar', year:'', month:date.getMonth()+1, day:date.getDate(), isLeapMonth:false, repeatYearly:true, notes:'' }
+}
+function daysInMonth(year:number, month:number) { return new Date(year, month, 0).getDate() }
+function lunarOccurrence(ann: Anniversary, solarYear: number): Date | null {
+  // Find by scanning the solar year. This uses the browser's Chinese-calendar engine,
+  // avoids duplicating lunar arithmetic, and correctly sees leap-month labels.
+  const start=new Date(solarYear,0,1), end=new Date(solarYear,11,31)
+  let normalFallback: Date | null = null
+  for (let d=new Date(start); d<=end; d.setDate(d.getDate()+1)) {
+    const lunar=solarToLunar(d)
+    const monthNumber=Number.parseInt(lunar.monthText.replace(/[^0-9]/g,''),10)
+    // Intl may localize month names as Chinese words; derive month by formatter parts fallback below.
+    const rawMonth=lunar.monthText
+    const cnMonths=['正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月']
+    const clean=rawMonth.replace('闰','')
+    const m=Number.isFinite(monthNumber) ? monthNumber : cnMonths.indexOf(clean)+1
+    if (m!==ann.month || lunar.day!==ann.day) continue
+    if (ann.isLeapMonth && lunar.isLeapMonth) return new Date(d)
+    if (!ann.isLeapMonth && !lunar.isLeapMonth) return new Date(d)
+    if (ann.isLeapMonth && !lunar.isLeapMonth) normalFallback=new Date(d)
+  }
+  // Common birthday policy: leap-month birthday falls back to the ordinary month
+  // when that lunar year has no matching leap month.
+  return ann.isLeapMonth ? normalFallback : null
+}
+function anniversaryOccurrence(ann: Anniversary, solarYear:number): Date | null {
+  // A stored year is the origin year. Even a yearly recurrence must not exist before it.
+  if (ann.repeatYearly && ann.year && solarYear < ann.year) return null
+  if (ann.calendar==='solar') {
+    const year=ann.repeatYearly ? solarYear : (ann.year ?? solarYear)
+    if (!ann.repeatYearly && ann.year!==solarYear) return null
+    const max=daysInMonth(year,ann.month)
+    if (ann.day>max) return null
+    return new Date(year,ann.month-1,ann.day)
+  }
+  if (!ann.repeatYearly && ann.year && ann.year!==solarYear) return null
+  return lunarOccurrence(ann,solarYear)
+}
+function anniversaryMeta(ann: Anniversary, occurrence: Date) {
+  if (!ann.year) return ann.calendar==='lunar' ? '农历' : ''
+  const n=occurrence.getFullYear()-ann.year
+  if (ann.type==='birthday') return n>=0 ? `${n}岁` : ''
+  return n>0 ? `${n}周年` : ''
+}
 
 function MoodFace({ level }: { level: MoodLevel }) {
   const common = { viewBox: '0 0 64 64', className: `mood-face-svg mood-face-${level}`, 'aria-hidden': true } as const
@@ -201,10 +282,10 @@ function repeatPresetLabels(dateKey: string) {
   }
 }
 
-function buildMonth(year: number, month: number): CalendarDay[] {
+function buildMonth(year: number, month: number, weekStartsMonday = true): CalendarDay[] {
   const first = new Date(year, month, 1)
-  const mondayOffset = (first.getDay() + 6) % 7
-  const gridStart = new Date(year, month, 1 - mondayOffset)
+  const offset = weekStartsMonday ? (first.getDay() + 6) % 7 : first.getDay()
+  const gridStart = new Date(year, month, 1 - offset)
 
   return Array.from({ length: 42 }, (_, index) => {
     const date = new Date(gridStart)
@@ -456,9 +537,10 @@ function buildMultiDaySegments(tasks: Task[], days: CalendarDay[]): MultiDaySegm
     const weekDays = days.slice(week * 7, week * 7 + 7)
     const weekStart = toDateKey(weekDays[0].date)
     const weekEnd = toDateKey(weekDays[6].date)
-    const candidates = tasks.filter(task => isMultiDayTask(task) && task.date <= weekEnd && taskEndDate(task) >= weekStart)
+    const candidates = tasks
+      .filter(task => isMultiDayTask(task) && task.date <= weekEnd && taskEndDate(task) >= weekStart)
       .sort((a, b) => a.date.localeCompare(b.date) || taskEndDate(b).localeCompare(taskEndDate(a)) || b.priority - a.priority)
-    const lanes: { start: number; end: number }[][] = []
+    const lanes: { start:number; end:number }[][] = []
     candidates.forEach(task => {
       const clippedStart = task.date < weekStart ? weekStart : task.date
       const clippedEnd = taskEndDate(task) > weekEnd ? weekEnd : taskEndDate(task)
@@ -467,8 +549,8 @@ function buildMultiDaySegments(tasks: Task[], days: CalendarDay[]): MultiDaySegm
       let lane = 0
       while ((lanes[lane] ?? []).some(item => !(endColumn < item.start || startColumn > item.end))) lane += 1
       if (!lanes[lane]) lanes[lane] = []
-      lanes[lane].push({ start: startColumn, end: endColumn })
-      segments.push({ task, week, startColumn, span: endColumn - startColumn + 1, lane })
+      lanes[lane].push({ start:startColumn, end:endColumn })
+      segments.push({ task, week, startColumn, span:endColumn-startColumn+1, lane })
     })
   }
   return segments
@@ -555,6 +637,16 @@ function MarkdownBody({ content }: { content: string }) {
   })}</div>
 }
 
+function StorageImage({ attachment, onPreview }: { attachment: Attachment; onPreview:(attachment:Attachment)=>void }) {
+  const [url,setUrl]=useState('')
+  useEffect(() => {
+    let active=true, objectUrl=''
+    getAttachmentBlob(attachment.storageKey).then(blob => { if (!active || !blob) return; objectUrl=URL.createObjectURL(blob); setUrl(objectUrl) })
+    return () => { active=false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  },[attachment.storageKey])
+  return <button type="button" className="storage-image-item" onClick={()=>onPreview(attachment)}>{url ? <img src={url} alt={attachment.filename}/> : <span>加载中…</span>}<small>{attachment.filename}</small></button>
+}
+
 function AudioAttachment({ attachment }: { attachment: Attachment }) {
   const [url, setUrl] = useState('')
   useEffect(() => {
@@ -568,11 +660,93 @@ function AudioAttachment({ attachment }: { attachment: Attachment }) {
   return url ? <audio className="journal-audio-player" controls src={url} /> : <span>录音加载中…</span>
 }
 
+function truncateTagTimelineTitle(value: string, maxLength = 20) {
+  const chars = Array.from(value)
+  return chars.length > maxLength ? `${chars.slice(0, maxLength).join('')}…` : value
+}
+
+
+function formatCompactTimelineDate(dateKey: string, previousDateKey?: string) {
+  const date = fromDateKey(dateKey)
+  if (!previousDateKey) return formatDate(date)
+  const previous = fromDateKey(previousDateKey)
+  if (date.getFullYear() === previous.getFullYear() && date.getMonth() === previous.getMonth()) {
+    return ordinalDay(date.getDate())
+  }
+  if (date.getFullYear() === previous.getFullYear()) {
+    return `${date.getDate()} ${MONTHS[date.getMonth()]}`
+  }
+  return formatDate(date)
+}
+
+const chineseCalendarFormatter = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', {
+  month: 'long',
+  day: 'numeric',
+})
+
+function lunarParts(date: Date) {
+  const parts = chineseCalendarFormatter.formatToParts(date)
+  const month = parts.find(part => part.type === 'month')?.value ?? ''
+  const day = parts.find(part => part.type === 'day')?.value ?? ''
+  return { month, day }
+}
+
+function lunarCalendarLabel(date: Date) {
+  const { month, day } = lunarParts(date)
+  // Keep ordinary cells quiet; on the first lunar day, show the month name.
+  return day === '1' || day === '初一' ? month : chineseLunarDayName(Number.parseInt(day, 10))
+}
+
+function chineseLunarDayName(day: number) {
+  if (!Number.isFinite(day) || day < 1 || day > 30) return ''
+  const names = ['初一','初二','初三','初四','初五','初六','初七','初八','初九','初十',
+    '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十',
+    '廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十']
+  return names[day - 1]
+}
+
+function lunarFullLabel(date: Date) {
+  const { month, day } = lunarParts(date)
+  const numericDay = Number.parseInt(day, 10)
+  return `${month}${chineseLunarDayName(numericDay) || day}`
+}
+
+// Stable conversion-service boundary for the Anniversary module.
+// Solar -> lunar is implemented here; lunar -> solar will plug into the same boundary
+// when Anniversary starts storing semantic lunar dates (including leap-month policy).
+type LunarDateParts = { year: number; monthText: string; day: number; isLeapMonth: boolean }
+function solarToLunar(date: Date): LunarDateParts {
+  const full = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', {
+    year: 'numeric', month: 'long', day: 'numeric'
+  }).formatToParts(date)
+  const yearText = full.find(part => String(part.type) === 'relatedYear')?.value
+    ?? full.find(part => part.type === 'year')?.value ?? String(date.getFullYear())
+  const monthText = full.find(part => part.type === 'month')?.value ?? ''
+  const dayText = full.find(part => part.type === 'day')?.value ?? ''
+  return {
+    year: Number.parseInt(yearText, 10),
+    monthText,
+    day: Number.parseInt(dayText, 10),
+    isLeapMonth: monthText.includes('闰'),
+  }
+}
+
 function App() {
   const today = new Date()
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [mainView, setMainView] = useState<'calendar' | 'anniversaries' | 'settings'>('calendar')
+  const [greeting, setGreeting] = useState(() => localStorage.getItem('zing:greeting') || 'Hello, Zing')
+  const [weekStartsMonday, setWeekStartsMonday] = useState(() => localStorage.getItem('zing:weekStart') !== 'sunday')
+  const [dateFormat, setDateFormat] = useState<'dmy'|'mdy'>(() => localStorage.getItem('zing:dateFormat') === 'mdy' ? 'mdy' : 'dmy')
+  const [showEndedTasks, setShowEndedTasks] = useState(() => localStorage.getItem('zing:showEndedTasks') !== 'false')
+  const [storageStats, setStorageStats] = useState({ total:0, images:0, audio:0, data:0, attachmentCount:0 })
+  const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchFilter, setSearchFilter] = useState<'all' | 'task' | 'journal' | 'anniversary'>('all')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchWrapRef = useRef<HTMLDivElement | null>(null)
   const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksHydrated, setTasksHydrated] = useState(false)
@@ -582,6 +756,11 @@ function App() {
   const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(today))
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
+  const [anniversaries, setAnniversaries] = useState<Anniversary[]>([])
+  const [anniversariesHydrated, setAnniversariesHydrated] = useState(false)
+  const [anniversaryEditorOpen, setAnniversaryEditorOpen] = useState(false)
+  const [editingAnniversaryId, setEditingAnniversaryId] = useState<string | null>(null)
+  const [anniversaryDraft, setAnniversaryDraft] = useState<AnniversaryDraft>(() => emptyAnniversaryDraft(today))
   const [journalHydrated, setJournalHydrated] = useState(false)
   const [moodsHydrated, setMoodsHydrated] = useState(false)
   const [journalEditorOpen, setJournalEditorOpen] = useState(false)
@@ -720,32 +899,62 @@ function App() {
 
   const startJournalRecording = async () => {
     if (journalDraft.attachments.some(a => a.type === 'audio') || recording) return
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const recorder = new MediaRecorder(stream)
-    const chunks: BlobPart[] = []
-    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data) }
-    recorder.onstop = async () => {
-      stream.getTracks().forEach(track => track.stop())
-      const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-      const id = crypto.randomUUID(), storageKey = `journal-audio:${id}`
-      await putAttachmentBlob(storageKey, blob)
-      setJournalDraft(current => ({ ...current, attachments: [...current.attachments.filter(a => a.type !== 'audio'), {
-        id, type: 'audio', filename: `录音-${new Date().toLocaleString()}.webm`, mimeType: blob.type, size: blob.size,
-        storageKey, duration: recordingSeconds, createdAt: new Date().toISOString(),
-      }] }))
-      setRecording(false); setMediaRecorder(null); setRecordingSeconds(0)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+      const mimeType = preferredTypes.find(type => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type))
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      const chunks: BlobPart[] = []
+      const startedAt = Date.now()
+      recorder.ondataavailable = event => { if (event.data && event.data.size > 0) chunks.push(event.data) }
+      recorder.onerror = () => {
+        stream.getTracks().forEach(track => track.stop())
+        setRecording(false); setMediaRecorder(null); setRecordingSeconds(0)
+        window.alert('录音失败，请重新录制。')
+      }
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop())
+        const duration = Math.max(0, Math.round((Date.now() - startedAt) / 1000))
+        const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' })
+        setRecording(false); setMediaRecorder(null); setRecordingSeconds(0)
+        // Tiny container-only blobs (such as the previous 110 B file) contain no playable audio.
+        if (duration < 1 || blob.size < 512) {
+          window.alert('录音内容为空或时间太短，没有保存。请重新录制。')
+          return
+        }
+        const id = crypto.randomUUID(), storageKey = `journal-audio:${id}`
+        await putAttachmentBlob(storageKey, blob)
+        const extension = blob.type.includes('mp4') ? 'm4a' : 'webm'
+        setJournalDraft(current => ({ ...current, attachments: [...current.attachments.filter(a => a.type !== 'audio'), {
+          id, type: 'audio', filename: `录音-${new Date().toLocaleString()}.${extension}`, mimeType: blob.type, size: blob.size,
+          storageKey, duration, createdAt: new Date().toISOString(),
+        }] }))
+      }
+      // A timeslice makes browsers flush audio chunks while recording instead of relying on one final event at stop.
+      recorder.start(1000)
+      setRecordingSeconds(0); setMediaRecorder(recorder); setRecording(true)
+    } catch (error) {
+      console.error('Failed to start recording', error)
+      window.alert('无法开始录音，请检查麦克风权限。')
     }
-    recorder.start()
-    setRecordingSeconds(0); setMediaRecorder(recorder); setRecording(true)
   }
 
   const stopJournalRecording = () => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try { mediaRecorder.requestData() } catch {}
+      window.setTimeout(() => { if (mediaRecorder.state !== 'inactive') mediaRecorder.stop() }, 80)
+    }
   }
 
   const deleteJournal = (id: string) => {
     const entry = journalEntries.find(item => item.id === id)
-    void Promise.all((entry?.attachments ?? []).map(a => deleteAttachmentBlob(a.storageKey)))
+    const stillReferenced = new Set<string>()
+    tasks.forEach(task => {
+      ;(task.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey))
+      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => (exception.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
+    })
+    journalEntries.filter(item => item.id !== id).forEach(item => (item.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
+    ;(entry?.attachments ?? []).forEach(a => { if (!stillReferenced.has(a.storageKey)) void deleteAttachmentBlob(a.storageKey) })
     setJournalEntries(current => current.filter(entry => entry.id !== id))
     setViewingJournalId(current => current === id ? null : current)
   }
@@ -774,6 +983,14 @@ function App() {
       console.error('Failed to load tags', error)
       if (active) setTagsHydrated(true)
     })
+    loadAnniversaries<Anniversary>().then(rows => {
+      if (!active) return
+      setAnniversaries(rows)
+      setAnniversariesHydrated(true)
+    }).catch(error => {
+      console.error('Failed to load anniversaries', error)
+      if (active) setAnniversariesHydrated(true)
+    })
     loadDailyMoods<DailyMood>().then(rows => {
       if (!active) return
       setDailyMoods(rows)
@@ -784,6 +1001,11 @@ function App() {
     })
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (!anniversariesHydrated) return
+    saveAnniversaries(anniversaries).catch(error => console.error('Failed to save anniversaries', error))
+  }, [anniversaries, anniversariesHydrated])
 
   useEffect(() => {
     if (!journalHydrated) return
@@ -800,23 +1022,79 @@ function App() {
     saveDailyMoods(dailyMoods).catch(error => console.error('Failed to save daily moods', error))
   }, [dailyMoods, moodsHydrated])
 
+  useEffect(() => { localStorage.setItem('zing:greeting', greeting || 'Hello, Zing') }, [greeting])
+  useEffect(() => { localStorage.setItem('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
+  useEffect(() => { localStorage.setItem('zing:dateFormat', dateFormat) }, [dateFormat])
+  useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
+  useEffect(() => {
+    if (mainView !== 'settings' || !tasksHydrated || !journalHydrated) return
+    const referencedKeys = new Set<string>()
+    const add = (items?: Attachment[]) => (items ?? []).forEach(item => referencedKeys.add(item.storageKey))
+    tasks.forEach(task => {
+      add(task.attachments)
+      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => add(exception.attachments))
+    })
+    journalEntries.forEach(entry => add(entry.attachments))
+    cleanupOrphanAttachmentBlobs([...referencedKeys])
+      .then(() => getStorageStats())
+      .then(setStorageStats)
+      .catch(error => console.error('Failed to clean or calculate storage', error))
+.catch(error => console.error('Failed to calculate storage', error))
+  }, [mainView, tasks, journalEntries, dailyMoods, tags, anniversaries, tasksHydrated, journalHydrated])
+
+  const displayWeekdays = useMemo(() => weekStartsMonday ? WEEKDAYS : [WEEKDAYS[6], ...WEEKDAYS.slice(0,6)], [weekStartsMonday])
+  const formatUiDate = (date: Date) => dateFormat === 'mdy'
+    ? `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
+    : formatDate(date)
+  const formatBytes = (bytes:number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024*1024) return `${(bytes/1024).toFixed(1)} KB`
+    if (bytes < 1024*1024*1024) return `${(bytes/1024/1024).toFixed(1)} MB`
+    return `${(bytes/1024/1024/1024).toFixed(2)} GB`
+  }
+
   const days = useMemo(
-    () => buildMonth(visibleMonth.getFullYear(), visibleMonth.getMonth()),
-    [visibleMonth],
+    () => buildMonth(visibleMonth.getFullYear(), visibleMonth.getMonth(), weekStartsMonday),
+    [visibleMonth, weekStartsMonday],
   )
 
   const displayTasks = useMemo(() => {
     const start = toDateKey(days[0].date)
     const end = toDateKey(days[days.length - 1].date)
-    return expandTasks(tasks, start, end)
-  }, [tasks, days])
+    const expanded = expandTasks(tasks, start, end)
+    return showEndedTasks ? expanded : expanded.filter(task => task.status === 'todo')
+  }, [tasks, days, showEndedTasks])
 
   const selectedTasks = useMemo(() => {
     if (!selectedDate) return []
     const key = toDateKey(selectedDate)
     const pool = key >= toDateKey(days[0].date) && key <= toDateKey(days[days.length - 1].date) ? displayTasks : expandTasks(tasks, key, key)
-    return pool.filter(task => taskCoversDate(task, key)).sort(taskSort)
-  }, [selectedDate, tasks, displayTasks, days])
+    return pool.filter(task => taskCoversDate(task, key) && (showEndedTasks || task.status === 'todo')).sort(taskSort)
+  }, [selectedDate, tasks, displayTasks, days, showEndedTasks])
+
+  const anniversaryOccurrencesByDate = useMemo(() => {
+    const map = new Map<string, { anniversary: Anniversary; occurrence: Date }[]>()
+    const years = Array.from(new Set(days.map(day => day.date.getFullYear())))
+    anniversaries.forEach(anniversary => years.forEach(year => {
+      const occurrence = anniversaryOccurrence(anniversary, year)
+      if (!occurrence) return
+      const key = toDateKey(occurrence)
+      const rows = map.get(key) ?? []
+      rows.push({ anniversary, occurrence }); map.set(key, rows)
+    }))
+    return map
+  }, [anniversaries, days])
+
+  const selectedAnniversaries = useMemo(() => {
+    if (!selectedDate) return []
+    const key=toDateKey(selectedDate)
+    const cached=anniversaryOccurrencesByDate.get(key)
+    if (cached) return cached
+    return anniversaries.map(anniversary => {
+      const occurrence=anniversaryOccurrence(anniversary, selectedDate.getFullYear())
+      return occurrence && toDateKey(occurrence)===key ? {anniversary, occurrence} : null
+    }).filter(Boolean) as { anniversary: Anniversary; occurrence: Date }[]
+  }, [selectedDate, anniversaries, anniversaryOccurrencesByDate])
 
   const selectedJournalEntries = useMemo(() => {
     if (!selectedDate) return []
@@ -831,7 +1109,7 @@ function App() {
   const selectedMood = selectedDate ? dailyMoods.find(mood => mood.date === toDateKey(selectedDate)) : undefined
   const selectedImpactTotal = selectedJournalEntries.reduce((sum, entry) => sum + entry.impact, 0)
   const moodsByDate = useMemo(() => new Map(dailyMoods.map(mood => [mood.date, mood])), [dailyMoods])
-  const moodDays = useMemo(() => buildMonth(moodMonth.getFullYear(), moodMonth.getMonth()), [moodMonth])
+  const moodDays = useMemo(() => buildMonth(moodMonth.getFullYear(), moodMonth.getMonth(), weekStartsMonday), [moodMonth, weekStartsMonday])
 
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Task[]>()
@@ -852,7 +1130,7 @@ function App() {
     // Reserve space only for multi-day tasks that actually cover this date.
     // This deliberately ignores a lane used on a neighbouring date, so a
     // short 18–19 range can never create a ghost blank row on the 20th.
-    return displayTasks.filter(task => isMultiDayTask(task) && taskCoversDate(task, key)).length
+    return displayTasks.filter(task => isMultiDayTask(task) && task.status === 'todo' && taskCoversDate(task, key)).length
   }), [days, displayTasks])
 
   const moveMonth = (offset: number) => {
@@ -870,6 +1148,30 @@ function App() {
     if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
       setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     }
+  }
+
+  const openAnniversaryEditor = (anniversary?: Anniversary) => {
+    if (anniversary) {
+      setEditingAnniversaryId(anniversary.id)
+      setAnniversaryDraft({ title:anniversary.title, type:anniversary.type, calendar:anniversary.calendar, year:anniversary.year ? String(anniversary.year) : '', month:anniversary.month, day:anniversary.day, isLeapMonth:Boolean(anniversary.isLeapMonth), repeatYearly:anniversary.repeatYearly, notes:anniversary.notes ?? '' })
+    } else {
+      setEditingAnniversaryId(null)
+      setAnniversaryDraft(emptyAnniversaryDraft(selectedDate ?? today))
+    }
+    setAnniversaryEditorOpen(true)
+  }
+  const saveAnniversary = () => {
+    const title=anniversaryDraft.title.trim(); if (!title) return
+    const now=new Date().toISOString()
+    const fields={ title, type:anniversaryDraft.type, calendar:anniversaryDraft.calendar, year:anniversaryDraft.year ? Number(anniversaryDraft.year) : undefined, month:anniversaryDraft.month, day:anniversaryDraft.day, isLeapMonth:anniversaryDraft.calendar==='lunar' ? anniversaryDraft.isLeapMonth : undefined, repeatYearly:anniversaryDraft.repeatYearly, notes:anniversaryDraft.notes.trim() || undefined, updatedAt:now }
+    if (editingAnniversaryId) setAnniversaries(cur=>cur.map(a=>a.id===editingAnniversaryId ? {...a,...fields}:a))
+    else setAnniversaries(cur=>[...cur,{id:crypto.randomUUID(),...fields,createdAt:now}])
+    setAnniversaryEditorOpen(false); setEditingAnniversaryId(null)
+  }
+  const deleteAnniversary = () => {
+    if (!editingAnniversaryId) return
+    setAnniversaries(cur=>cur.filter(a=>a.id!==editingAnniversaryId))
+    setAnniversaryEditorOpen(false); setEditingAnniversaryId(null)
   }
 
   const openTaskEditor = () => {
@@ -1127,7 +1429,21 @@ function App() {
       }) : series))
       return
     }
-    setTasks(current => current.filter(item => item.id !== seriesId))
+    setTasks(current => {
+      const next = current.filter(item => item.id !== seriesId)
+      const stillReferenced = new Set<string>()
+      next.forEach(item => {
+        ;(item.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey))
+        Object.values(item.recurrenceExceptions ?? {}).forEach(exception => (exception.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
+      })
+      journalEntries.forEach(entry => (entry.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
+      const removed = current.find(item => item.id === seriesId)
+      const candidates = new Set<string>()
+      ;(removed?.attachments ?? []).forEach(a => candidates.add(a.storageKey))
+      Object.values(removed?.recurrenceExceptions ?? {}).forEach(exception => (exception.attachments ?? []).forEach(a => candidates.add(a.storageKey)))
+      candidates.forEach(key => { if (!stillReferenced.has(key)) void deleteAttachmentBlob(key) })
+      return next
+    })
   }
 
   const stopRepeating = (series: Task, occurrenceDate: string) => {
@@ -1191,6 +1507,164 @@ function App() {
     return groups
   }, [])
 
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
+
+  const searchSnippet = (text: string) => {
+    const clean = text.replace(/[#>*_`~\[\]()!-]+/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!clean) return ''
+    const index = clean.toLocaleLowerCase().indexOf(normalizedSearch)
+    if (index < 0) return clean.slice(0, 100)
+    const from = Math.max(0, index - 22)
+    const to = Math.min(clean.length, index + normalizedSearch.length + 34)
+    return `${from > 0 ? '…' : ''}${clean.slice(from, to)}${to < clean.length ? '…' : ''}`
+  }
+
+  const highlightSearch = (text: string) => {
+    if (!normalizedSearch) return text
+    const lower = text.toLocaleLowerCase()
+    const nodes: React.ReactNode[] = []
+    let cursor = 0
+    let index = lower.indexOf(normalizedSearch)
+    let key = 0
+    while (index >= 0) {
+      if (index > cursor) nodes.push(text.slice(cursor, index))
+      nodes.push(<mark key={key++}>{text.slice(index, index + normalizedSearch.length)}</mark>)
+      cursor = index + normalizedSearch.length
+      index = lower.indexOf(normalizedSearch, cursor)
+    }
+    if (cursor < text.length) nodes.push(text.slice(cursor))
+    return nodes
+  }
+
+  const searchResults = useMemo(() => {
+    if (!normalizedSearch) return []
+    const results: Array<{ kind:'task'|'journal'|'anniversary'; id:string; title:string; date:string; snippet:string; item:Task|JournalEntry|Anniversary; nextOccurrence?:Date }> = []
+    if (searchFilter === 'all' || searchFilter === 'task') tasks.forEach(task => {
+      const hay = `${task.title} ${task.notes ?? ''}`.toLocaleLowerCase()
+      if (hay.includes(normalizedSearch)) results.push({ kind:'task', id:task.id, title:task.title, date:task.date, snippet:searchSnippet(task.notes ?? ''), item:task })
+    })
+    if (searchFilter === 'all' || searchFilter === 'journal') journalEntries.forEach(entry => {
+      const hay = `${entry.title} ${entry.content}`.toLocaleLowerCase()
+      if (hay.includes(normalizedSearch)) results.push({ kind:'journal', id:entry.id, title:entry.title, date:entry.date, snippet:searchSnippet(entry.content), item:entry })
+    })
+    if (searchFilter === 'all' || searchFilter === 'anniversary') anniversaries.forEach(anniversary => {
+      const hay = `${anniversary.title} ${anniversary.notes ?? ''}`.toLocaleLowerCase()
+      if (hay.includes(normalizedSearch)) {
+        const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
+        let occurrence = anniversaryOccurrence(anniversary, candidateYear)
+        if (!occurrence || occurrence < new Date(today.getFullYear(), today.getMonth(), today.getDate())) occurrence = anniversaryOccurrence(anniversary, candidateYear+1)
+        const sortDate = occurrence ? toDateKey(occurrence) : (anniversary.year ? `${anniversary.year}-${String(anniversary.month).padStart(2,'0')}-${String(anniversary.day).padStart(2,'0')}` : '')
+        results.push({ kind:'anniversary', id:anniversary.id, title:anniversary.title, date:sortDate, snippet:searchSnippet(anniversary.notes ?? ''), item:anniversary, nextOccurrence:occurrence ?? undefined })
+      }
+    })
+    return results.sort((a,b) => b.date.localeCompare(a.date))
+  }, [normalizedSearch, searchFilter, tasks, journalEntries, anniversaries])
+
+  const searchDateLabel = (result: typeof searchResults[number]) => {
+    if (result.kind === 'anniversary') {
+      const anniversary = result.item as Anniversary
+      const ownDate = anniversary.calendar === 'lunar'
+        ? `农历 ${anniversary.isLeapMonth ? '闰' : ''}${anniversary.month}月${anniversary.day}日`
+        : `${anniversary.month}月${anniversary.day}日`
+      return result.nextOccurrence ? `${ownDate} · 下次 ${formatUiDate(result.nextOccurrence)}` : ownDate
+    }
+    const [year, month, day] = result.date.split('-').map(Number)
+    const label = year && month && day ? formatUiDate(new Date(year, month - 1, day)) : result.date
+    if (result.kind === 'journal') {
+      const entry = result.item as JournalEntry
+      return entry.time ? `${label} · ${entry.time}` : label
+    }
+    return label
+  }
+
+  const searchMarker = (result: typeof searchResults[number]) => {
+    if (result.kind === 'task') {
+      const task = result.item as Task
+      return <span className={`search-task-marker priority-${task.priority} status-${task.status}`}>{task.status === 'completed' ? '✓' : task.status === 'abandoned' ? '×' : ''}</span>
+    }
+    if (result.kind === 'journal') {
+      const entry = result.item as JournalEntry
+      return <span className={`search-journal-marker impact-${entry.impact}`} />
+    }
+    return <span className="search-anniversary-marker">{anniversaryIcon((result.item as Anniversary).type)}</span>
+  }
+
+  const openSearchResult = (result: typeof searchResults[number]) => {
+    setSearchOpen(false)
+    if (result.kind === 'task') editTask(result.item as Task)
+    else if (result.kind === 'journal') setViewingJournalId(result.id)
+    else openAnniversaryEditor(result.item as Anniversary)
+  }
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(event.target as Node)) setSearchOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSearchOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [])
+
+  const anniversaryPageRows = useMemo(() => {
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    return anniversaries.map(anniversary => {
+      let occurrence: Date | null = null
+      if (anniversary.repeatYearly) {
+        const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
+        occurrence = anniversaryOccurrence(anniversary, candidateYear)
+        if (!occurrence || occurrence < todayStart) occurrence = anniversaryOccurrence(anniversary, candidateYear + 1)
+      } else if (anniversary.year) {
+        occurrence = anniversaryOccurrence(anniversary, anniversary.year)
+      }
+      return { anniversary, occurrence }
+    }).sort((a,b) => {
+      if (!a.occurrence) return 1
+      if (!b.occurrence) return -1
+
+      const aPastOneOff = !a.anniversary.repeatYearly && a.occurrence < todayStart
+      const bPastOneOff = !b.anniversary.repeatYearly && b.occurrence < todayStart
+
+      // Active/upcoming anniversaries always come first.
+      if (aPastOneOff !== bPastOneOff) return aPastOneOff ? 1 : -1
+
+      if (aPastOneOff && bPastOneOff) {
+        // Finished one-off dates sink to the bottom; most recently passed first.
+        return b.occurrence.getTime() - a.occurrence.getTime()
+      }
+
+      // Today/future: nearest occurrence first.
+      return a.occurrence.getTime() - b.occurrence.getTime()
+    })
+  }, [anniversaries])
+
+  const anniversaryDistanceLabel = (anniversary: Anniversary, occurrence: Date | null) => {
+    if (!occurrence) return ''
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    const occurrenceStart = new Date(occurrence.getFullYear(), occurrence.getMonth(), occurrence.getDate())
+    const days = Math.round((occurrenceStart.getTime() - todayStart.getTime()) / 86400000)
+    if (days === 0) return '今天'
+    if (anniversary.repeatYearly) return `还有 ${days} 天`
+    return days > 0 ? `还有 ${days} 天` : `过去 ${Math.abs(days)} 天`
+  }
+
+  const allStoredAttachments = useMemo(() => {
+    const seen = new Map<string, Attachment>()
+    const add = (items?: Attachment[]) => (items ?? []).forEach(item => seen.set(item.storageKey, item))
+    tasks.forEach(task => {
+      add(task.attachments)
+      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => add(exception.attachments))
+    })
+    journalEntries.forEach(entry => add(entry.attachments))
+    return [...seen.values()].sort((a,b) => b.createdAt.localeCompare(a.createdAt))
+  }, [tasks, journalEntries])
+  const browsedAttachments = storageBrowser ? allStoredAttachments.filter(item => item.type === storageBrowser) : []
+
   const browseTag = (id: string) => {
     setOpenTagColorId(null)
     setTagManagerOpen(false)
@@ -1198,27 +1672,42 @@ function App() {
   }
 
   const openTaggedTask = (task: Task) => { setBrowsingTagId(null); editTask(task) }
-  const openTaggedJournal = (entry: JournalEntry) => { setBrowsingTagId(null); editJournal(entry) }
+  const openTaggedJournal = (entry: JournalEntry) => { setBrowsingTagId(null); setViewingJournalId(entry.id) }
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-block">
           <div className="brand-mark" aria-hidden="true">Z</div>
-          <div>
-            <h1>Zing Calendar</h1>
-            <p>把时间留给真正重要的事。</p>
+          <div className="brand-copy">
+            <p>{greeting}</p>
           </div>
         </div>
 
-        <nav className="top-actions" aria-label="主要功能">
-          <button className="icon-button" type="button" aria-label="标签" title="标签" onClick={() => setTagManagerOpen(true)}>#</button>
-          <button className="icon-button" type="button" aria-label="搜索" title="搜索">⌕</button>
-          <button className="icon-button" type="button" aria-label="设置" title="设置">⚙</button>
-        </nav>
+        <div className="global-search-wrap" ref={searchWrapRef}>
+          <span className="global-search-icon">⌕</span>
+          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、纪念日…" aria-label="全局搜索" />
+          {searchQuery && <button type="button" className="search-clear" onClick={() => setSearchQuery('')} aria-label="清空搜索">×</button>}
+          {searchOpen && normalizedSearch && (
+            <div className="search-panel">
+              <div className="search-filters">
+                {([['all','全部'],['task','任务'],['journal','记录'],['anniversary','纪念日']] as const).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
+              </div>
+              <div className="search-results">
+                {searchResults.length === 0 ? <p className="search-empty">没有找到结果。</p> : searchResults.map(result => (
+                  <button key={`${result.kind}-${result.id}`} type="button" className="search-result" onClick={() => openSearchResult(result)}>
+                    <span className={`search-kind kind-${result.kind}`}>{searchMarker(result)}</span>
+                    <span className="search-result-main"><strong>{highlightSearch(result.title)}</strong>{result.snippet && <small>{highlightSearch(result.snippet)}</small>}</span>
+                    <time>{searchDateLabel(result)}</time>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
-      <section className="calendar-card" aria-label="月历">
+      {mainView === 'calendar' && <section className="calendar-card" aria-label="月历">
         <div className="calendar-toolbar">
           <div className="month-navigation">
             <button className="nav-button" type="button" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
@@ -1230,7 +1719,7 @@ function App() {
         </div>
 
         <div className="weekday-row">
-          {WEEKDAYS.map(day => <div key={day}>{day}</div>)}
+          {displayWeekdays.map(day => <div key={day}>{day}</div>)}
         </div>
 
         <div className="calendar-grid">
@@ -1260,6 +1749,22 @@ function App() {
                 onClick={() => openDay(date)}
               >
                 <span className="day-number">{date.getDate()}</span>
+                {isToday && (
+                  <svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true">
+                    <path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37" />
+                    <path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35" />
+                    <path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14" />
+                  </svg>
+                )}
+                <span className="lunar-day-label">{lunarCalendarLabel(date)}</span>
+                {(anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 0 && (
+                  <span className="anniversary-cell-icons">
+                    {(anniversaryOccurrencesByDate.get(key) ?? []).slice(0, (anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 3 ? 2 : 3).map(({anniversary}) => (
+                      <span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>
+                    ))}
+                    {(anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 3 && <span className="anniversary-overflow">+{(anniversaryOccurrencesByDate.get(key)?.length ?? 0)-2}</span>}
+                  </span>
+                )}
                 {dayTasks.length > 0 && (
                   <span className="task-preview-list">
                     {visibleDayTasks.map(task => (
@@ -1291,23 +1796,135 @@ function App() {
             ))}
           </div>
         </div>
-      </section>
+      </section>}
+
+      {mainView === 'anniversaries' && (
+        <section className="anniversary-page">
+          <div className="page-heading">
+            <div><span className="eyebrow">ANNIVERSARIES</span><h2>纪念日</h2></div>
+            <button className="page-add-button" type="button" onClick={() => openAnniversaryEditor()}>＋</button>
+          </div>
+          {anniversaryPageRows.length === 0 ? <p className="page-empty">还没有纪念日。</p> : (
+            <div className="anniversary-page-list">
+              {anniversaryPageRows.map(({anniversary, occurrence}) => (
+                <button key={anniversary.id} className="anniversary-page-row" type="button" onClick={() => openAnniversaryEditor(anniversary)}>
+                  <span className="anniversary-page-icon">{anniversaryIcon(anniversary.type)}</span>
+                  <span className="anniversary-page-main"><strong>{anniversary.title}</strong><small>{anniversary.calendar==='lunar' ? `农历 ${anniversary.isLeapMonth?'闰':''}${anniversary.month}月${anniversary.day}日` : `${anniversary.month}月${anniversary.day}日`}</small></span>
+                  <span className="anniversary-page-next">
+                    {occurrence && anniversary.year && occurrence.getFullYear() >= anniversary.year && anniversary.type === 'birthday' && (
+                      <strong>{occurrence.getFullYear() === anniversary.year ? '出生日' : `${occurrence.getFullYear() - anniversary.year}岁生日`}</strong>
+                    )}
+                    {occurrence && anniversary.year && occurrence.getFullYear() >= anniversary.year && anniversary.type === 'anniversary' && (
+                      <strong>{occurrence.getFullYear() === anniversary.year ? '纪念日当天' : `${occurrence.getFullYear() - anniversary.year}周年`}</strong>
+                    )}
+                    <small>{anniversaryDistanceLabel(anniversary, occurrence)}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {mainView === 'settings' && (
+        <section className="settings-page">
+          <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
+
+          <div className="settings-group">
+            <div className="settings-group-title"><h3>个人化</h3></div>
+            <label className="setting-row">
+              <span><strong>顶部问候语</strong><small>显示在左上角品牌标记旁。</small></span>
+              <input className="setting-text-input" value={greeting} onChange={e => setGreeting(e.target.value)} onBlur={() => { if (!greeting.trim()) setGreeting('Hello, Zing') }} />
+            </label>
+          </div>
+
+          <div className="settings-group">
+            <div className="settings-group-title"><h3>日历</h3></div>
+            <div className="setting-row"><span><strong>每周开始日</strong></span><div className="setting-segment"><button className={weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(true)}>周一</button><button className={!weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(false)}>周日</button></div></div>
+            <div className="setting-row"><span><strong>日期格式</strong></span><div className="setting-segment"><button className={dateFormat==='dmy'?'active':''} onClick={()=>setDateFormat('dmy')}>22 Sep 2026</button><button className={dateFormat==='mdy'?'active':''} onClick={()=>setDateFormat('mdy')}>Sep 22, 2026</button></div></div>
+          </div>
+
+          <div className="settings-group">
+            <div className="settings-group-title"><h3>显示</h3></div>
+            <label className="setting-row">
+              <span><strong>显示已结束任务</strong><small>同时显示已完成和已放弃的任务。</small></span>
+              <input type="checkbox" checked={showEndedTasks} onChange={e=>setShowEndedTasks(e.target.checked)} />
+            </label>
+          </div>
+
+          <div className="settings-group">
+            <div className="settings-group-title"><h3>数据</h3></div>
+            <div className="storage-card">
+              <div className="storage-total"><span>本地存储</span><strong>{formatBytes(storageStats.total)}</strong></div>
+              <div className="storage-breakdown">
+                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片</i><b>{formatBytes(storageStats.images)}</b></button>
+                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音</i><b>{formatBytes(storageStats.audio)}</b></button>
+                <span><i>数据</i><b>{formatBytes(storageStats.data)}</b></span>
+              </div>
+              <small>任务 {tasks.length} · 记录 {journalEntries.length} · 纪念日 {anniversaries.length} · 附件 {storageStats.attachmentCount}</small>
+            </div>
+            <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务与记录共用的标签。</small></span><b>›</b></button>
+            <button className="settings-link-row coming-soon" type="button"><span><strong>数据与备份</strong><small>导入、导出与备份将在下一阶段加入。</small></span><b>›</b></button>
+          </div>
+        </section>
+      )}
+
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !browsingTagId && !viewingJournalId && !storageBrowser && !imagePreview && !seriesAction && !confirmSingleTask && (
+      <nav className="bottom-nav" aria-label="主要功能">
+        <button type="button" className={mainView==='calendar'?'active':''} onClick={() => setMainView('calendar')}><span>▦</span>日历</button>
+        <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => setMainView('anniversaries')}><span>🎂</span>纪念日</button>
+        <button type="button" className={mainView==='settings'?'active':''} onClick={() => setMainView('settings')}><span>⚙</span>设置</button>
+      </nav>
+      )}
+
+      {storageBrowser && (
+        <div className="modal-layer storage-browser-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭附件浏览" onClick={()=>setStorageBrowser(null)} />
+          <section className="storage-browser">
+            <div className="storage-browser-header">
+              <div><span className="eyebrow">STORAGE</span><h2>{storageBrowser==='image'?'所有图片':'所有录音'}</h2><small>{browsedAttachments.length} 个附件 · {formatBytes(storageBrowser==='image'?storageStats.images:storageStats.audio)}</small></div>
+              <button className="close-button" type="button" onClick={()=>setStorageBrowser(null)}>×</button>
+            </div>
+            {browsedAttachments.length===0 ? <p className="page-empty">还没有{storageBrowser==='image'?'图片':'录音'}。</p> :
+              storageBrowser==='image' ? <div className="storage-image-grid">{browsedAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={openImagePreview} />)}</div>
+              : <div className="storage-audio-list">{browsedAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>
+            }
+          </section>
+        </div>
+      )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.6.9</span>
+        <span>Zing Calendar · v0.6.21.5.3.1</span>
       </footer>
 
       {selectedDate && (
         <>
           <button className="drawer-backdrop" type="button" aria-label="关闭日期详情" onClick={() => setSelectedDate(null)} />
-          <aside className="day-drawer" aria-label={`${formatDate(selectedDate)} 日期详情`}>
+          <aside className="day-drawer" aria-label={`${formatUiDate(selectedDate)} 日期详情`}>
             <div className="drawer-header">
               <div>
                 <span className="eyebrow">DAY DETAIL</span>
-                <h2>{formatDate(selectedDate)}</h2>
+                <div className="drawer-date-line">
+                  <h2>{formatUiDate(selectedDate)}</h2>
+                  <button className="date-action-button" type="button" onClick={() => openAnniversaryEditor()} aria-label="添加纪念日" title="添加纪念日">＋</button>
+                </div>
+                <span className="drawer-lunar-date">农历 {lunarFullLabel(selectedDate)}</span>
               </div>
               <button className="close-button" type="button" onClick={() => setSelectedDate(null)} aria-label="关闭">×</button>
             </div>
+
+            {selectedAnniversaries.length > 0 && (
+              <section className="detail-section anniversary-section">
+                <div className="section-heading"><h3>纪念日</h3><span>{selectedAnniversaries.length}</span></div>
+                <div className="anniversary-list">{selectedAnniversaries.map(({anniversary, occurrence}) => (
+                  <button key={anniversary.id} type="button" className="anniversary-row" onClick={() => openAnniversaryEditor(anniversary)}>
+                    <span className="anniversary-row-icon">{anniversaryIcon(anniversary.type)}</span>
+                    <span className="anniversary-row-title">{anniversary.title}</span>
+                    <span className="anniversary-row-meta">{anniversaryMeta(anniversary, occurrence)}</span>
+                  </button>
+                ))}</div>
+              </section>
+            )}
 
             <section className="detail-section task-section">
               <div className="section-heading">
@@ -1375,7 +1992,7 @@ function App() {
                   <button type="button" aria-label="下个月" onClick={() => setMoodMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>›</button>
                 </div>
               </div>
-              <div className="mini-weekdays">{WEEKDAYS.map(day => <span key={day}>{day.slice(0, 1)}</span>)}</div>
+              <div className="mini-weekdays">{displayWeekdays.map(day => <span key={day}>{day.slice(0, 1)}</span>)}</div>
               <div className="mood-mini-grid">
                 {moodDays.map(({ date, inCurrentMonth }, index) => {
                   const key = toDateKey(date)
@@ -1445,6 +2062,29 @@ function App() {
         </>
       )}
 
+      {anniversaryEditorOpen && (
+        <div className="modal-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭纪念日编辑" onClick={() => setAnniversaryEditorOpen(false)} />
+          <section className="task-editor anniversary-editor" role="dialog" aria-modal="true" aria-labelledby="anniversary-editor-title">
+            <div className="editor-header"><div><span className="eyebrow">ANNIVERSARY</span><h2 id="anniversary-editor-title">{editingAnniversaryId ? '编辑纪念日' : '新建纪念日'}</h2></div><button className="close-button" type="button" onClick={() => setAnniversaryEditorOpen(false)}>×</button></div>
+            <div className="editor-body">
+              <label className="field"><span>名称</span><input value={anniversaryDraft.title} onChange={e=>setAnniversaryDraft(d=>({...d,title:e.target.value}))} placeholder="例如：小A生日" autoFocus /></label>
+              <div className="anniversary-type-grid">{ANNIVERSARY_TYPES.map(item=><button key={item.value} type="button" className={`anniversary-type-button${anniversaryDraft.type===item.value?' selected':''}`} onClick={()=>setAnniversaryDraft(d=>({...d,type:item.value}))}><span>{item.icon}</span>{item.label}</button>)}</div>
+              <div className="segmented-control"><button type="button" className={anniversaryDraft.calendar==='solar'?'active':''} onClick={()=>setAnniversaryDraft(d=>({...d,calendar:'solar',isLeapMonth:false}))}>公历</button><button type="button" className={anniversaryDraft.calendar==='lunar'?'active':''} onClick={()=>setAnniversaryDraft(d=>({...d,calendar:'lunar'}))}>农历</button></div>
+              <div className="anniversary-date-grid">
+                <label className="field"><span>年份（可选）</span><input type="number" min="1900" max="2200" value={anniversaryDraft.year} onChange={e=>setAnniversaryDraft(d=>({...d,year:e.target.value}))} placeholder="不填写也可以" /></label>
+                <label className="field"><span>月</span><select value={anniversaryDraft.month} onChange={e=>setAnniversaryDraft(d=>({...d,month:Number(e.target.value)}))}>{Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}月</option>)}</select></label>
+                <label className="field"><span>日</span><select value={anniversaryDraft.day} onChange={e=>setAnniversaryDraft(d=>({...d,day:Number(e.target.value)}))}>{Array.from({length:30},(_,i)=><option key={i+1} value={i+1}>{i+1}日</option>)}</select></label>
+              </div>
+              {anniversaryDraft.calendar==='lunar' && <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.isLeapMonth} onChange={e=>setAnniversaryDraft(d=>({...d,isLeapMonth:e.target.checked}))} /> 闰月</label>}
+              <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.repeatYearly} onChange={e=>setAnniversaryDraft(d=>({...d,repeatYearly:e.target.checked}))} /> 每年重复</label>
+              <label className="field"><span>备注</span><textarea rows={3} value={anniversaryDraft.notes} onChange={e=>setAnniversaryDraft(d=>({...d,notes:e.target.value}))} placeholder="可选" /></label>
+            </div>
+            <div className="editor-actions">{editingAnniversaryId && <button className="danger-button" type="button" onClick={deleteAnniversary}>删除</button>}<button className="ghost-button" type="button" onClick={()=>setAnniversaryEditorOpen(false)}>取消</button><button className="save-button" type="button" onClick={saveAnniversary} disabled={!anniversaryDraft.title.trim()}>保存</button></div>
+          </section>
+        </div>
+      )}
+
       {tagManagerOpen && (
         <div className="modal-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭标签管理" onClick={() => setTagManagerOpen(false)} />
@@ -1487,19 +2127,19 @@ function App() {
             <div className="editor-body tag-browser-body">
               {taggedTimelineGroups.length === 0 ? <p className="empty-state">还没有带这个标签的任务或记录。</p> : (
                 <div className={browsingTag.id === DEFAULT_TAG_ID ? 'default-tag-plain-list' : 'tag-timeline'}>
-                  {taggedTimelineGroups.map(group => <section key={group.date} className="tag-timeline-day">
-                    <div className="tag-timeline-date">{formatDate(fromDateKey(group.date))}</div>
+                  {taggedTimelineGroups.map((group, groupIndex) => <section key={group.date} className="tag-timeline-day">
+                    <div className="tag-timeline-date">{formatCompactTimelineDate(group.date, taggedTimelineGroups[groupIndex - 1]?.date)}</div>
                     <div className="tag-timeline-items">
                       {group.items.map(item => item.kind === 'task' ? (
                         <button key={`task-${item.task.id}`} type="button" className={`tag-timeline-item tag-task-result priority-${item.task.priority} status-${item.task.status}`} onClick={() => openTaggedTask(item.task)}>
-                          {browsingTag.id !== DEFAULT_TAG_ID && <span className="timeline-node priority-dot" />}
-                          <span className="tag-result-main"><strong>{item.task.title}</strong><small>任务 · {isMultiDayTask(item.task) ? `${formatDate(fromDateKey(item.task.date))} → ${formatDate(fromDateKey(taskEndDate(item.task)))}` : (!item.task.allDay && item.task.time ? item.task.time : '全天')}</small></span>
+                          <span className="tag-task-square" aria-hidden="true">{item.task.status === 'completed' ? '✓' : item.task.status === 'abandoned' ? '×' : ''}</span>
+                          <span className="tag-result-main"><strong title={item.task.title}>{truncateTagTimelineTitle(item.task.title)}</strong><small>{isMultiDayTask(item.task) ? `${formatDate(fromDateKey(item.task.date))} → ${formatDate(fromDateKey(taskEndDate(item.task)))}` : (!item.task.allDay && item.task.time ? item.task.time : '全天')}</small></span>
                           <span className="tag-result-status">{item.task.status === 'completed' ? '✓' : item.task.status === 'abandoned' ? '×' : ''}</span>
                         </button>
                       ) : (
                         <button key={`journal-${item.entry.id}`} type="button" className="tag-timeline-item tag-journal-result" onClick={() => openTaggedJournal(item.entry)}>
-                          {browsingTag.id !== DEFAULT_TAG_ID && <span className={`timeline-node journal-node impact-${item.entry.impact}`} />}
-                          <span className="tag-result-main"><strong>{item.entry.content}</strong><small>记录 · {item.entry.impact > 0 ? '+' : ''}{item.entry.impact}{item.entry.time ? ` · ${item.entry.time}` : ''}</small></span>
+                          <span className={`journal-bookmark journal-impact-${item.entry.impact}`} aria-hidden="true" />
+                          <span className="tag-result-main"><strong title={item.entry.title || item.entry.content || '记录'}>{truncateTagTimelineTitle(item.entry.title || item.entry.content || '记录')}</strong>{item.entry.time && <small>{item.entry.time}</small>}</span>
                         </button>
                       ))}
                     </div>
@@ -1544,7 +2184,7 @@ function App() {
               <div className="field full-field"><span>事件影响</span><div className="impact-picker">{IMPACTS.map(impact => <button key={impact} type="button" className={`impact-choice impact-${impact}${journalDraft.impact === impact ? ' active' : ''}`} onClick={() => setJournalDraft(current => ({ ...current, impact }))}>{impact > 0 ? '+' : ''}{impact}</button>)}</div></div>
               <label className="field full-field"><span>正文 · Markdown</span><textarea rows={10} value={journalDraft.content} onChange={event => setJournalDraft(current => ({ ...current, content: event.target.value }))} placeholder="正文可选。支持标题、粗体、斜体、删除线、列表、引用、行内代码、分隔线和链接。" /></label>
               <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />#{tag.name}</button>)}</div></div>
-              <div className="field full-field"><span>图片 · 最多 9 张</span><input type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} />
+              <div className="field full-field journal-image-field"><span>图片 · 最多 9 张</span><input className="journal-file-input" type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} />
                 {journalDraft.attachments.some(a => a.type === 'image') && <div className="attachment-list">{journalDraft.attachments.filter(a => a.type === 'image').map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeJournalAttachment(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
                 <small>自动压缩后保存 · 单张约 1 MB · 最多 9 张</small>
               </div>
