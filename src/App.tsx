@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub } from './db/calendar'
+import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
 type TaskPriority = 0 | 1 | 2 | 3
@@ -238,6 +239,9 @@ function MoodFace({ level }: { level: MoodLevel }) {
       <path className="mood-line" d="M20.5 39.5c5.7 4.4 15.5 5.1 23.5-.8" />
     </svg>
   )
+
+
+
   return (
     <svg {...common}>
       <circle className="mood-ring" cx="32" cy="32" r="26" />
@@ -965,6 +969,35 @@ function splitImportedTagNames(value:string) {
   return value.split(/[;,\n]+/).map(item=>item.trim()).filter(Boolean)
 }
 
+
+function syncEntityKey(entityType: SyncEntityType, entityId: string) {
+  return `${entityType}:${entityId}`
+}
+
+function rowSyncId(entityType: SyncEntityType, row: any): string {
+  return entityType === 'mood' ? String(row.date) : String(row.id)
+}
+
+async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], nextRows: any[]) {
+  const deviceId = getOrCreateDeviceId()
+  const previous = new Map(previousRows.map(row => [rowSyncId(entityType, row), row]))
+  const next = new Map(nextRows.map(row => [rowSyncId(entityType, row), row]))
+  const now = new Date().toISOString()
+
+  for (const [id, row] of next) {
+    const before = previous.get(id)
+    if (before && JSON.stringify(before) === JSON.stringify(row)) continue
+    await appendSyncChange({ entityType, entityId: id, operation: 'upsert', changedAt: now, deviceId })
+  }
+
+  for (const id of previous.keys()) {
+    if (next.has(id)) continue
+    const tombstone = { key: syncEntityKey(entityType, id), entityType, entityId: id, deletedAt: now, deviceId }
+    await saveSyncTombstone(tombstone)
+    await appendSyncChange({ entityType, entityId: id, operation: 'delete', changedAt: now, deviceId })
+  }
+}
+
 function App() {
   const today = new Date()
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
@@ -989,6 +1022,15 @@ function App() {
   const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
   const [backupExporting, setBackupExporting] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
+  const [githubSyncOpen, setGithubSyncOpen] = useState(false)
+  const [githubSyncOwner, setGithubSyncOwner] = useState(() => localStorage.getItem('zing:githubSyncOwner') || 'zzZing0-0')
+  const [githubSyncRepo, setGithubSyncRepo] = useState(() => localStorage.getItem('zing:githubSyncRepo') || 'zing-calendar-data')
+  const [githubSyncBranch, setGithubSyncBranch] = useState(() => localStorage.getItem('zing:githubSyncBranch') || 'main')
+  const [githubSyncToken, setGithubSyncToken] = useState('')
+  const [githubSyncBusy, setGithubSyncBusy] = useState(false)
+  const [githubSyncMessage, setGithubSyncMessage] = useState('')
+  const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
+  const [lastGithubSyncAt, setLastGithubSyncAt] = useState(() => localStorage.getItem('zing:lastGithubSyncAt') || '')
   const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
   const [backupRestoring, setBackupRestoring] = useState(false)
   const [resetDataConfirm, setResetDataConfirm] = useState(false)
@@ -1033,6 +1075,8 @@ function App() {
   const [journalDraft, setJournalDraft] = useState<JournalDraft>(() => emptyJournalDraft(today))
   const [tags, setTags] = useState<Tag[]>([DEFAULT_TAG])
   const [tagsHydrated, setTagsHydrated] = useState(false)
+  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], tag: [], anniversary: [] })
+  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, tag: false, anniversary: false })
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
@@ -1236,6 +1280,14 @@ function App() {
   useEffect(() => {
     if (!tasksHydrated) return
     saveTasks(tasks).catch(error => console.error('Failed to save tasks to IndexedDB', error))
+    if (!syncSnapshotReadyRef.current.task) {
+      syncSnapshotsRef.current.task = tasks
+      syncSnapshotReadyRef.current.task = true
+    } else {
+      const previous = syncSnapshotsRef.current.task
+      syncSnapshotsRef.current.task = tasks
+      void recordSyncDiff('task', previous, tasks).catch(error => console.error('Failed to record task sync changes', error))
+    }
   }, [tasks, tasksHydrated])
 
   useEffect(() => {
@@ -1279,21 +1331,53 @@ function App() {
   useEffect(() => {
     if (!anniversariesHydrated) return
     saveAnniversaries(anniversaries).catch(error => console.error('Failed to save anniversaries', error))
+    if (!syncSnapshotReadyRef.current.anniversary) {
+      syncSnapshotsRef.current.anniversary = anniversaries
+      syncSnapshotReadyRef.current.anniversary = true
+    } else {
+      const previous = syncSnapshotsRef.current.anniversary
+      syncSnapshotsRef.current.anniversary = anniversaries
+      void recordSyncDiff('anniversary', previous, anniversaries).catch(error => console.error('Failed to record anniversary sync changes', error))
+    }
   }, [anniversaries, anniversariesHydrated])
 
   useEffect(() => {
     if (!journalHydrated) return
     saveJournalEntries(journalEntries).catch(error => console.error('Failed to save journal entries', error))
+    if (!syncSnapshotReadyRef.current.journal) {
+      syncSnapshotsRef.current.journal = journalEntries
+      syncSnapshotReadyRef.current.journal = true
+    } else {
+      const previous = syncSnapshotsRef.current.journal
+      syncSnapshotsRef.current.journal = journalEntries
+      void recordSyncDiff('journal', previous, journalEntries).catch(error => console.error('Failed to record journal sync changes', error))
+    }
   }, [journalEntries, journalHydrated])
 
   useEffect(() => {
     if (!tagsHydrated) return
     saveTags(tags).catch(error => console.error('Failed to save tags', error))
+    if (!syncSnapshotReadyRef.current.tag) {
+      syncSnapshotsRef.current.tag = tags
+      syncSnapshotReadyRef.current.tag = true
+    } else {
+      const previous = syncSnapshotsRef.current.tag
+      syncSnapshotsRef.current.tag = tags
+      void recordSyncDiff('tag', previous, tags).catch(error => console.error('Failed to record tag sync changes', error))
+    }
   }, [tags, tagsHydrated])
 
   useEffect(() => {
     if (!moodsHydrated) return
     saveDailyMoods(dailyMoods).catch(error => console.error('Failed to save daily moods', error))
+    if (!syncSnapshotReadyRef.current.mood) {
+      syncSnapshotsRef.current.mood = dailyMoods
+      syncSnapshotReadyRef.current.mood = true
+    } else {
+      const previous = syncSnapshotsRef.current.mood
+      syncSnapshotsRef.current.mood = dailyMoods
+      void recordSyncDiff('mood', previous, dailyMoods).catch(error => console.error('Failed to record mood sync changes', error))
+    }
   }, [dailyMoods, moodsHydrated])
 
   useEffect(() => { localStorage.setItem('zing:greeting', greeting || 'Hello, Zing') }, [greeting])
@@ -1302,6 +1386,9 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
+  useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
+  useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
+  useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
   useEffect(() => {
     if (mainView !== 'settings' || !tasksHydrated || !journalHydrated) return
     const referencedKeys = new Set<string>()
@@ -2584,6 +2671,49 @@ function App() {
   }
 
 
+  const runGithubSync = async () => {
+    if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
+      setGithubSyncMessageKind('error')
+      setGithubSyncMessage('请先填写 GitHub 用户名、数据仓库和分支。')
+      return
+    }
+    if (!githubSyncToken.trim()) {
+      setGithubSyncMessageKind('error')
+      setGithubSyncMessage('请输入本设备的 GitHub Token。Token 不会保存到 Zing 数据或备份中。')
+      return
+    }
+    setGithubSyncBusy(true)
+    setGithubSyncMessageKind('working')
+    setGithubSyncMessage('正在连接 GitHub…')
+    try {
+      const result = await syncWithGitHub({
+        owner: githubSyncOwner.trim(),
+        repo: githubSyncRepo.trim(),
+        branch: githubSyncBranch.trim(),
+        token: githubSyncToken.trim(),
+      })
+      const stamp = result.finishedAt
+      setLastGithubSyncAt(stamp)
+      localStorage.setItem('zing:lastGithubSyncAt', stamp)
+      setGithubSyncMessageKind('success')
+      setGithubSyncMessage(result.initializedRemote
+        ? `✓ 首次同步完成 · 已上传 ${result.pushedRecords} 条数据`
+        : `✓ 同步完成 · 拉取 ${result.pulled.upserts} 条更新 / ${result.pulled.deletes} 条删除`)
+      // Rehydrate merged records so remote changes become visible immediately.
+      const [nextTasks,nextJournals,nextMoods,nextTags,nextAnniversaries] = await Promise.all([
+        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
+      ])
+      setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods)
+      setTags(nextTags.some(tag=>tag.id===DEFAULT_TAG_ID)?nextTags:[DEFAULT_TAG,...nextTags])
+      setAnniversaries(nextAnniversaries)
+    } catch (error) {
+      setGithubSyncMessageKind('error')
+      setGithubSyncMessage(`同步失败 · ${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setGithubSyncBusy(false)
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -2979,6 +3109,13 @@ function App() {
           </div>
 
           <div className="settings-group">
+            <div className="settings-group-title"><h3>云同步</h3></div>
+            <button className="settings-link-row" type="button" onClick={()=>setGithubSyncOpen(true)}>
+              <span><strong>GitHub Sync</strong><small>{lastGithubSyncAt ? `上次同步 ${new Date(lastGithubSyncAt).toLocaleString()}` : '使用独立 Private Repository 同步 Zing 数据。'}</small></span><b>›</b>
+            </button>
+          </div>
+
+          <div className="settings-group">
             <div className="settings-group-title"><h3>数据</h3></div>
             <div className="storage-card">
               <div className="storage-total"><span>本地存储</span><strong>{formatBytes(storageStats.total)}</strong></div>
@@ -3014,6 +3151,29 @@ function App() {
             </div>
           </div>
         </section>
+      )}
+
+      {githubSyncOpen && (
+        <div className="modal-layer github-sync-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭 GitHub Sync" onClick={()=>setGithubSyncOpen(false)} />
+          <section className="task-editor github-sync-modal" role="dialog" aria-modal="true" aria-label="GitHub Sync">
+            <div className="editor-header">
+              <div><span className="eyebrow">SYNC</span><h2>GitHub Sync</h2></div>
+              <button className="close-button" type="button" onClick={()=>setGithubSyncOpen(false)}>×</button>
+            </div>
+            <div className="editor-body github-sync-body">
+              <p className="github-sync-intro">Zing 仍以本地数据为主。同步时会先合并 Private Repository 中的数据，再写回云端。</p>
+              <label><span>GitHub 用户名</span><input value={githubSyncOwner} onChange={e=>setGithubSyncOwner(e.target.value)} autoCapitalize="none" /></label>
+              <label><span>数据仓库</span><input value={githubSyncRepo} onChange={e=>setGithubSyncRepo(e.target.value)} autoCapitalize="none" /></label>
+              <label><span>分支</span><input value={githubSyncBranch} onChange={e=>setGithubSyncBranch(e.target.value)} autoCapitalize="none" /></label>
+              <label><span>Fine-grained Token</span><input type="password" value={githubSyncToken} onChange={e=>setGithubSyncToken(e.target.value)} autoComplete="off" placeholder="github_pat_…" /></label>
+              <div className="github-sync-security">🔐 Token 仅保存在当前页面内存中：不会写入 Zing 数据库、localStorage、备份或 GitHub 数据仓库。刷新页面后需要重新输入。</div>
+              {githubSyncMessage && <div className={`github-sync-status ${githubSyncMessageKind}`} role="status" aria-live="polite">{githubSyncMessage}</div>}
+              <button className="github-sync-now" type="button" disabled={githubSyncBusy} onClick={()=>void runGithubSync()}>{githubSyncBusy?'正在同步…':'立即同步'}</button>
+              {lastGithubSyncAt && <small className="github-sync-last">上次成功：{new Date(lastGithubSyncAt).toLocaleString()}</small>}
+            </div>
+          </section>
+        </div>
       )}
 
       {wordIgnoreManagerOpen && (
@@ -3177,7 +3337,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.8.18</span>
+        <span>Zing Calendar · v0.9.5.2</span>
       </footer>
 
       {selectedDate && (

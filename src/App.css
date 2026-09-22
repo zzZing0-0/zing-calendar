@@ -3090,3 +3090,42 @@ button {
 }
 .overdue-task-link strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .overdue-task-link time{color:var(--muted);font-size:12px;white-space:nowrap}
+
+
+/* v0.9.5 GitHub Sync */
+.github-sync-layer>.modal-backdrop{z-index:0}
+.github-sync-layer>.github-sync-modal{z-index:1;max-width:520px}
+.github-sync-body{display:flex;flex-direction:column;gap:14px}
+.github-sync-intro{margin:0;color:var(--muted);line-height:1.6}
+.github-sync-body label{display:flex;flex-direction:column;gap:7px}
+.github-sync-body label>span{font-size:12px;font-weight:700;color:var(--muted)}
+.github-sync-body input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:var(--panel);color:var(--text);font:inherit}
+.github-sync-security{font-size:12px;line-height:1.55;padding:10px 12px;border-radius:12px;background:var(--soft);color:var(--muted)}
+.github-sync-now{border:0;border-radius:13px;padding:12px 16px;font:inherit;font-weight:750;background:var(--text);color:var(--panel);cursor:pointer}
+.github-sync-now:disabled{opacity:.55;cursor:default}
+.github-sync-last{color:var(--muted);text-align:center}
+
+
+/* v0.9.5.1 GitHub Sync interaction hotfix */
+.github-sync-layer{z-index:100 !important}
+.github-sync-layer>.modal-backdrop{z-index:0 !important}
+.github-sync-layer>.github-sync-modal{z-index:1 !important;pointer-events:auto !important}
+.github-sync-body,.github-sync-body *{pointer-events:auto}
+.github-sync-now{
+  width:100%;
+  min-height:48px;
+  border:1px solid #31463a;
+  border-radius:13px;
+  padding:12px 16px;
+  background:#31463a;
+  color:#fff;
+  font:inherit;
+  font-weight:750;
+  cursor:pointer;
+}
+.github-sync-now:hover{filter:brightness(.96)}
+.github-sync-now:disabled{opacity:.55;cursor:default}
+.github-sync-status{padding:11px 12px;border-radius:12px;font-size:13px;line-height:1.5}
+.github-sync-status.working{background:#f2f4f2;color:#536159}
+.github-sync-status.success{background:#edf5ef;color:#376247}
+.github-sync-status.error{background:#f8eeee;color:#8a4d4d}
