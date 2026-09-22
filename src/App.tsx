@@ -92,7 +92,7 @@ type AnniversaryDraft = {
 }
 
 type TagScope = 'task' | 'journal' | 'both'
-type Tag = { id: string; name: string; color: string; scope: TagScope; system?: boolean; systemKind?: 'default' | 'import-source'; sourceKey?: string }
+type Tag = { id: string; name: string; color: string; scope: TagScope; sortOrder?: number; archived?: boolean; archivedAt?: string; system?: boolean; systemKind?: 'default' | 'import-source'; sourceKey?: string }
 
 type JournalDraft = {
   date: string
@@ -138,8 +138,13 @@ const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
 const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true, systemKind: 'default' }
 const IMPORT_SOURCE_TAG_PREFIX = 'system-import-source:'
-const DIDA_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida`
-const DIDA_SOURCE_TAG: Tag = { id: DIDA_SOURCE_TAG_ID, name: '从滴答导入', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'dida' }
+// Keep the legacy `...:dida` id for the umbrella tag so existing imported tasks remain compatible.
+const EXTERNAL_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida`
+const DIDA_APP_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida-list`
+const GENERIC_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}generic`
+const EXTERNAL_SOURCE_TAG: Tag = { id: EXTERNAL_SOURCE_TAG_ID, name: '从外部导入', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'external' }
+const DIDA_APP_SOURCE_TAG: Tag = { id: DIDA_APP_SOURCE_TAG_ID, name: '滴答清单', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'dida' }
+const GENERIC_SOURCE_TAG: Tag = { id: GENERIC_SOURCE_TAG_ID, name: '通用', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'generic' }
 function isImportSourceTagId(id:string) { return id.startsWith(IMPORT_SOURCE_TAG_PREFIX) }
 function isImportSourceTag(tag:Tag) { return tag.systemKind === 'import-source' || isImportSourceTagId(tag.id) }
 const TAG_COLORS = ['#789c86', '#d3b64b', '#d88b48', '#c8665f', '#8798bd', '#9b83ad', '#789da3', '#a58d72']
@@ -308,12 +313,12 @@ function emptyJournalDraft(date: Date): JournalDraft {
   return { date: toDateKey(date), hasTime: true, time: currentTime(), title: '', content: '', impact: 0, tagIds: [DEFAULT_TAG_ID], attachments: [] }
 }
 
-function emptyDraft(date: Date): TaskDraft {
+function emptyDraft(date: Date, defaultPriority: TaskPriority = 1): TaskDraft {
   return {
     title: '',
     date: toDateKey(date),
     endDate: '',
-    priority: 1,
+    priority: defaultPriority,
     allDay: false,
     time: '',
     deadline: '',
@@ -580,7 +585,7 @@ function formatFileSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-function AttachmentThumb({ attachment, onRemove, onPreview }: { attachment: Attachment; onRemove: () => void; onPreview: (attachment: Attachment) => void }) {
+function AttachmentThumb({ attachment, onRemove, onPreview }: { attachment: Attachment; onRemove?: () => void; onPreview: (attachment: Attachment) => void }) {
   const [url, setUrl] = useState<string>('')
   useEffect(() => {
     let active = true
@@ -604,40 +609,8 @@ function AttachmentThumb({ attachment, onRemove, onPreview }: { attachment: Atta
       <span className="attachment-card-name" title={attachment.filename}>{attachment.filename}</span>
       <span className="attachment-card-size">压缩后 {formatFileSize(attachment.size)}</span>
     </div>
-    <button className="attachment-remove-button" type="button" onClick={onRemove} aria-label={`删除 ${attachment.filename}`}>×</button>
+    {onRemove && <button className="attachment-remove-button" type="button" onClick={onRemove} aria-label={`删除 ${attachment.filename}`}>×</button>}
   </div>
-}
-
-function renderInlineMarkdown(text: string) {
-  const tokens = text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*|`[^`]+`)/g)
-  return tokens.map((token, index) => {
-    const link = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/)
-    if (link) return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>
-    if (token.startsWith('**') && token.endsWith('**')) return <strong key={index}>{token.slice(2, -2)}</strong>
-    if (token.startsWith('~~') && token.endsWith('~~')) return <del key={index}>{token.slice(2, -2)}</del>
-    if (token.startsWith('*') && token.endsWith('*')) return <em key={index}>{token.slice(1, -1)}</em>
-    if (token.startsWith('`') && token.endsWith('`')) return <code key={index}>{token.slice(1, -1)}</code>
-    return token
-  })
-}
-
-function MarkdownBody({ content }: { content: string }) {
-  const lines = content.split(/\r?\n/)
-  return <div className="markdown-body">{lines.map((line, index) => {
-    if (/^---+$/.test(line.trim())) return <hr key={index} />
-    const heading = line.match(/^(#{1,3})\s+(.+)$/)
-    if (heading) {
-      const children = renderInlineMarkdown(heading[2])
-      if (heading[1].length === 1) return <h1 key={index}>{children}</h1>
-      if (heading[1].length === 2) return <h2 key={index}>{children}</h2>
-      return <h3 key={index}>{children}</h3>
-    }
-    if (/^>\s?/.test(line)) return <blockquote key={index}>{renderInlineMarkdown(line.replace(/^>\s?/, ''))}</blockquote>
-    if (/^[-*]\s+/.test(line)) return <div className="md-list-line" key={index}>• {renderInlineMarkdown(line.replace(/^[-*]\s+/, ''))}</div>
-    const ordered = line.match(/^(\d+)\.\s+(.+)$/)
-    if (ordered) return <div className="md-list-line" key={index}>{ordered[1]}. {renderInlineMarkdown(ordered[2])}</div>
-    return line ? <p key={index}>{renderInlineMarkdown(line)}</p> : <br key={index} />
-  })}</div>
 }
 
 function StorageImage({ attachment, onPreview }: { attachment: Attachment; onPreview:(attachment:Attachment)=>void }) {
@@ -661,25 +634,6 @@ function AudioAttachment({ attachment }: { attachment: Attachment }) {
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [attachment.storageKey])
   return url ? <audio className="journal-audio-player" controls src={url} /> : <span>录音加载中…</span>
-}
-
-function truncateTagTimelineTitle(value: string, maxLength = 20) {
-  const chars = Array.from(value)
-  return chars.length > maxLength ? `${chars.slice(0, maxLength).join('')}…` : value
-}
-
-
-function formatCompactTimelineDate(dateKey: string, previousDateKey?: string) {
-  const date = fromDateKey(dateKey)
-  if (!previousDateKey) return formatDate(date)
-  const previous = fromDateKey(previousDateKey)
-  if (date.getFullYear() === previous.getFullYear() && date.getMonth() === previous.getMonth()) {
-    return ordinalDay(date.getDate())
-  }
-  if (date.getFullYear() === previous.getFullYear()) {
-    return `${date.getDate()} ${MONTHS[date.getMonth()]}`
-  }
-  return formatDate(date)
 }
 
 const chineseCalendarFormatter = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', {
@@ -706,6 +660,89 @@ function chineseLunarDayName(day: number) {
     '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十',
     '廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十']
   return names[day - 1]
+}
+
+type CalendarAnnotationKind = 'statutory' | 'traditional' | 'international' | 'solar-term' | 'week'
+type CalendarAnnotation = { label: string; kind: CalendarAnnotationKind }
+
+function lunarMonthNumber(monthText: string) {
+  const clean = monthText.replace('闰', '').replace('月', '')
+  const names: Record<string, number> = {
+    '正':1,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,'十一':11,'冬':11,'十二':12,'腊':12,
+  }
+  return names[clean] ?? Number.parseInt(clean, 10)
+}
+
+function isoWeekNumber(date: Date) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const day = target.getUTCDay() || 7
+  target.setUTCDate(target.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1))
+  return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+}
+
+function nthWeekdayOfMonth(date: Date, weekday: number, nth: number) {
+  if (date.getDay() !== weekday) return false
+  return Math.floor((date.getDate() - 1) / 7) + 1 === nth
+}
+
+// Standard 24-solar-term approximation used for modern Gregorian years.
+// The table is minutes from the 1900 小寒 epoch; dates are resolved in China Standard Time.
+const SOLAR_TERM_NAMES = ['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至']
+const SOLAR_TERM_MINUTES = [0,21208,42467,63836,85337,107014,128867,150921,173149,195551,218072,240693,263343,285989,308563,331033,353350,375494,397447,419210,440795,462224,483532,504758]
+function solarTermForDate(date: Date) {
+  const year = date.getFullYear()
+  for (let index=0; index<24; index+=1) {
+    const utcMs = Date.UTC(1900,0,6,2,5) + 31556925974.7 * (year - 1900) + SOLAR_TERM_MINUTES[index] * 60000
+    const china = new Date(utcMs + 8 * 3600000)
+    if (china.getUTCMonth() === date.getMonth() && china.getUTCDate() === date.getDate()) return SOLAR_TERM_NAMES[index]
+  }
+  return undefined
+}
+
+function calendarFestival(date: Date): CalendarAnnotation | undefined {
+  const month = date.getMonth() + 1, day = date.getDate()
+  const lunar = solarToLunar(date)
+  const lunarMonth = lunarMonthNumber(lunar.monthText)
+  const lunarDay = lunar.day
+  const lunarKey = `${lunarMonth}-${lunarDay}`
+  const solarKey = `${month}-${day}`
+
+  const statutorySolar: Record<string,string> = {'1-1':'元旦','5-1':'劳动节','10-1':'国庆节'}
+  const statutoryLunar: Record<string,string> = {'1-1':'春节','5-5':'端午节','8-15':'中秋节'}
+  if (statutorySolar[solarKey]) return {label:statutorySolar[solarKey],kind:'statutory'}
+  if (statutoryLunar[lunarKey] && !lunar.isLeapMonth) return {label:statutoryLunar[lunarKey],kind:'statutory'}
+  if (solarTermForDate(date) === '清明') return {label:'清明节',kind:'statutory'}
+
+  const traditionalLunar: Record<string,string> = {
+    '1-15':'元宵节','2-2':'龙抬头','3-3':'上巳节','7-7':'七夕','7-15':'中元节','9-9':'重阳节','10-15':'下元节','12-8':'腊八节',
+  }
+  if (traditionalLunar[lunarKey] && !lunar.isLeapMonth) return {label:traditionalLunar[lunarKey],kind:'traditional'}
+  // 除夕 is the Gregorian day immediately before the next lunar new year.
+  const tomorrow = new Date(date.getFullYear(), date.getMonth(), date.getDate()+1)
+  const tomorrowLunar = solarToLunar(tomorrow)
+  if (lunarMonth === 12 && tomorrowLunar.day === 1 && lunarMonthNumber(tomorrowLunar.monthText) === 1) return {label:'除夕',kind:'traditional'}
+
+  const internationalFixed: Record<string,string> = {
+    '2-14':'情人节','3-8':'妇女节','3-12':'植树节','4-1':'愚人节','5-4':'青年节','6-1':'儿童节','9-10':'教师节',
+    '10-31':'万圣夜','12-24':'平安夜','12-25':'圣诞节','12-31':'跨年夜',
+  }
+  if (internationalFixed[solarKey]) return {label:internationalFixed[solarKey],kind:'international'}
+  if (month===5 && nthWeekdayOfMonth(date,0,2)) return {label:'母亲节',kind:'international'}
+  if (month===6 && nthWeekdayOfMonth(date,0,3)) return {label:'父亲节',kind:'international'}
+  if (month===11 && nthWeekdayOfMonth(date,4,4)) return {label:'感恩节',kind:'international'}
+
+  return undefined
+}
+
+function calendarAnnotation(date: Date, weekStartsMonday: boolean): CalendarAnnotation | undefined {
+  const festival = calendarFestival(date)
+  if (festival) return festival
+  const term = solarTermForDate(date)
+  if (term) return {label:term,kind:'solar-term'}
+  const firstWeekday = weekStartsMonday ? 1 : 0
+  if (date.getDay() === firstWeekday) return {label:`${isoWeekNumber(date)}周`,kind:'week'}
+  return undefined
 }
 
 function lunarFullLabel(date: Date) {
@@ -795,7 +832,7 @@ type BackupPreview = {
   moods: DailyMood[]
   tags: Tag[]
   anniversaries: Anniversary[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean }
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean; wordCloudIgnored?:string[] }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
 function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
@@ -837,7 +874,7 @@ function downloadTextFile(filename:string,text:string,mimeType:string) {
 }
 
 
-type ExternalImportStage = 'sources' | 'dida-file' | 'dida-preview'
+type ExternalImportStage = 'sources' | 'generic-file' | 'generic-preview' | 'dida-file' | 'dida-preview'
 type DidaImportPreview = {
   fileName:string
   total:number
@@ -868,6 +905,23 @@ function parseCsvRows(text:string): string[][] {
   }
   if(field.length || row.length) pushRow()
   return rows
+}
+function genericDate(value:string) {
+  const raw=value.trim()
+  if(!raw) return ''
+  const direct=raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/)
+  if(direct) return `${direct[1]}-${direct[2].padStart(2,'0')}-${direct[3].padStart(2,'0')}`
+  const parsed=new Date(raw)
+  if(Number.isNaN(parsed.getTime())) return ''
+  return `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}-${String(parsed.getDate()).padStart(2,'0')}`
+}
+function genericHeaderIndex(header:string[], aliases:string[]) {
+  const normalized=header.map(cell=>cell.trim().toLowerCase().replace(/[\s_-]+/g,''))
+  for(const alias of aliases){
+    const index=normalized.indexOf(alias.toLowerCase().replace(/[\s_-]+/g,''))
+    if(index>=0) return index
+  }
+  return -1
 }
 function didaIso(value:string) {
   if(!value) return ''
@@ -915,8 +969,18 @@ function App() {
   const today = new Date()
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
+  const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
+  const [overdueInboxOpen, setOverdueInboxOpen] = useState(false)
+  const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [mainView, setMainView] = useState<'calendar' | 'anniversaries' | 'settings'>('calendar')
+  const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
+  const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('month')
+  const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
+  const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
+  })
+  const [wordIgnoreDraft, setWordIgnoreDraft] = useState('')
+  const [wordIgnoreManagerOpen, setWordIgnoreManagerOpen] = useState(false)
   const [greeting, setGreeting] = useState(() => localStorage.getItem('zing:greeting') || 'Hello, Zing')
   const [weekStartsMonday, setWeekStartsMonday] = useState(() => localStorage.getItem('zing:weekStart') !== 'sunday')
   const [dateFormat, setDateFormat] = useState<'dmy'|'mdy'>(() => localStorage.getItem('zing:dateFormat') === 'mdy' ? 'mdy' : 'dmy')
@@ -927,6 +991,8 @@ function App() {
   const [backupMessage, setBackupMessage] = useState('')
   const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
   const [backupRestoring, setBackupRestoring] = useState(false)
+  const [resetDataConfirm, setResetDataConfirm] = useState(false)
+  const [resettingData, setResettingData] = useState(false)
   const backupInputRef = useRef<HTMLInputElement|null>(null)
   const [externalImportOpen, setExternalImportOpen] = useState(false)
   const [externalImportStage, setExternalImportStage] = useState<ExternalImportStage>('sources')
@@ -939,12 +1005,16 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const searchWrapRef = useRef<HTMLDivElement | null>(null)
   const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
+  const [defaultPriority, setDefaultPriority] = useState<TaskPriority>(() => {
+    const saved = Number(localStorage.getItem('zing:defaultPriority'))
+    return ([0,1,2,3] as number[]).includes(saved) ? saved as TaskPriority : 1
+  })
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksHydrated, setTasksHydrated] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [editingOccurrenceDate, setEditingOccurrenceDate] = useState<string | null>(null)
-  const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(today))
+  const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(today, defaultPriority))
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
   const [anniversaries, setAnniversaries] = useState<Anniversary[]>([])
@@ -968,7 +1038,8 @@ function App() {
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
   const [newTagScope, setNewTagScope] = useState<TagScope>('both')
   const [openTagColorId, setOpenTagColorId] = useState<string | null>(null)
-  const [browsingTagId, setBrowsingTagId] = useState<string | null>(null)
+  const [draggingTagId, setDraggingTagId] = useState<string | null>(null)
+  const [dragOverTag, setDragOverTag] = useState<{id:string;position:'before'|'after'} | null>(null)
   const [seriesAction, setSeriesAction] = useState<'save' | 'delete' | null>(null)
   const [confirmSingleTask, setConfirmSingleTask] = useState(false)
   const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
@@ -997,6 +1068,18 @@ function App() {
       if (current?.url) URL.revokeObjectURL(current.url)
       return null
     })
+  }
+
+  const openMonthPicker = (target:'calendar'|'mood') => {
+    const source=target==='calendar'?visibleMonth:moodMonth
+    setMonthPickerYear(source.getFullYear())
+    setMonthPickerTarget(target)
+  }
+  const chooseMonth = (monthIndex:number) => {
+    const next=new Date(monthPickerYear,monthIndex,1)
+    if(monthPickerTarget==='calendar') setVisibleMonth(next)
+    else if(monthPickerTarget==='mood') setMoodMonth(next)
+    setMonthPickerTarget(null)
   }
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
@@ -1217,6 +1300,8 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
   useEffect(() => { localStorage.setItem('zing:dateFormat', dateFormat) }, [dateFormat])
   useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
+  useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
+  useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => {
     if (mainView !== 'settings' || !tasksHydrated || !journalHydrated) return
     const referencedKeys = new Set<string>()
@@ -1255,6 +1340,16 @@ function App() {
     const expanded = expandTasks(tasks, start, end)
     return showEndedTasks ? expanded : expanded.filter(task => task.status === 'todo')
   }, [tasks, days, showEndedTasks])
+
+  const overdueTasks = useMemo(() => {
+    const todayKey=toDateKey(today)
+    const yesterday=addDaysKey(todayKey,-1)
+    if(!tasks.length) return [] as Task[]
+    const earliest=tasks.reduce((min,task)=>task.date<min?task.date:min,tasks[0].date)
+    return expandTasks(tasks,earliest,yesterday)
+      .filter(task=>isTaskOverdue(task,todayKey))
+      .sort((a,b)=>taskEndDate(a).localeCompare(taskEndDate(b)) || b.priority-a.priority || a.title.localeCompare(b.title,'zh-CN'))
+  },[tasks,today])
 
   const selectedTasks = useMemo(() => {
     if (!selectedDate) return []
@@ -1297,9 +1392,11 @@ function App() {
     })
   }, [selectedDate, journalEntries])
 
+  const viewingJournal = viewingJournalId ? journalEntries.find(entry => entry.id === viewingJournalId) ?? null : null
   const selectedMood = selectedDate ? dailyMoods.find(mood => mood.date === toDateKey(selectedDate)) : undefined
   const selectedImpactTotal = selectedJournalEntries.reduce((sum, entry) => sum + entry.impact, 0)
   const moodsByDate = useMemo(() => new Map(dailyMoods.map(mood => [mood.date, mood])), [dailyMoods])
+  const journalDates = useMemo(() => new Set(journalEntries.map(entry => entry.date)), [journalEntries])
   const moodDays = useMemo(() => buildMonth(moodMonth.getFullYear(), moodMonth.getMonth(), weekStartsMonday), [moodMonth, weekStartsMonday])
 
   const tasksByDate = useMemo(() => {
@@ -1387,7 +1484,7 @@ function App() {
     const date = selectedDate ?? today
     setEditingTaskId(null)
     setEditingOccurrenceDate(null)
-    setDraft(emptyDraft(date))
+    setDraft(emptyDraft(date, defaultPriority))
     setEditorOpen(true)
   }
 
@@ -1681,8 +1778,13 @@ function App() {
   const addTag = () => {
     const name = newTagName.trim()
     if (!name || tags.some(tag => tag.name.toLowerCase() === name.toLowerCase())) return
-    setTags(current => [...current, { id: crypto.randomUUID(), name, color: newTagColor, scope: newTagScope }])
+    setTags(current => [...current, { id: crypto.randomUUID(), name, color: newTagColor, scope: newTagScope, sortOrder: Math.max(-1, ...current.filter(tag => !tag.system).map(tag => tag.sortOrder ?? 0)) + 1 }])
     setNewTagName('')
+  }
+
+  const setTagArchived = (id: string, archived: boolean) => {
+    const archivedAt = archived ? toDateKey(new Date()) : undefined
+    setTags(current => current.map(tag => tag.id === id ? { ...tag, archived, archivedAt } : tag))
   }
 
   const deleteTag = (id: string) => {
@@ -1696,26 +1798,48 @@ function App() {
     setJournalEntries(current => current.map(entry => ({ ...entry, tagIds: clean(entry.tagIds) })))
   }
 
-  const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => !isImportSourceTag(tag) && (tag.scope === 'both' || tag.scope === kind)).sort((a, b) => Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID))
+  const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.scope === 'both' || tag.scope === kind)).sort((a, b) => Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID))
 
-  const browsingTag = browsingTagId ? tags.find(tag => tag.id === browsingTagId) ?? null : null
-  const taggedTasks = browsingTag ? tasks
-    .filter(task => (task.tagIds?.length ? task.tagIds : [DEFAULT_TAG_ID]).includes(browsingTag.id))
-    .sort((a, b) => taskEndDate(b).localeCompare(taskEndDate(a)) || b.date.localeCompare(a.date) || taskSort(a, b)) : []
-  const taggedJournalEntries = browsingTag ? journalEntries
-    .filter(entry => (entry.tagIds?.length ? entry.tagIds : [DEFAULT_TAG_ID]).includes(browsingTag.id))
-    .sort((a, b) => b.date.localeCompare(a.date) || (b.time ?? '').localeCompare(a.time ?? '') || b.createdAt.localeCompare(a.createdAt)) : []
+  const managedTags = useMemo(() => tags
+    .filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag))
+    .sort((a,b) => Number(Boolean(a.archived)) - Number(Boolean(b.archived)) || (a.sortOrder ?? tags.indexOf(a)) - (b.sortOrder ?? tags.indexOf(b))), [tags])
 
-  const taggedTimeline = [
-    ...taggedTasks.map(task => ({ kind: 'task' as const, date: task.date, time: !task.allDay ? task.time : undefined, createdAt: task.createdAt, task })),
-    ...taggedJournalEntries.map(entry => ({ kind: 'journal' as const, date: entry.date, time: entry.time, createdAt: entry.createdAt, entry })),
-  ].sort((a, b) => b.date.localeCompare(a.date) || Number(Boolean(b.time)) - Number(Boolean(a.time)) || (b.time ?? '').localeCompare(a.time ?? '') || b.createdAt.localeCompare(a.createdAt))
-  const taggedTimelineGroups = taggedTimeline.reduce<Array<{ date: string; items: typeof taggedTimeline }>>((groups, item) => {
-    const last = groups[groups.length - 1]
-    if (last?.date === item.date) last.items.push(item)
-    else groups.push({ date: item.date, items: [item] })
-    return groups
-  }, [])
+  const tagDateFromKey = (key:string) => {
+    const [year,month,day] = key.split('-').map(Number)
+    if (!year || !month || !day) return null
+    const date = new Date(year,month-1,day)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  const tagUsage = useMemo(() => {
+    const usage = new Map<string,{tasks:number;journals:number;days:number}>()
+    managedTags.forEach(tag => {
+      const taskRows = tasks.filter(task => (task.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
+      const journalRows = journalEntries.filter(entry => (entry.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
+      const days = new Set<string>()
+      taskRows.forEach(task => {
+        const start = tagDateFromKey(task.date), end = tagDateFromKey(taskEndDate(task))
+        if (!start || !end) { days.add(task.date); return }
+        for (let cursor=new Date(start); cursor<=end; cursor.setDate(cursor.getDate()+1)) days.add(toDateKey(cursor))
+      })
+      journalRows.forEach(entry => days.add(entry.date))
+      usage.set(tag.id,{tasks:taskRows.length,journals:journalRows.length,days:days.size})
+    })
+    return usage
+  },[managedTags,tasks,journalEntries])
+
+  const moveManagedTag = (dragId:string,targetId:string,position:'before'|'after') => {
+    if (dragId===targetId) return
+    const ids=managedTags.map(tag=>tag.id)
+    const from=ids.indexOf(dragId)
+    if (from<0) return
+    ids.splice(from,1)
+    const targetIndex=ids.indexOf(targetId)
+    if (targetIndex<0) return
+    ids.splice(position==='after' ? targetIndex+1 : targetIndex,0,dragId)
+    const order=new Map(ids.map((id,index)=>[id,index]))
+    setTags(current=>current.map(tag=>order.has(tag.id)?{...tag,sortOrder:order.get(tag.id)}:tag))
+  }
 
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
 
@@ -1746,9 +1870,26 @@ function App() {
     return nodes
   }
 
-  const searchResults = useMemo(() => {
+  type SearchResult =
+    | { kind:'task'; id:string; title:string; date:string; snippet:string; item:Task }
+    | { kind:'journal'; id:string; title:string; date:string; snippet:string; item:JournalEntry }
+    | { kind:'anniversary'; id:string; title:string; date:string; snippet:string; item:Anniversary; nextOccurrence?:Date }
+    | { kind:'tag'; id:string; title:string; date:string; snippet:string; item:Tag }
+
+  const tagSearchMode = normalizedSearch.startsWith('#')
+  const tagSearchTerm = tagSearchMode ? normalizedSearch.slice(1).trim() : ''
+
+  const searchResults = useMemo<SearchResult[]>(() => {
     if (!normalizedSearch) return []
-    const results: Array<{ kind:'task'|'journal'|'anniversary'; id:string; title:string; date:string; snippet:string; item:Task|JournalEntry|Anniversary; nextOccurrence?:Date }> = []
+    if (tagSearchMode) {
+      return managedTags
+        .filter(tag => !tagSearchTerm || tag.name.toLocaleLowerCase().includes(tagSearchTerm))
+        .map(tag => {
+          const usage=tagUsage.get(tag.id) ?? {tasks:0,journals:0,days:0}
+          return {kind:'tag' as const,id:tag.id,title:`#${tag.name}`,date:'',snippet:`任务 ${usage.tasks} · 记录 ${usage.journals} · ${usage.days}天`,item:tag}
+        })
+    }
+    const results: SearchResult[] = []
     if (searchFilter === 'all' || searchFilter === 'task') tasks.forEach(task => {
       const hay = `${task.title} ${task.notes ?? ''}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) results.push({ kind:'task', id:task.id, title:task.title, date:task.date, snippet:searchSnippet(task.notes ?? ''), item:task })
@@ -1768,11 +1909,12 @@ function App() {
       }
     })
     return results.sort((a,b) => b.date.localeCompare(a.date))
-  }, [normalizedSearch, searchFilter, tasks, journalEntries, anniversaries])
+  }, [normalizedSearch, tagSearchMode, tagSearchTerm, searchFilter, tasks, journalEntries, anniversaries, managedTags, tagUsage])
 
-  const searchDateLabel = (result: typeof searchResults[number]) => {
+  const searchDateLabel = (result: SearchResult) => {
+    if (result.kind === 'tag') return ''
     if (result.kind === 'anniversary') {
-      const anniversary = result.item as Anniversary
+      const anniversary = result.item
       const ownDate = anniversary.calendar === 'lunar'
         ? `农历 ${anniversary.isLeapMonth ? '闰' : ''}${anniversary.month}月${anniversary.day}日`
         : `${anniversary.month}月${anniversary.day}日`
@@ -1780,30 +1922,42 @@ function App() {
     }
     const [year, month, day] = result.date.split('-').map(Number)
     const label = year && month && day ? formatUiDate(new Date(year, month - 1, day)) : result.date
-    if (result.kind === 'journal') {
-      const entry = result.item as JournalEntry
-      return entry.time ? `${label} · ${entry.time}` : label
-    }
+    if (result.kind === 'journal') return result.item.time ? `${label} · ${result.item.time}` : label
     return label
   }
 
-  const searchMarker = (result: typeof searchResults[number]) => {
-    if (result.kind === 'task') {
-      const task = result.item as Task
-      return <span className={`search-task-marker priority-${task.priority} status-${task.status}`}>{task.status === 'completed' ? '✓' : task.status === 'abandoned' ? '×' : ''}</span>
-    }
-    if (result.kind === 'journal') {
-      const entry = result.item as JournalEntry
-      return <span className={`search-journal-marker impact-${entry.impact}`} />
-    }
-    return <span className="search-anniversary-marker">{anniversaryIcon((result.item as Anniversary).type)}</span>
+  const searchMarker = (result: SearchResult) => {
+    if (result.kind === 'tag') return <span className="search-tag-marker" style={{background:result.item.color}} />
+    if (result.kind === 'task') return <span className={`search-task-marker priority-${result.item.priority} status-${result.item.status}`}>{result.item.status === 'completed' ? '✓' : result.item.status === 'abandoned' ? '×' : ''}</span>
+    if (result.kind === 'journal') return <span className={`search-journal-marker impact-${result.item.impact}`} />
+    return <span className="search-anniversary-marker">{anniversaryIcon(result.item.type)}</span>
   }
 
-  const openSearchResult = (result: typeof searchResults[number]) => {
+  const openTaskAtItsDay = (task:Task) => {
+    const [year,month,day]=task.date.split('-').map(Number)
+    const date=new Date(year,month-1,day)
+    setMainView('calendar')
+    setVisibleMonth(new Date(year,month-1,1))
+    setSelectedDate(date)
+    setOverdueInboxOpen(false)
+    window.setTimeout(()=>editTask(task),0)
+  }
+
+  const openSearchResult = (result: SearchResult) => {
+    if (result.kind === 'tag') return
     setSearchOpen(false)
-    if (result.kind === 'task') editTask(result.item as Task)
-    else if (result.kind === 'journal') setViewingJournalId(result.id)
-    else openAnniversaryEditor(result.item as Anniversary)
+    if (result.kind === 'task' || result.kind === 'journal') {
+      const dateKey=result.kind==='task' ? result.item.date : result.item.date
+      const [year,month,day]=dateKey.split('-').map(Number)
+      const date=new Date(year,month-1,day)
+      setMainView('calendar')
+      setVisibleMonth(new Date(date.getFullYear(),date.getMonth(),1))
+      setSelectedDate(date)
+      window.setTimeout(()=>{
+        if(result.kind==='task') editTask(result.item)
+        else setViewingJournalId(result.id)
+      },0)
+    } else openAnniversaryEditor(result.item)
   }
 
   useEffect(() => {
@@ -1820,6 +1974,232 @@ function App() {
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [])
+
+  const statistics = useMemo(() => {
+    const todayKey = toDateKey(today)
+    const startOfMonth = toDateKey(new Date(today.getFullYear(), today.getMonth(), 1))
+    const weekOffset = weekStartsMonday ? (today.getDay()+6)%7 : today.getDay()
+    const startOfWeek = toDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate()-weekOffset))
+    const start30 = toDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29))
+    const startYear = `${today.getFullYear()}-01-01`
+    const rangeStart = statsRange==='week' ? startOfWeek : statsRange==='month' ? startOfMonth : statsRange==='30d' ? start30 : statsRange==='year' ? startYear : '0000-01-01'
+    const inRange = (key?:string) => Boolean(key && key >= rangeStart && key <= todayKey)
+    const taskOrigin = (task:Task) => task.originalDate ?? task.occurrenceDate ?? task.date
+    const taskOriginalEnd = (task:Task) => {
+      const origin = taskOrigin(task)
+      const duration = Math.max(0, dayDiff(task.date, taskEndDate(task)))
+      return addDaysKey(origin, duration)
+    }
+
+    // Expand recurring tasks only across the selected historical window, then use original planned date as cohort.
+    const earliestTaskDate = tasks.length ? tasks.reduce((min,task)=>task.date<min?task.date:min,tasks[0].date) : todayKey
+    const statsTasks = expandTasks(tasks, rangeStart==='0000-01-01' ? earliestTaskDate : rangeStart, todayKey)
+      .filter(task => inRange(taskOrigin(task)))
+    const eligibleTasks = statsTasks.filter(task => task.status!=='todo' || taskEndDate(task) <= todayKey)
+    const completed = eligibleTasks.filter(task=>task.status==='completed').length
+    const abandoned = eligibleTasks.filter(task=>task.status==='abandoned').length
+    const overdue = eligibleTasks.filter(task=>task.status==='todo').length
+    const completionRate = eligibleTasks.length ? completed/eligibleTasks.length : 0
+
+    const postponedTasks = eligibleTasks.filter(task=>(task.postponeHistory?.length ?? 0)>0)
+    const postponeEvents = eligibleTasks.flatMap(task=>task.postponeHistory ?? [])
+    const postponeRate = eligibleTasks.length ? postponedTasks.length/eligibleTasks.length : 0
+    const maxPostponeCount = eligibleTasks.reduce((max,task)=>Math.max(max,task.postponeHistory?.length ?? 0),0)
+    const postponeDays = (task:Task) => Math.max(0, dayDiff(taskOriginalEnd(task), taskEndDate(task)))
+    const maxPostponeDays = eligibleTasks.reduce((max,task)=>Math.max(max,postponeDays(task)),0)
+
+    const completedByDay = new Map<string,number>()
+    statsTasks.forEach(task=>{ if(task.completedAt){
+      const key=toDateKey(new Date(task.completedAt))
+      if(inRange(key)) completedByDay.set(key,(completedByDay.get(key)??0)+1)
+    }})
+    const rawCompletedTrend = [...completedByDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]))
+    const completionTrend = (() => {
+      if (statsRange==='all') {
+        if (!rawCompletedTrend.length) return []
+        const first=rawCompletedTrend[0][0], last=todayKey
+        const totalDays=Math.max(1,dayDiff(first,last)+1)
+        const bucketCount=Math.max(10,Math.min(20,Math.ceil(totalDays/75)))
+        const bucketDays=Math.max(1,Math.ceil(totalDays/bucketCount))
+        const buckets=Array.from({length:bucketCount},(_,index)=>{
+          const start=addDaysKey(first,index*bucketDays)
+          const end=index===bucketCount-1 ? last : addDaysKey(first,Math.min(totalDays-1,(index+1)*bucketDays-1))
+          return {key:`${start}:${end}`,start,end,count:0,label:`${Number(start.slice(5,7))}/${Number(start.slice(8,10))}`}
+        }).filter(bucket=>bucket.start<=last)
+        rawCompletedTrend.forEach(([date,count])=>{
+          const index=Math.min(buckets.length-1,Math.max(0,Math.floor(dayDiff(first,date)/bucketDays)))
+          if(buckets[index]) buckets[index].count+=count
+        })
+        return buckets
+      }
+      const grouped=new Map<string,number>()
+      rawCompletedTrend.forEach(([date,count])=>{
+        const key = statsRange==='year' ? date.slice(0,7) : date
+        grouped.set(key,(grouped.get(key)??0)+count)
+      })
+      return [...grouped.entries()].map(([key,count])=>({
+        key,count,
+        label: statsRange==='year' ? `${Number(key.slice(5,7))}月` : `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}`
+      }))
+    })()
+    const mostPostponedTask = [...eligibleTasks].sort((a,b)=>(b.postponeHistory?.length??0)-(a.postponeHistory?.length??0))[0]
+    const longestPostponedTask = [...eligibleTasks].sort((a,b)=>postponeDays(b)-postponeDays(a))[0]
+
+    const journals = journalEntries.filter(entry=>inRange(entry.date))
+    const moods = dailyMoods.filter(mood=>inRange(mood.date))
+    const journalDays = new Set(journals.map(entry=>entry.date)).size
+    const moodDays = new Set(moods.map(mood=>mood.date)).size
+    const impactCounts = [-2,-1,0,1,2].map(value=>({value:value as JournalImpact,count:journals.filter(j=>j.impact===value).length}))
+    const moodCounts = [1,2,3,4,5].map(value=>({value:value as MoodLevel,count:moods.filter(m=>m.level===value).length}))
+    const priorityCounts = [3,2,1,0].map(value=>({value:value as TaskPriority,count:eligibleTasks.filter(t=>t.priority===value).length}))
+
+    const tagRows = managedTags.map(tag=>{
+      const tagTasks=eligibleTasks.filter(task=>(task.tagIds??[DEFAULT_TAG_ID]).includes(tag.id))
+      const tagJournals=journals.filter(entry=>(entry.tagIds??[DEFAULT_TAG_ID]).includes(tag.id))
+      const tagPostponed=tagTasks.filter(task=>(task.postponeHistory?.length??0)>0)
+      const impacts=[-2,-1,0,1,2].map(value=>({value:value as JournalImpact,count:tagJournals.filter(j=>j.impact===value).length}))
+      const days=new Set<string>()
+      tagTasks.forEach(task=>days.add(taskOrigin(task)))
+      tagJournals.forEach(entry=>days.add(entry.date))
+      const tagCompleted=tagTasks.filter(t=>t.status==='completed').length
+      const tagMoodDates=new Set(tagJournals.map(entry=>entry.date))
+      const tagMoods=moods.filter(mood=>tagMoodDates.has(mood.date))
+      const moodDistribution=[1,2,3,4,5].map(value=>({value:value as MoodLevel,count:tagMoods.filter(m=>m.level===value).length}))
+      return {
+        tag, tasks:tagTasks.length, journals:tagJournals.length, days:days.size,
+        completed:tagCompleted,
+        completionRate:tagTasks.length ? tagCompleted/tagTasks.length : 0,
+        postponeTasks:tagPostponed.length,
+        postponeRate:tagTasks.length ? tagPostponed.length/tagTasks.length : 0,
+        postponeCount:tagTasks.reduce((sum,t)=>sum+(t.postponeHistory?.length??0),0),
+        maxPostponeDays:tagTasks.reduce((max,t)=>Math.max(max,postponeDays(t)),0),
+        impacts,moodDistribution,moodSample:tagMoods.length,
+      }
+    }).filter(row=>row.tasks||row.journals)
+    const mostPostponedTag = [...tagRows]
+      .filter(row=>row.tasks>=3 && row.postponeTasks>0)
+      .sort((a,b)=>b.postponeRate-a.postponeRate || b.postponeTasks-a.postponeTasks)[0]
+
+
+    // Tag × Task has two modes:
+    // "全部" = lifecycle view; shorter ranges = activity only inside the selected range.
+    const tagTimelineAll = statsRange === 'all'
+    const timelineStart = tagTimelineAll ? earliestTaskDate : rangeStart
+    const timelineEnd = todayKey
+    const timelineTasks = expandTasks(tasks, timelineStart, timelineEnd).filter(task=>taskOrigin(task)<=todayKey)
+    const tagTaskTimelines = managedTags.map(tag=>{
+      const archiveEnd = tag.archived && tag.archivedAt && tag.archivedAt < todayKey ? tag.archivedAt : todayKey
+      const endKey = tagTimelineAll ? archiveEnd : (archiveEnd < todayKey ? archiveEnd : todayKey)
+      const tagged = timelineTasks.filter(task=>{
+        if (!(task.tagIds??[DEFAULT_TAG_ID]).includes(tag.id)) return false
+        const taskStart = task.date
+        const taskEnd = taskEndDate(task)
+        return taskStart <= endKey && taskEnd >= timelineStart
+      })
+      if (!tagged.length) return {tag, completed:0, firstDate:'', endKey, days:[] as {date:string,count:number}[]}
+      const historicalFirst = tagged.reduce((min,task)=>taskOrigin(task)<min?taskOrigin(task):min,taskOrigin(tagged[0]))
+      const firstDate = tagTimelineAll ? historicalFirst : timelineStart
+      const counts=new Map<string,number>()
+      tagged.forEach(task=>{
+        const start = task.date < timelineStart ? timelineStart : task.date
+        const end = taskEndDate(task) > endKey ? endKey : taskEndDate(task)
+        if(start>end) return
+        for(let key=start; key<=end; key=addDaysKey(key,1)) counts.set(key,(counts.get(key)??0)+1)
+      })
+      const completed = tagged.filter(task=>task.status==='completed' && inRange(taskOrigin(task))).length
+      return {tag, completed, firstDate, endKey, days:[...counts].map(([date,count])=>({date,count}))}
+    }).filter(row=>row.firstDate && row.days.length)
+    const effectiveTimelineStart = tagTimelineAll && tagTaskTimelines.length
+      ? tagTaskTimelines.reduce((min,row)=>row.firstDate<min?row.firstDate:min,tagTaskTimelines[0].firstDate)
+      : timelineStart
+    const timelineSpan = Math.max(1,dayDiff(effectiveTimelineStart,todayKey))
+
+    // Word cloud tokenizer: prefer the browser's mature Intl.Segmenter for Chinese word boundaries.
+    // Fallback avoids the old overlapping-bigram behaviour that produced fragments such as “始前 / 程没”.
+    const stop = new Set([
+      '今天','然后','就是','这个','那个','一个','还是','但是','因为','所以','感觉','觉得','可以','没有','不是','自己','我们','你们','他们','她们',
+      '现在','时候','什么','怎么','已经','可能','其实','比较','非常','一下','一些','一点','这样','那样','这里','那里','起来','的话','东西','事情',
+      '之前','之后','前面','后面','开始','最后','真的','应该','需要','还有','以及','而且','或者','如果','虽然','不过','只是','一直','一次','有点',
+      'and','the','that','this','with','have','was','were','but','for','you','your','are'
+    ])
+    wordCloudIgnored.forEach(word=>stop.add(word.trim().toLowerCase()))
+    const fallbackWords = new Set([
+      '记录','任务','科研','论文','数据','实验','英语','学习','小说','工作','医院','临床','报告','病人','医生','老师','师妹','师姐','导师',
+      '心情','睡觉','睡眠','游戏','电脑','网站','代码','标签','日历','统计','词云','完成','延期','优先级','时间','今天','明天','昨天',
+      '生活','运动','阅读','求职','毕业','投稿','修改','整理','分析','结果','问题','功能','设置','同步','备份','恢复','导入','导出'
+    ])
+    const fallbackChinese = (run:string) => {
+      const result:string[]=[]; let index=0
+      while(index<run.length){
+        let matched=''
+        for(let size=Math.min(4,run.length-index);size>=2;size--){
+          const candidate=run.slice(index,index+size)
+          if(fallbackWords.has(candidate)){matched=candidate;break}
+        }
+        if(matched){result.push(matched);index+=matched.length}
+        else index+=1
+      }
+      return result
+    }
+    const segmentChinese = (source:string) => {
+      const tokens:string[]=[]
+      const SegmenterCtor=(Intl as any).Segmenter
+      if(SegmenterCtor){
+        const segmenter=new SegmenterCtor('zh-CN',{granularity:'word'})
+        for(const item of segmenter.segment(source)){
+          const word=String(item.segment).trim().toLowerCase()
+          if(item.isWordLike && /[\u4e00-\u9fff]/.test(word) && word.length>=2) tokens.push(word)
+        }
+        return tokens
+      }
+      ;(source.match(/[\u4e00-\u9fff]{2,}/g)??[]).forEach(run=>tokens.push(...fallbackChinese(run)))
+      return tokens
+    }
+    const wordCounts=new Map<string,number>()
+    journals.forEach(entry=>{
+      const source=`${entry.title} ${entry.content}`.replace(/[#>*_`~\[\]()!]/g,' ')
+      const latin=source.toLowerCase().match(/[a-z][a-z'-]{2,}/g)??[]
+      latin.forEach(word=>{if(!stop.has(word))wordCounts.set(word,(wordCounts.get(word)??0)+1)})
+      segmentChinese(source).forEach(word=>{if(!stop.has(word))wordCounts.set(word,(wordCounts.get(word)??0)+1)})
+    })
+    const words=[...wordCounts.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0],'zh-CN')).slice(0,36).map(([word,count])=>({word,count}))
+
+    const moodLinePoints = [...moods].sort((a,b)=>a.date.localeCompare(b.date)).map(mood=> {
+      const span = Math.max(1, dayDiff(rangeStart==='0000-01-01' ? mood.date : rangeStart, todayKey))
+      const offset = rangeStart==='0000-01-01' ? 0 : Math.max(0, dayDiff(rangeStart, mood.date))
+      return { ...mood, x: rangeStart==='0000-01-01' ? 50 : 6+(offset/span)*92, y: 36 - ((mood.level-1)/4)*32 }
+    })
+    const yearStartDate = new Date(today.getFullYear(),0,1)
+    const heatmapLeading = weekStartsMonday ? (yearStartDate.getDay()+6)%7 : yearStartDate.getDay()
+    const moodByDate = new Map(dailyMoods.map(item=>[item.date,item.level]))
+    const yearHeatmap = Array.from({length:365 + (new Date(today.getFullYear(),1,29).getMonth()===1 ? 1 : 0)},(_,index)=>{
+      const date=new Date(today.getFullYear(),0,index+1)
+      const key=toDateKey(date)
+      return {key,level:moodByDate.get(key),future:key>todayKey}
+    })
+    const allMoodYears = dailyMoods.length
+      ? Array.from(new Set(dailyMoods.map(item=>Number(item.date.slice(0,4))))).sort((a,b)=>a-b)
+      : [today.getFullYear()]
+    const allHeatmapYears = allMoodYears.map(year=>{
+      const first=new Date(year,0,1)
+      const leading=weekStartsMonday ? (first.getDay()+6)%7 : first.getDay()
+      const leap=new Date(year,1,29).getMonth()===1
+      const days=Array.from({length:365+(leap?1:0)},(_,index)=>{
+        const date=new Date(year,0,index+1)
+        const key=toDateKey(date)
+        return {key,level:moodByDate.get(key),future:key>todayKey}
+      })
+      return {year,leading,days}
+    })
+
+    return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
+      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,
+      impactCounts,moodCounts,priorityCounts,tagRows,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
+  },[tasks,journalEntries,dailyMoods,managedTags,statsRange,weekStartsMonday,wordCloudIgnored])
+
+  const statsPercent = (value:number) => `${Math.round(value*100)}%`
+  const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
+  const moodStatLabels = ['','特别差','有点差','一般','还可以','很高兴']
 
   const anniversaryPageRows = useMemo(() => {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
@@ -1883,6 +2263,85 @@ function App() {
     setExternalImportOpen(false); setExternalImportStage('sources'); setDidaImportPreview(null); setExternalImportMessage('')
     if(externalImportInputRef.current) externalImportInputRef.current.value=''
   }
+  const inspectGenericCsv = async (file:File) => {
+    setExternalImportBusy(true); setExternalImportMessage('正在识别通用 CSV…')
+    try {
+      const text=await file.text(), rows=parseCsvRows(text)
+      if(rows.length<2) throw new Error('CSV 中没有可导入的数据')
+      const headerIndex=rows.findIndex(row=>{
+        const title=genericHeaderIndex(row,['标题','任务','任务名称','title','task','name'])
+        const date=genericHeaderIndex(row,['日期','开始日期','任务日期','date','startdate','start'])
+        return title>=0 && date>=0
+      })
+      if(headerIndex<0) throw new Error('至少需要“标题”和“日期”两列')
+      const header=rows[headerIndex], sourceRows=rows.slice(headerIndex+1).filter(row=>row.some(cell=>cell.trim()))
+      const col={
+        id:genericHeaderIndex(header,['taskid','id','任务id']),
+        date:genericHeaderIndex(header,['日期','开始日期','任务日期','date','startdate','start']),
+        end:genericHeaderIndex(header,['结束日期','enddate','end']),
+        title:genericHeaderIndex(header,['标题','任务','任务名称','title','task','name']),
+        notes:genericHeaderIndex(header,['描述','备注','笔记','notes','note','description','content']),
+        subtask:genericHeaderIndex(header,['子任务','checklist','subtask','subtasks']),
+        status:genericHeaderIndex(header,['是否完成','完成','状态','completed','done','status']),
+        category:genericHeaderIndex(header,['分类','标签','tags','tag','category','list']),
+        priority:genericHeaderIndex(header,['优先级','priority']),
+        time:genericHeaderIndex(header,['时间','开始时间','time','starttime']),
+      }
+      const existingIds=new Set(tasks.map(task=>task.id))
+      const tagByName=new Map<string,Tag>(tags.filter(tag=>!isImportSourceTag(tag)).map(tag=>[tag.name.trim().toLowerCase(),tag] as [string,Tag]))
+      const importedTags:Tag[]=[]
+      let duplicateCount=0, skippedNoDate=0
+      const converted:Task[]=[]
+      sourceRows.forEach((row,rowIndex)=>{
+        const cell=(index:number)=>index>=0?(row[index]??'').trim():''
+        const title=cell(col.title); if(!title) return
+        const date=genericDate(cell(col.date)); if(!date){skippedNoDate++;return}
+        const sourceId=cell(col.id)||`${date}:${title}:${rowIndex+1}`
+        const id=`import:generic:${sourceId}`
+        if(existingIds.has(id)){duplicateCount++;return}
+        const category=cell(col.category)
+        const ordinaryTagIds:string[]=[]
+        category.split(/[;,，、|]/).map(v=>v.trim()).filter(Boolean).forEach(name=>{
+          const key=name.toLowerCase(); let tag=tagByName.get(key)
+          if(!tag){
+            tag={id:`import:generic:tag:${crypto.randomUUID()}`,name,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'task'}
+            tagByName.set(key,tag); importedTags.push(tag)
+          }
+          ordinaryTagIds.push(tag.id)
+        })
+        const tagIds=ordinaryTagIds.length?[...new Set([...ordinaryTagIds,EXTERNAL_SOURCE_TAG_ID,GENERIC_SOURCE_TAG_ID])]:[DEFAULT_TAG_ID,EXTERNAL_SOURCE_TAG_ID,GENERIC_SOURCE_TAG_ID]
+        const statusText=cell(col.status).toLowerCase()
+        const completed=['yes','y','true','1','完成','已完成','done','completed'].includes(statusText)
+        const abandoned=['放弃','已放弃','abandoned','cancelled','canceled'].includes(statusText)
+        const status:TaskStatus=completed?'completed':abandoned?'abandoned':'todo'
+        const priorityText=cell(col.priority)
+        const p=Number.parseInt(priorityText,10)
+        const priority:TaskPriority=Number.isFinite(p)&&p>=0&&p<=3?p as TaskPriority:defaultPriority
+        const noteParts=[cell(col.notes),cell(col.subtask)].filter(Boolean)
+        const timeRaw=cell(col.time).match(/(\d{1,2}):(\d{2})/)
+        const time=timeRaw?`${timeRaw[1].padStart(2,'0')}:${timeRaw[2]}`:undefined
+        const endDate=genericDate(cell(col.end))
+        const createdAt=`${date}T12:00:00`
+        converted.push({
+          id,title,date,...(endDate&&endDate!==date?{endDate}:{}),priority,status,allDay:!time,...(time?{time}:{}),
+          ...(noteParts.length?{notes:noteParts.join('\n\n')}:{}),
+          createdAt,updatedAt:new Date().toISOString(),
+          ...(status==='completed'?{completedAt:`${date}T12:00:00`}:{}),
+          tagIds
+        })
+      })
+      const requiredSystemTags=[EXTERNAL_SOURCE_TAG,GENERIC_SOURCE_TAG].filter(required=>!tags.some(tag=>tag.id===required.id))
+      const finalTags=[...requiredSystemTags,...importedTags]
+      setDidaImportPreview({fileName:file.name,total:sourceRows.length,tasks:converted,tags:finalTags,duplicateCount,skippedNoDate,strippedAttachmentCount:0,ignoredChecklistCount:0})
+      setExternalImportStage('generic-preview'); setExternalImportMessage('')
+    } catch(error) {
+      console.error('Failed to inspect generic CSV',error)
+      setDidaImportPreview(null); setExternalImportMessage(error instanceof Error?`无法读取：${error.message}`:'无法读取这个文件')
+    } finally {
+      setExternalImportBusy(false)
+      if(externalImportInputRef.current) externalImportInputRef.current.value=''
+    }
+  }
   const inspectDidaCsv = async (file:File) => {
     setExternalImportBusy(true); setExternalImportMessage('正在解析滴答清单…')
     try {
@@ -1918,7 +2377,7 @@ function App() {
           }
           ordinaryTagIds.push(tag.id)
         })
-        const tagIds=ordinaryTagIds.length ? [...new Set([...ordinaryTagIds,DIDA_SOURCE_TAG_ID])] : [DEFAULT_TAG_ID,DIDA_SOURCE_TAG_ID]
+        const tagIds=ordinaryTagIds.length ? [...new Set([...ordinaryTagIds,EXTERNAL_SOURCE_TAG_ID,DIDA_APP_SOURCE_TAG_ID])] : [DEFAULT_TAG_ID,EXTERNAL_SOURCE_TAG_ID,DIDA_APP_SOURCE_TAG_ID]
         const statusRaw=get('Status')
         const status:TaskStatus=statusRaw==='2'?'completed':statusRaw==='-1'?'abandoned':'todo'
         const priorityRaw=Number.parseInt(get('Priority')||'0',10)
@@ -1937,7 +2396,8 @@ function App() {
           tagIds,...(recurrence?{recurrence}:{})
         })
       })
-      const finalTags=tags.some(tag=>tag.id===DIDA_SOURCE_TAG_ID) ? importedTags : [DIDA_SOURCE_TAG,...importedTags]
+      const requiredSystemTags=[EXTERNAL_SOURCE_TAG,DIDA_APP_SOURCE_TAG].filter(required=>!tags.some(tag=>tag.id===required.id))
+      const finalTags=[...requiredSystemTags,...importedTags]
       setDidaImportPreview({fileName:file.name,total:sourceRows.length,tasks:converted,tags:finalTags,duplicateCount,skippedNoDate,strippedAttachmentCount,ignoredChecklistCount})
       setExternalImportStage('dida-preview'); setExternalImportMessage('')
     } catch(error) {
@@ -1964,6 +2424,22 @@ function App() {
       console.error('Failed to import Dida CSV',error)
       setExternalImportMessage(error instanceof Error?`导入失败：${error.message}`:'导入失败')
     } finally { setExternalImportBusy(false) }
+  }
+
+  const resetAllUserData = async () => {
+    if (resettingData) return
+    setResettingData(true); setBackupMessage('正在清空数据…')
+    try {
+      await replaceZingData({tasks:[],journals:[],moods:[],tags:[DEFAULT_TAG],anniversaries:[],attachments:[]})
+      setTasks([]); setJournalEntries([]); setDailyMoods([]); setTags([DEFAULT_TAG]); setAnniversaries([])
+      setSelectedDate(today); setSearchQuery('')
+      setResetDataConfirm(false)
+      setStorageStats({total:0,images:0,audio:0,data:0,attachmentCount:0})
+      setBackupMessage('数据已清空 · 应用设置已保留')
+    } catch (error) {
+      console.error('Failed to reset Zing data', error)
+      setBackupMessage(error instanceof Error ? `清空失败：${error.message}` : '清空失败')
+    } finally { setResettingData(false) }
   }
 
   const exportTasksCsv = () => {
@@ -2008,7 +2484,7 @@ function App() {
         {path:'data/moods.json',bytes:json(dailyMoods)},
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks,wordCloudIgnored})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -2091,12 +2567,14 @@ function App() {
       if (s.weekStart) localStorage.setItem('zing:weekStart',s.weekStart)
       if (s.dateFormat) localStorage.setItem('zing:dateFormat',s.dateFormat)
       if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
+      if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods)
       setTags(backupPreview.tags); setAnniversaries(backupPreview.anniversaries)
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
       if (s.dateFormat) setDateFormat(s.dateFormat)
       if (typeof s.showEndedTasks==='boolean') setShowEndedTasks(s.showEndedTasks)
+      if (Array.isArray(s.wordCloudIgnored)) setWordCloudIgnored(s.wordCloudIgnored)
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
     } catch(error) {
@@ -2105,14 +2583,6 @@ function App() {
     } finally { setBackupRestoring(false) }
   }
 
-  const browseTag = (id: string) => {
-    setOpenTagColorId(null)
-    setTagManagerOpen(false)
-    setBrowsingTagId(id)
-  }
-
-  const openTaggedTask = (task: Task) => { setBrowsingTagId(null); editTask(task) }
-  const openTaggedJournal = (entry: JournalEntry) => { setBrowsingTagId(null); setViewingJournalId(entry.id) }
 
   return (
     <main className="app-shell">
@@ -2126,19 +2596,19 @@ function App() {
 
         <div className="global-search-wrap" ref={searchWrapRef}>
           <span className="global-search-icon">⌕</span>
-          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、纪念日…" aria-label="全局搜索" />
+          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、纪念日；#标签…" aria-label="全局搜索" />
           {searchQuery && <button type="button" className="search-clear" onClick={() => setSearchQuery('')} aria-label="清空搜索">×</button>}
           {searchOpen && normalizedSearch && (
             <div className="search-panel">
-              <div className="search-filters">
+              {tagSearchMode ? <div className="search-tag-mode"># 标签搜索</div> : <div className="search-filters">
                 {([['all','全部'],['task','任务'],['journal','记录'],['anniversary','纪念日']] as const).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
-              </div>
+              </div>}
               <div className="search-results">
                 {searchResults.length === 0 ? <p className="search-empty">没有找到结果。</p> : searchResults.map(result => (
-                  <button key={`${result.kind}-${result.id}`} type="button" className="search-result" onClick={() => openSearchResult(result)}>
+                  <button key={`${result.kind}-${result.id}`} type="button" className={`search-result${result.kind==='tag'?' tag-search-result':''}`} onClick={() => openSearchResult(result)} disabled={result.kind==='tag'}>
                     <span className={`search-kind kind-${result.kind}`}>{searchMarker(result)}</span>
-                    <span className="search-result-main"><strong>{highlightSearch(result.title)}</strong>{result.snippet && <small>{highlightSearch(result.snippet)}</small>}</span>
-                    <time>{searchDateLabel(result)}</time>
+                    <span className="search-result-main"><strong>{result.kind==='tag' ? result.title : highlightSearch(result.title)}</strong>{result.snippet && <small>{result.kind==='tag' ? result.snippet : highlightSearch(result.snippet)}</small>}</span>
+                    {result.kind!=='tag' && <time>{searchDateLabel(result)}</time>}
                   </button>
                 ))}
               </div>
@@ -2151,9 +2621,10 @@ function App() {
         <div className="calendar-toolbar">
           <div className="month-navigation">
             <button className="nav-button" type="button" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
-            <h2>{MONTHS[visibleMonth.getMonth()]} {visibleMonth.getFullYear()}</h2>
+            <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[visibleMonth.getMonth()]} {visibleMonth.getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>Today</button>
+            {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
           </div>
           {endedTasksViewToggle('calendar-ended-toggle')}
         </div>
@@ -2195,7 +2666,10 @@ function App() {
                     <path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14" />
                   </svg>
                 )}
-                <span className="lunar-day-label">{lunarCalendarLabel(date)}</span>
+                {(() => {
+                  const annotation = calendarAnnotation(date, weekStartsMonday)
+                  return <span className={`lunar-day-label${annotation ? ` calendar-annotation annotation-${annotation.kind}` : ''}`}>{annotation?.label ?? lunarCalendarLabel(date)}</span>
+                })()}
                 {(anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 0 && (
                   <span className="anniversary-cell-icons">
                     {(anniversaryOccurrencesByDate.get(key) ?? []).slice(0, (anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 3 ? 2 : 3).map(({anniversary}) => (
@@ -2236,6 +2710,208 @@ function App() {
           </div>
         </div>
       </section>}
+
+      {mainView === 'statistics' && (
+        <section className="statistics-page">
+          <div className="page-heading stats-heading">
+            <div><span className="eyebrow">STATISTICS</span><h2>统计</h2></div>
+          </div>
+          <div className="stats-range" role="group" aria-label="统计时间范围">
+            {([['week','本周'],['month','本月'],['30d','近30天'],['year','今年'],['all','全部']] as const).map(([value,label])=>
+              <button type="button" key={value} className={statsRange===value?'active':''} onClick={()=>setStatsRange(value)}>{label}</button>
+            )}
+          </div>
+
+          <div className="stats-overview">
+            <div className="stat-number-card"><span>完成任务</span><strong>{statistics.completed}</strong><small>{statistics.eligibleTasks.length} 个已进入执行期</small></div>
+            <div className="stat-number-card"><span>完成率</span><strong>{statistics.eligibleTasks.length?statsPercent(statistics.completionRate):'—'}</strong><small>{statistics.eligibleTasks.length?`${statistics.completed} / ${statistics.eligibleTasks.length}`:'暂无可统计任务'}</small></div>
+            <div className="stat-number-card"><span>记录</span><strong>{statistics.journals.length}</strong><small>{statistics.journalDays} 天写过 Journal</small></div>
+            <div className="stat-number-card"><span>心情记录</span><strong>{statistics.moodDays}</strong><small>Daily Mood 天数</small></div>
+          </div>
+
+          <section className="stats-section">
+            <div className="stats-section-title"><div><span className="eyebrow">TASKS</span><h3>任务</h3></div></div>
+            <div className="stats-inline-cards">
+              <div><span>完成</span><strong>{statistics.completed}</strong></div>
+              <div><span>放弃</span><strong>{statistics.abandoned}</strong></div>
+              <div><span>逾期待办</span><strong>{statistics.overdue}</strong></div>
+            </div>
+            {statistics.eligibleTasks.length ? <>
+              <div className="stats-subblock"><h4>优先级分布</h4>
+                <div className="stat-bars">{statistics.priorityCounts.map(row=><div className={`stat-bar-row priority-stat-${row.value}`} key={row.value}><span>P{row.value}</span><div><i style={{width:`${row.count/statistics.eligibleTasks.length*100}%`}} /></div><strong>{row.count}</strong></div>)}</div>
+              </div>
+              <div className="postpone-summary">
+                <div><span>延期率</span><strong>{statsPercent(statistics.postponeRate)}</strong><small>{statistics.postponedTasks} / {statistics.eligibleTasks.length} 个任务</small></div>
+                <div><span>延期总次数</span><strong>{statistics.postponeEvents}</strong></div>
+                <div><span>单任务最多</span><strong>{statistics.maxPostponeCount} 次</strong></div>
+                <div><span>最长累计延期</span><strong>{statistics.maxPostponeDays} 天</strong></div>
+              </div>
+            </> : <p className="page-empty compact">这个时间范围还没有进入执行期的任务，暂不统计优先级与延期。</p>}
+            {statistics.mostPostponedTag && <div className="most-postponed-tag">
+              <span>最常延期标签</span><strong>#{statistics.mostPostponedTag.tag.name}</strong>
+              <small>{statsPercent(statistics.mostPostponedTag.postponeRate)} · {statistics.mostPostponedTag.postponeTasks}/{statistics.mostPostponedTag.tasks}个任务</small>
+            </div>}
+            {(statistics.maxPostponeCount>0||statistics.maxPostponeDays>0) && <div className="postpone-extremes">
+              {statistics.maxPostponeCount>0 && statistics.mostPostponedTask && <span>延期次数最多：<strong>{statistics.mostPostponedTask.title}</strong> · {statistics.maxPostponeCount}次</span>}
+              {statistics.maxPostponeDays>0 && statistics.longestPostponedTask && <span>累计延期最长：<strong>{statistics.longestPostponedTask.title}</strong> · {statistics.maxPostponeDays}天</span>}
+            </div>}
+            <div className="stats-subblock">
+              <h4>完成趋势</h4>
+              {statistics.completionTrend.length ? <div className="completion-chart-wrap">
+                <div className="completion-trend">
+                  {statistics.completionTrend.map((item,index)=>{
+                    const max=Math.max(...statistics.completionTrend.map(x=>x.count),1)
+                    const labelEvery=Math.max(1,Math.ceil(statistics.completionTrend.length/8))
+                    const showLabel=index===0||index===statistics.completionTrend.length-1||index%labelEvery===0
+                    return <div key={item.key} title={`${item.key} · 完成 ${item.count}`}>
+                      <span className="completion-count">{item.count}</span>
+                      <i style={{height:`${Math.max(8,item.count/max*100)}%`}} />
+                      <span className="completion-date">{showLabel?item.label:''}</span>
+                    </div>
+                  })}
+                </div>
+              </div> : <p className="page-empty compact">这个时间范围还没有完成记录。</p>}
+            </div>
+          </section>
+
+          <section className="stats-section">
+            <div className="stats-section-title"><div><span className="eyebrow">JOURNAL</span><h3>记录与事件影响</h3></div><small>{statistics.journals.length} 篇 · {statistics.journalDays} 天</small></div>
+            <div className="impact-distribution">
+              {statistics.journals.length ? statistics.impactCounts.map(row=><div key={row.value} className={`impact-stat impact-${row.value<0?'negative':row.value>0?'positive':'neutral'}`}><span>{impactLabel(row.value)}</span><strong>{row.count}</strong></div>) : <p className="page-empty compact">这个时间范围还没有 Journal，暂不统计 Event Impact。</p>}
+            </div>
+            <div className="stats-subblock"><h4>词云</h4><p className="stats-note">来自当前时间范围内 Journal 的标题与正文；字体越大，出现越频繁。点击词语可屏蔽。</p>
+              {statistics.words.length ? <div className="journal-word-cloud">{statistics.words.map(({word,count},index)=>{
+                const max=statistics.words[0]?.count||1
+                const frequencyScale=Math.sqrt(count/max)
+                const rankScale=Math.max(.46,1-index/70)
+                const size=12+Math.round(26*frequencyScale*rankScale)
+                if(index===0) return <button type="button" className="word-cloud-center word-cloud-word" key={word} style={{fontSize:`${Math.max(38,size)}px`}} title={`${count} 次 · 点击屏蔽`} onClick={()=>setWordCloudIgnored(list=>list.includes(word)?list:[...list,word])}>{word}</button>
+                const angle=index*2.399963229728653
+                const radius=Math.min(43,10+Math.sqrt(index)*7.2)
+                const left=50+Math.cos(angle)*radius
+                const top=50+Math.sin(angle)*radius*.78
+                return <button type="button" className="word-cloud-word" key={word} style={{fontSize:`${size}px`,left:`${left}%`,top:`${top}%`}} title={`${count} 次 · 点击屏蔽`} onClick={()=>setWordCloudIgnored(list=>list.includes(word)?list:[...list,word])}>{word}</button>
+              })}</div> : <p className="page-empty compact">还没有足够的文字。</p>}
+            </div>
+          </section>
+
+          <section className="stats-section">
+            <div className="stats-section-title"><div><span className="eyebrow">MOOD</span><h3>心情</h3></div><small>{statistics.moodDays} 天</small></div>
+            {(statsRange==='year'||statsRange==='all') && <div className="mood-stat-list">{statistics.moodDays ? statistics.moodCounts.map(row=><div key={row.value}><span className="mood-stat-face"><MoodFace level={row.value} /></span><span>{moodStatLabels[row.value]}</span><strong>{row.count}</strong></div>) : <p className="page-empty compact">这个时间范围还没有 Daily Mood。</p>}</div>}
+            {(statsRange==='year'||statsRange==='all') ? (
+              <div className="mood-heatmap-wrap">
+                <h4>{statsRange==='all'?'全部心情热力图':'全年心情热力图'}</h4>
+                {statsRange==='all' ? (()=> {
+                  const years=statistics.allHeatmapYears
+                  const selected=years.find(group=>group.year===moodHeatmapYear) ?? years[years.length-1]
+                  if(!selected) return <p className="page-empty compact">还没有心情记录。</p>
+                  const index=Math.max(0,years.findIndex(group=>group.year===selected.year))
+                  return <div className="mood-single-year-wrap">
+                    <div className="mood-heatmap-year">
+                      <span>{selected.year}</span>
+                      <div className="mood-year-heatmap">
+                        {Array.from({length:selected.leading}).map((_,i)=><i key={`blank-${selected.year}-${i}`} className="heatmap-blank" />)}
+                        {selected.days.map(day=><i key={day.key} title={`${day.key}${day.level?` · ${moodStatLabels[day.level]}`:' · 未记录'}`} className={`${day.level?`mood-${day.level}`:''}${day.future?' future':''}`} />)}
+                      </div>
+                    </div>
+                    {years.length>1&&<div className="mood-year-navigator" onWheel={event=>{
+                      if(Math.abs(event.deltaY)+Math.abs(event.deltaX)<8) return
+                      const direction=(Math.abs(event.deltaX)>Math.abs(event.deltaY)?event.deltaX:event.deltaY)>0?1:-1
+                      const next=Math.max(0,Math.min(years.length-1,index+direction))
+                      if(next!==index)setMoodHeatmapYear(years[next].year)
+                    }}>
+                      <button type="button" disabled={index<=0} onClick={()=>index>0&&setMoodHeatmapYear(years[index-1].year)} aria-label="上一年">‹</button>
+                      <strong>{selected.year}年</strong>
+                      <button type="button" disabled={index>=years.length-1} onClick={()=>index<years.length-1&&setMoodHeatmapYear(years[index+1].year)} aria-label="下一年">›</button>
+                    </div>}
+                  </div>
+                })() : (
+                  <div className="mood-year-heatmap">
+                    {Array.from({length:statistics.heatmapLeading}).map((_,i)=><i key={`blank-${i}`} className="heatmap-blank" />)}
+                    {statistics.yearHeatmap.map(day=><i key={day.key} title={`${day.key}${day.level?` · ${moodStatLabels[day.level]}`:' · 未记录'}`} className={`${day.level?`mood-${day.level}`:''}${day.future?' future':''}`} />)}
+                  </div>
+                )}
+              </div>
+            ) : (statsRange==='week'||statsRange==='month'||statsRange==='30d') && (
+              <div className="mood-trend-wrap">
+                <h4>心情变化</h4>
+                {statistics.moodLinePoints.length ? <div className="mood-trend-layout">
+                  <div className="mood-y-axis">{[5,4,3,2,1].map(level=>{const count=statistics.moodCounts.find(row=>row.value===level)?.count??0;return <span key={level}><MoodFace level={level as MoodLevel} /><small>({count})</small></span>})}</div>
+                  <div className="mood-chart-area">
+                    <svg className="mood-trend-chart" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="心情随时间变化曲线">
+                      {[4,12,20,28,36].map(y=><line key={y} x1="0" x2="100" y1={y} y2={y} className="mood-grid-line" />)}
+                      {statistics.moodLinePoints.length>1 && <polyline points={statistics.moodLinePoints.map(p=>`${p.x},${p.y}`).join(' ')} className="mood-trend-line" />}
+                      {statistics.moodLinePoints.map(p=><circle key={p.date} cx={p.x} cy={p.y} r="1.4" className={`mood-trend-point mood-${p.level}`}><title>{p.date} · {moodStatLabels[p.level]}</title></circle>)}
+                    </svg>
+                    <div className="mood-x-axis">
+                      <span className="mood-x-start">{statistics.rangeStart.slice(5).replace('-','/')}</span>
+                      <span className="mood-x-end">{statistics.todayKey.slice(5).replace('-','/')}</span>
+                    </div>
+                  </div>
+                </div> : <p className="page-empty compact">这个时间范围还没有心情记录。</p>}
+              </div>
+            )}
+          </section>
+
+          <section className="stats-section">
+            <div className="stats-section-title"><div><span className="eyebrow">TAGS</span><h3>标签分析</h3></div></div>
+            <div className="tag-subsection">
+              <div className="tag-subsection-heading"><h4>标签与任务的联系</h4><small>{statistics.tagTimelineAll?'完整生命周期 · 完成量与实际执行频率':'当前时间范围 · 完成量与实际执行频率'} · 未来任务不计</small></div>
+              {statistics.tagTaskTimelines.length ? <div className="tag-task-timelines">
+                <div className="tag-timeline-axis"><span>{statistics.timelineStart}</span><span>今天</span></div>
+                {[...statistics.tagTaskTimelines].sort((a,b)=>b.completed-a.completed||a.firstDate.localeCompare(b.firstDate)).map(row=>{
+                  const startPct=Math.max(0,dayDiff(statistics.timelineStart,row.firstDate)/statistics.timelineSpan*100)
+                  const endPct=Math.min(100,dayDiff(statistics.timelineStart,row.endKey)/statistics.timelineSpan*100)
+                  return <div className={`tag-timeline-row${row.tag.archived?' archived':''}`} key={row.tag.id}>
+                    <div className="tag-timeline-meta"><strong>#{row.tag.name}</strong><span>完成 {row.completed}</span>{row.tag.archived&&<em>已归档</em>}</div>
+                    <div className="tag-timeline-track" title={`${row.firstDate} → ${row.endKey}`}>
+                      <i className="tag-lifecycle" style={{left:`${startPct}%`,width:`${Math.max(.4,endPct-startPct)}%`}} />
+                      {statistics.tagTimelineAll&&<span className="tag-start-date" style={{left:`${startPct}%`}}>{row.firstDate}</span>}
+                      {row.days.map(day=>{const x=dayDiff(statistics.timelineStart,day.date)/statistics.timelineSpan*100;return <b key={day.date} title={`${day.date} · ${day.count} 个任务`} style={{left:`${x}%`,background:row.tag.color,opacity:Math.min(1,.42+day.count*.18)}} />})}
+                      {row.tag.archived&&<span className="tag-archive-end" style={{left:`${endPct}%`}} title={`归档于 ${row.endKey}`} />}
+                    </div>
+                  </div>
+                })}
+              </div> : <p className="page-empty compact">还没有带标签的历史任务。</p>}
+            </div>
+            <div className="tag-subsection">
+              <div className="tag-subsection-heading"><h4>标签与心情的联系</h4><small>Event Impact · 具体 Journal 事件对你的影响</small></div>
+              <p className="stats-note tag-matrix-note">颜色深浅表示该标签内部这一档所占比例。</p>
+            <div className="tag-impact-matrix-wrap">
+              <table className="tag-impact-matrix">
+                <thead>
+                  <tr>
+                    <th>标签</th>
+                    {([-2,-1,0,1,2] as JournalImpact[]).map(value=><th key={value} title={`Event Impact ${impactLabel(value)}`}><MoodFace level={(value+3) as MoodLevel} /></th>)}
+                    <th>Journal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...statistics.tagRows].filter(row=>row.journals>0).sort((a,b)=>b.journals-a.journals||a.tag.name.localeCompare(b.tag.name)).map(row=><tr key={row.tag.id}>
+                    <th scope="row">#{row.tag.name}</th>
+                    {row.impacts.map(item=>{
+                      const ratio=row.journals ? item.count/row.journals : 0
+                      return <td key={item.value} title={`${impactLabel(item.value)} · ${item.count}篇 · ${statsPercent(ratio)}`}>
+                        {item.count>0 ? <span className={`impact-cell impact-cell-${item.value<0?'negative':item.value>0?'positive':'neutral'}`} style={{'--impact-alpha':Math.max(.10,ratio*.78)} as any}>{item.count}</span> : <span className="impact-cell-zero">—</span>}
+                      </td>
+                    })}
+                    <td className="tag-journal-total"><strong>{row.journals}</strong><small>篇</small></td>
+                  </tr>)}
+                  {statistics.journals.length>0&&<tr className="tag-impact-total-row">
+                    <th scope="row">总计</th>
+                    {statistics.impactCounts.map(item=><td key={item.value}>
+                      {item.count>0?<span className={`impact-cell impact-cell-${item.value<0?'negative':item.value>0?'positive':'neutral'}`} style={{'--impact-alpha':Math.max(.10,(item.count/statistics.journals.length)*.78)} as any}>{item.count}</span>:<span className="impact-cell-zero">—</span>}
+                    </td>)}
+                    <td className="tag-journal-total"><strong>{statistics.journals.length}</strong><small>篇</small></td>
+                  </tr>}
+                </tbody>
+              </table>
+              {statistics.tagRows.every(row=>row.journals===0) && <p className="page-empty compact">当前时间范围还没有带标签的 Journal。</p>}
+            </div>
+            </div>
+          </section>
+        </section>
+      )}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">
@@ -2281,6 +2957,10 @@ function App() {
             <div className="settings-group-title"><h3>日历</h3></div>
             <div className="setting-row"><span><strong>每周开始日</strong></span><div className="setting-segment"><button className={weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(true)}>周一</button><button className={!weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(false)}>周日</button></div></div>
             <div className="setting-row"><span><strong>日期格式</strong></span><div className="setting-segment"><button className={dateFormat==='dmy'?'active':''} onClick={()=>setDateFormat('dmy')}>22 Sep 2026</button><button className={dateFormat==='mdy'?'active':''} onClick={()=>setDateFormat('mdy')}>Sep 22, 2026</button></div></div>
+            <div className="setting-row">
+              <span><strong>新任务默认优先级</strong><small>只影响以后新建的任务，不修改已有任务。</small></span>
+              <div className="default-priority-setting">{PRIORITIES.map(priority=><button key={priority.value} type="button" className={`default-priority-button priority-${priority.value}${defaultPriority===priority.value?' active':''}`} onClick={()=>setDefaultPriority(priority.value)}><i />{priority.label}</button>)}</div>
+            </div>
           </div>
 
           <div className="settings-group">
@@ -2289,6 +2969,13 @@ function App() {
               <span><strong>显示已结束任务</strong><small>同时显示已完成和已放弃的任务。</small></span>
               <input type="checkbox" checked={showEndedTasks} onChange={e=>setShowEndedTasks(e.target.checked)} />
             </label>
+          </div>
+
+          <div className="settings-group">
+            <div className="settings-group-title"><h3>词云</h3></div>
+            <button className="settings-link-row" type="button" onClick={()=>setWordIgnoreManagerOpen(true)}>
+              <span><strong>管理屏蔽词</strong><small>{wordCloudIgnored.length ? `已屏蔽 ${wordCloudIgnored.length} 个词` : '添加或恢复不参与词云统计的词。'}</small></span><b>›</b>
+            </button>
           </div>
 
           <div className="settings-group">
@@ -2304,26 +2991,51 @@ function App() {
             </div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务与记录共用的标签。</small></span><b>›</b></button>
             <div className="backup-settings-block">
-              <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
-                <span><strong>导出完整备份</strong><small>任务、记录、心情、标签、纪念日、设置与所有附件打包为 ZIP。</small></span>
-                <b>{backupExporting?'…':'↓'}</b>
-              </button>
-              <button className="settings-link-row backup-import-row" type="button" onClick={()=>backupInputRef.current?.click()}>
-                <span><strong>恢复完整备份</strong><small>先验证 ZIP 并显示摘要，确认后才替换当前设备数据。</small></span><b>↑</b>
-              </button>
-              <input ref={backupInputRef} className="backup-file-input" type="file" accept=".zip,application/zip" onChange={event=>{ const file=event.target.files?.[0]; if(file) void inspectBackupFile(file) }} />
               <button className="settings-link-row external-import-row" type="button" onClick={openExternalImport}>
-                <span><strong>从外部导入</strong><small>选择数据来源并预览后导入；外部数据只映射 Zing 支持的字段。</small></span><b>›</b>
+                <span><strong>从外部导入</strong><small>通用 CSV 或已支持来源；导入任务统一标记为“从外部导入”。</small></span><b>›</b>
               </button>
               <div className="plain-export-heading"><strong>通用导出</strong><small>CSV 可直接用 Numbers、Excel 或其他软件打开，不用于 Zing 完整恢复。</small></div>
               <div className="plain-export-actions">
                 <button type="button" onClick={exportTasksCsv}><span>任务 CSV</span><b>↓</b></button>
                 <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
               </div>
+              <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
+                <span><strong>备份</strong><small>任务、记录、心情、标签、纪念日、设置与所有附件打包为 ZIP。</small></span>
+                <b>{backupExporting?'…':'↓'}</b>
+              </button>
+              <button className="settings-link-row backup-import-row" type="button" onClick={()=>backupInputRef.current?.click()}>
+                <span><strong>恢复数据</strong><small>从 Zing 完整备份 ZIP 恢复；确认后替换当前设备数据。</small></span><b>↑</b>
+              </button>
+              <input ref={backupInputRef} className="backup-file-input" type="file" accept=".zip,application/zip" onChange={event=>{ const file=event.target.files?.[0]; if(file) void inspectBackupFile(file) }} />
+              <button className="settings-link-row danger-data-row" type="button" onClick={()=>setResetDataConfirm(true)}>
+                <span><strong>清空所有数据</strong><small>清空任务、记录、心情、纪念日、自建标签与附件；保留应用设置。</small></span><b>×</b>
+              </button>
               {backupMessage && <div className="backup-status" role="status">{backupMessage}</div>}
             </div>
           </div>
         </section>
+      )}
+
+      {wordIgnoreManagerOpen && (
+        <div className="modal-layer word-ignore-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭屏蔽词管理" onClick={()=>setWordIgnoreManagerOpen(false)} />
+          <section className="task-editor word-ignore-modal" role="dialog" aria-modal="true" aria-label="管理屏蔽词">
+            <div className="editor-header">
+              <div><span className="eyebrow">WORD CLOUD</span><h2>管理屏蔽词</h2></div>
+              <button className="close-button" type="button" onClick={()=>setWordIgnoreManagerOpen(false)}>×</button>
+            </div>
+            <div className="editor-body">
+              <p className="word-ignore-intro">这些词不会进入 Journal 词云。词云中点击词语也可以直接加入这里。</p>
+              <div className="word-ignore-add">
+                <input value={wordIgnoreDraft} onChange={e=>setWordIgnoreDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();const word=wordIgnoreDraft.trim().toLowerCase();if(word){setWordCloudIgnored(list=>list.includes(word)?list:[...list,word]);setWordIgnoreDraft('')}}}} placeholder="添加屏蔽词" />
+                <button type="button" onClick={()=>{const word=wordIgnoreDraft.trim().toLowerCase();if(word){setWordCloudIgnored(list=>list.includes(word)?list:[...list,word]);setWordIgnoreDraft('')}}}>添加</button>
+              </div>
+              <div className="word-ignore-panel-list">
+                {wordCloudIgnored.length ? wordCloudIgnored.map(word=><button type="button" key={word} title="点击恢复到词云" onClick={()=>setWordCloudIgnored(list=>list.filter(item=>item!==word))}><span>{word}</span><b>×</b></button>) : <p className="page-empty compact">还没有手动屏蔽的词。</p>}
+              </div>
+            </div>
+          </section>
+        </div>
       )}
 
       {externalImportOpen && (
@@ -2337,16 +3049,46 @@ function App() {
             <div className="editor-body">
               {externalImportStage==='sources' && <>
                 <p className="external-import-intro">外部数据会适配 Zing 的数据模型；Zing 没有的字段不会强行保存，需要时请回原 App 查看。</p>
+                <button className="import-source-card" type="button" onClick={()=>{setExternalImportStage('generic-file');setExternalImportMessage('')}}>
+                  <span className="import-source-icon">CSV</span><span><strong>通用导入 CSV</strong><small>自动识别常见任务字段；兼容滴答清单等 CSV 导出</small></span><b>›</b>
+                </button>
                 <button className="import-source-card" type="button" onClick={()=>{setExternalImportStage('dida-file');setExternalImportMessage('')}}>
-                  <span className="import-source-icon">滴</span><span><strong>滴答清单</strong><small>TickTick / Dida CSV 备份</small></span><b>›</b>
+                  <span className="import-source-icon">滴</span><span><strong>滴答清单</strong><small>保留原有滴答 CSV 导入入口</small></span><b>›</b>
                 </button>
                 <div className="import-source-placeholder"><strong>其他来源</strong><small>以后可以继续添加 Todoist、Microsoft To Do 或其他格式，不需要改动这个入口。</small></div>
+              </>}
+              {externalImportStage==='generic-file' && <>
+                <button className="import-back-link" type="button" onClick={()=>setExternalImportStage('sources')}>‹ 返回来源</button>
+                <div className="import-file-panel">
+                  <strong>通用 CSV</strong>
+                  <p>自动识别标题、日期、完成状态、描述/备注、子任务、分类/标签、优先级和时间等常见中英文列名。无法映射的列会忽略。</p>
+                  <button className="save-button" type="button" disabled={externalImportBusy} onClick={()=>externalImportInputRef.current?.click()}>{externalImportBusy?'正在解析…':'选择 CSV 文件'}</button>
+                  <input ref={externalImportInputRef} className="backup-file-input" type="file" accept=".csv,text/csv" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectGenericCsv(file)}} />
+                </div>
+              </>}
+              {externalImportStage==='generic-preview' && didaImportPreview && <>
+                <button className="import-back-link" type="button" onClick={()=>{setExternalImportStage('generic-file');setDidaImportPreview(null)}}>‹ 重新选择</button>
+                <div className="import-preview-header"><strong>{didaImportPreview.fileName}</strong><small>字段识别完成，确认后才写入 Zing。</small></div>
+                <div className="import-preview-grid">
+                  <span>识别记录<b>{didaImportPreview.total}</b></span>
+                  <span>将导入<b>{didaImportPreview.tasks.length}</b></span>
+                  <span>重复跳过<b>{didaImportPreview.duplicateCount}</b></span>
+                  <span>无日期跳过<b>{didaImportPreview.skippedNoDate}</b></span>
+                </div>
+                <div className="import-rule-note">
+                  <strong>通用映射</strong>
+                  <p>标题和日期为必需字段；完成状态、备注/描述、子任务、分类/标签、优先级和时间会在存在时自动迁入。无法识别的列直接忽略。历史完成任务若没有独立完成时间，则以任务日期作为完成日期。通用导入任务会带系统来源标签「从外部导入」和「通用」。</p>
+                </div>
+                <div className="backup-restore-actions">
+                  <button type="button" onClick={closeExternalImport} disabled={externalImportBusy}>取消</button>
+                  <button className="primary" type="button" onClick={()=>void importDidaCsv()} disabled={externalImportBusy||!didaImportPreview.tasks.length}>{externalImportBusy?'正在导入…':`导入 ${didaImportPreview.tasks.length} 条`}</button>
+                </div>
               </>}
               {externalImportStage==='dida-file' && <>
                 <button className="import-back-link" type="button" onClick={()=>setExternalImportStage('sources')}>‹ 返回来源</button>
                 <div className="import-file-panel">
                   <strong>滴答清单 CSV</strong>
-                  <p>只导入 Zing 能表达的任务字段。滴答内部附件路径会被丢弃，不占用备注；导入记录会自动带系统标签「从滴答导入」。</p>
+                  <p>只导入 Zing 能表达的任务字段。滴答内部附件路径会被丢弃，不占用备注；导入记录会自动带系统来源标签「从外部导入」和「滴答清单」。</p>
                   <button className="save-button" type="button" disabled={externalImportBusy} onClick={()=>externalImportInputRef.current?.click()}>{externalImportBusy?'正在解析…':'选择 CSV 文件'}</button>
                   <input ref={externalImportInputRef} className="backup-file-input" type="file" accept=".csv,text/csv" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectDidaCsv(file)}} />
                 </div>
@@ -2364,7 +3106,7 @@ function App() {
                 </div>
                 <div className="import-rule-note">
                   <strong>本次规则</strong>
-                  <p>标题、日期/时间、优先级、状态、完成时间、备注、重复规则与可识别标签会迁入；Zing 不支持的字段直接忽略。清单型任务保留文字内容，但不保留滴答的清单结构。系统标签由程序维护，普通任务不会出现「从滴答导入」。</p>
+                  <p>标题、日期/时间、优先级、状态、完成时间、备注、重复规则与可识别标签会迁入；Zing 不支持的字段直接忽略。清单型任务保留文字内容，但不保留滴答的清单结构。系统来源标签由程序维护；滴答导入任务会标记「从外部导入」和「滴答清单」，普通任务不会出现这些来源标签。</p>
                 </div>
                 <div className="backup-restore-actions">
                   <button type="button" onClick={closeExternalImport} disabled={externalImportBusy}>取消</button>
@@ -2372,6 +3114,19 @@ function App() {
                 </div>
               </>}
               {externalImportMessage && <div className="backup-status" role="status">{externalImportMessage}</div>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {resetDataConfirm && (
+        <div className="backup-restore-backdrop" role="presentation">
+          <section className="backup-restore-modal reset-data-modal" role="dialog" aria-modal="true" aria-label="确认清空所有数据">
+            <span className="eyebrow">RESET DATA</span><h2>清空所有数据？</h2>
+            <p className="backup-restore-warning">任务、记录、Daily Mood、纪念日、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。此操作不可撤销，建议先导出完整备份。</p>
+            <div className="backup-restore-actions">
+              <button type="button" onClick={()=>setResetDataConfirm(false)} disabled={resettingData}>取消</button>
+              <button className="danger-confirm" type="button" onClick={()=>void resetAllUserData()} disabled={resettingData}>{resettingData?'正在清空…':'确认清空'}</button>
             </div>
           </section>
         </div>
@@ -2396,10 +3151,11 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !browsingTagId && !viewingJournalId && !storageBrowser && !backupPreview && !externalImportOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !monthPickerTarget && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => setMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => setMainView('anniversaries')}><span>🎂</span>纪念日</button>
+        <button type="button" className={mainView==='statistics'?'active':''} onClick={() => setMainView('statistics')}><span>⌁</span>统计</button>
         <button type="button" className={mainView==='settings'?'active':''} onClick={() => setMainView('settings')}><span>⚙</span>设置</button>
       </nav>
       )}
@@ -2421,7 +3177,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.6.25.6.1</span>
+        <span>Zing Calendar · v0.8.18</span>
       </footer>
 
       {selectedDate && (
@@ -2547,6 +3303,7 @@ function App() {
                     >
                       {mood && inCurrentMonth && <span className={`mood-run mood-${mood.level}${joinLeft ? ' join-left' : ''}${joinRight ? ' join-right' : ''}`} />}
                       <span className="mini-day-number">{date.getDate()}</span>
+                      {inCurrentMonth && journalDates.has(key) && <span className="mini-journal-dot" aria-label="当天有记录" />}
                     </button>
                   )
                 })}
@@ -2589,6 +3346,50 @@ function App() {
         </>
       )}
 
+      {overdueInboxOpen && (
+        <div className="modal-layer overdue-inbox-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭已逾期收件箱" onClick={()=>setOverdueInboxOpen(false)} />
+          <section className="task-editor overdue-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="overdue-inbox-title">
+            <div className="editor-header">
+              <div><span className="eyebrow">OVERDUE INBOX</span><h2 id="overdue-inbox-title">已逾期 · {overdueTasks.length}</h2></div>
+              <button className="close-button" type="button" onClick={()=>setOverdueInboxOpen(false)} aria-label="关闭">×</button>
+            </div>
+            <div className="editor-body overdue-inbox-body">
+              {overdueTasks.length===0 ? <p className="page-empty compact">目前没有已逾期任务。</p> :
+                <div className="overdue-inbox-list">
+                  {overdueTasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}>
+                    <div className="overdue-inbox-main">
+                      <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>
+                      <button className="overdue-task-link" type="button" onClick={()=>openTaskAtItsDay(task)}>
+                        <strong>{task.title}</strong>
+                        <time>{task.date.replaceAll('-','/')}</time>
+                      </button>
+                    </div>
+                    <button className="overdue-postpone-today" type="button" onClick={()=>postponeTask(task,toDateKey(today))}>延期到今天</button>
+                  </article>)}
+                </div>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {monthPickerTarget && (
+        <div className="modal-layer month-picker-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭年月选择" onClick={()=>setMonthPickerTarget(null)} />
+          <section className="month-picker-panel" role="dialog" aria-modal="true" aria-label="选择年月">
+            <div className="month-picker-year">
+              <button type="button" onClick={()=>setMonthPickerYear(y=>y-1)} aria-label="上一年">‹</button>
+              <strong>{monthPickerYear}</strong>
+              <button type="button" onClick={()=>setMonthPickerYear(y=>y+1)} aria-label="下一年">›</button>
+            </div>
+            <div className="month-picker-grid">
+              {MONTHS.map((name,index)=><button key={name} type="button" className={(monthPickerTarget==='calendar'?visibleMonth:moodMonth).getFullYear()===monthPickerYear && (monthPickerTarget==='calendar'?visibleMonth:moodMonth).getMonth()===index?'active':''} onClick={()=>chooseMonth(index)}>{name}</button>)}
+            </div>
+            <button className="month-picker-today" type="button" onClick={()=>{setMonthPickerYear(today.getFullYear());chooseMonth(today.getMonth())}}>今年本月</button>
+          </section>
+        </div>
+      )}
+
       {anniversaryEditorOpen && (
         <div className="modal-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭纪念日编辑" onClick={() => setAnniversaryEditorOpen(false)} />
@@ -2620,83 +3421,73 @@ function App() {
             <div className="editor-body">
               <div className="tag-create-row"><input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="新标签名称" /><select value={newTagScope} onChange={e => setNewTagScope(e.target.value as TagScope)}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
               <div className="tag-color-row">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-color${newTagColor === color ? ' active' : ''}`} style={{ background: color }} onClick={() => setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
-              <div className="tag-list">{tags.filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag)).map(tag => <div className="tag-row" key={tag.id}>
-                <div className="tag-color-control">
-                  <button type="button" className="tag-current-color" style={{ background: tag.color }} disabled={tag.system} onClick={() => !tag.system && setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={tag.system?`${tag.name} 为系统标签`:`修改 ${tag.name} 的颜色`} />
-                  {!tag.system && openTagColorId === tag.id && <div className="tag-color-popover">
-                    <div className="tag-popover-palette">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-row-color${tag.color === color ? ' active' : ''}`} style={{ background: color }} onClick={() => { setTags(current => current.map(item => item.id === tag.id ? { ...item, color } : item)); setOpenTagColorId(null) }} aria-label={`设为 ${color}`} />)}</div>
-                    <div className="tag-custom-color"><span>自定义</span><input type="color" value={tag.color} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, color: e.target.value } : item))} /></div>
-                  </div>}
+              <div className="tag-list">{managedTags.map(tag => {
+                const dropPosition=dragOverTag?.id===tag.id ? dragOverTag.position : null
+                return <div className={`tag-row tag-manage-row${tag.archived?' archived':''}${draggingTagId===tag.id?' dragging':''}${dropPosition?` drag-over-${dropPosition}`:''}`} key={tag.id}
+                  draggable
+                  onDragStart={event=>{setDraggingTagId(tag.id);setDragOverTag(null);event.dataTransfer.effectAllowed='move'}}
+                  onDragOver={event=>{
+                    event.preventDefault()
+                    if (!draggingTagId || draggingTagId===tag.id) return
+                    const rect=event.currentTarget.getBoundingClientRect()
+                    setDragOverTag({id:tag.id,position:event.clientY < rect.top+rect.height/2 ? 'before' : 'after'})
+                    event.dataTransfer.dropEffect='move'
+                  }}
+                  onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node)) setDragOverTag(current=>current?.id===tag.id?null:current)}}
+                  onDrop={event=>{
+                    event.preventDefault()
+                    if(draggingTagId && dragOverTag?.id===tag.id) moveManagedTag(draggingTagId,tag.id,dragOverTag.position)
+                    setDraggingTagId(null);setDragOverTag(null)
+                  }}
+                  onDragEnd={()=>{setDraggingTagId(null);setDragOverTag(null)}}>
+                  <span className="tag-drag-handle" title="拖动排序" aria-label="拖动排序">⋮⋮</span>
+                  <div className="tag-color-control">
+                    <button type="button" className="tag-current-color" style={{ background: tag.color }} onClick={() => setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={`修改 ${tag.name} 的颜色`} />
+                    {openTagColorId === tag.id && <div className="tag-color-popover">
+                      <div className="tag-popover-palette">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-row-color${tag.color === color ? ' active' : ''}`} style={{ background: color }} onClick={() => { setTags(current => current.map(item => item.id === tag.id ? { ...item, color } : item)); setOpenTagColorId(null) }} aria-label={`设为 ${color}`} />)}</div>
+                      <div className="tag-custom-color"><span>自定义</span><input type="color" value={tag.color} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, color: e.target.value } : item))} /></div>
+                    </div>}
+                  </div>
+                  <div className="tag-manage-main">
+                    <input value={tag.name} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value } : item))} />
+                  </div>
+                  <select value={tag.scope} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope } : item))}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select>
+                  <div className="tag-row-actions"><button type="button" className="archive-button" onClick={() => setTagArchived(tag.id,!tag.archived)}>{tag.archived?'取消归档':'归档'}</button><button type="button" className="delete-button compact-delete" onClick={() => deleteTag(tag.id)}>删除</button></div>
                 </div>
-                <input value={tag.name} disabled={tag.system} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value } : item))} />
-                <select value={tag.scope} disabled={tag.system} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope } : item))}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select>
-                <div className="tag-row-actions">
-                  <button type="button" className="tag-browse-button" onClick={() => browseTag(tag.id)}>查看</button>
-                  {tag.system ? <span className="system-tag">系统</span> : <button type="button" className="delete-button compact-delete" onClick={() => deleteTag(tag.id)}>删除</button>}
-                </div>
-              </div>)}</div>
+              })}</div>
             </div>
           </section>
         </div>
       )}
 
-      {browsingTag && (
-        <div className="modal-layer tag-browser-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭标签内容" onClick={() => setBrowsingTagId(null)} />
-          <section className="task-editor tag-browser" role="dialog" aria-modal="true" aria-labelledby="tag-browser-title">
-            <div className="editor-header">
-              <div className="tag-browser-title-wrap">
-                <span className="eyebrow">TAG</span>
-                <h2 id="tag-browser-title"><i style={{ background: browsingTag.color }} />{browsingTag.name}</h2>
-              </div>
-              <button className="close-button" type="button" onClick={() => setBrowsingTagId(null)}>×</button>
-            </div>
-            <div className="editor-body tag-browser-body">
-              {taggedTimelineGroups.length === 0 ? <p className="empty-state">还没有带这个标签的任务或记录。</p> : (
-                <div className={browsingTag.id === DEFAULT_TAG_ID ? 'default-tag-plain-list' : 'tag-timeline'}>
-                  {taggedTimelineGroups.map((group, groupIndex) => <section key={group.date} className="tag-timeline-day">
-                    <div className="tag-timeline-date">{formatCompactTimelineDate(group.date, taggedTimelineGroups[groupIndex - 1]?.date)}</div>
-                    <div className="tag-timeline-items">
-                      {group.items.map(item => item.kind === 'task' ? (
-                        <button key={`task-${item.task.id}`} type="button" className={`tag-timeline-item tag-task-result priority-${item.task.priority} status-${item.task.status}`} onClick={() => openTaggedTask(item.task)}>
-                          <span className="tag-task-square" aria-hidden="true">{item.task.status === 'completed' ? '✓' : item.task.status === 'abandoned' ? '×' : ''}</span>
-                          <span className="tag-result-main"><strong title={item.task.title}>{truncateTagTimelineTitle(item.task.title)}</strong><small>{isMultiDayTask(item.task) ? `${formatDate(fromDateKey(item.task.date))} → ${formatDate(fromDateKey(taskEndDate(item.task)))}` : (!item.task.allDay && item.task.time ? item.task.time : '全天')}</small></span>
-                          <span className="tag-result-status">{item.task.status === 'completed' ? '✓' : item.task.status === 'abandoned' ? '×' : ''}</span>
-                        </button>
-                      ) : (
-                        <button key={`journal-${item.entry.id}`} type="button" className="tag-timeline-item tag-journal-result" onClick={() => openTaggedJournal(item.entry)}>
-                          <span className={`journal-bookmark journal-impact-${item.entry.impact}`} aria-hidden="true" />
-                          <span className="tag-result-main"><strong title={item.entry.title || item.entry.content || '记录'}>{truncateTagTimelineTitle(item.entry.title || item.entry.content || '记录')}</strong>{item.entry.time && <small>{item.entry.time}</small>}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>)}
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {viewingJournalId && (() => {
-        const entry = journalEntries.find(item => item.id === viewingJournalId)
-        if (!entry) return null
-        const images = (entry.attachments ?? []).filter(a => a.type === 'image')
-        const audio = (entry.attachments ?? []).find(a => a.type === 'audio')
-        return <div className="modal-layer journal-detail-layer" role="presentation">
+      {viewingJournal && (
+        <div className="modal-layer journal-view-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭记录详情" onClick={() => setViewingJournalId(null)} />
-          <article className="task-editor journal-detail" role="dialog" aria-modal="true">
-            <div className="editor-header journal-detail-header"><div className="journal-detail-title-wrap"><span className="eyebrow">JOURNAL</span><h2>{entry.title}</h2></div><div className="journal-detail-header-meta"><span className="journal-impact-face" title={`事件影响 ${entry.impact > 0 ? '+' : ''}${entry.impact}`}><MoodFace level={(entry.impact + 3) as MoodLevel} /></span><small>{formatDate(fromDateKey(entry.date))}{entry.time ? ` · ${entry.time}` : ''}</small></div><button className="close-button" type="button" onClick={() => setViewingJournalId(null)}>×</button></div>
-            <div className="editor-body">
-              {entry.content && <MarkdownBody content={entry.content} />}
-              <div className="journal-detail-tags">{(entry.tagIds ?? []).filter(id => id !== DEFAULT_TAG_ID).map(id => { const tag=tags.find(t=>t.id===id); return tag ? <span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null })}</div>
-              {images.length > 0 && <div className="journal-detail-images">{images.map(image => <AttachmentThumb key={image.id} attachment={image} onRemove={() => {}} onPreview={a => void openImagePreview(a)} />)}</div>}
-              {audio && <AudioAttachment attachment={audio}/>}
+          <section className="task-editor journal-viewer" role="dialog" aria-modal="true" aria-labelledby="journal-view-title">
+            <div className="editor-header">
+              <div><span className="eyebrow">JOURNAL</span><h2 id="journal-view-title">{viewingJournal.title || '记录'}</h2></div>
+              <button className="close-button" type="button" onClick={() => setViewingJournalId(null)} aria-label="关闭">×</button>
             </div>
-            <div className="editor-footer"><div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={() => deleteJournal(entry.id)}>删除</button></div><div className="editor-primary-actions"><button type="button" onClick={() => { setViewingJournalId(null); editJournal(entry) }}>编辑记录</button></div></div>
-          </article>
+            <div className="editor-body">
+              <div className="journal-view-meta">
+                <span>{viewingJournal.date}{viewingJournal.time ? ` · ${viewingJournal.time}` : ''}</span>
+                <span className={`impact-badge impact-${viewingJournal.impact}`}>{viewingJournal.impact > 0 ? '+' : ''}{viewingJournal.impact}</span>
+              </div>
+              {viewingJournal.content && <div className="journal-view-content">{viewingJournal.content}</div>}
+              {(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).length>0 && <div className="entry-tags journal-view-tags">{(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).map(id=>{const tag=tags.find(item=>item.id===id);return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null})}</div>}
+              {(viewingJournal.attachments ?? []).some(a=>a.type==='image') && <div className="attachment-list">{(viewingJournal.attachments ?? []).filter(a=>a.type==='image').map(attachment=><AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />)}</div>}
+              {(viewingJournal.attachments ?? []).filter(a=>a.type==='audio').map(attachment=><AudioAttachment key={attachment.id} attachment={attachment}/>)}
+            </div>
+            <div className="editor-footer">
+              <div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={()=>deleteJournal(viewingJournal.id)}>删除记录</button></div>
+              <div className="editor-primary-actions">
+                <button className="cancel-button" type="button" onClick={()=>setViewingJournalId(null)}>关闭</button>
+                <button className="save-button" type="button" onClick={()=>{const entry=viewingJournal;setViewingJournalId(null);editJournal(entry)}}>编辑</button>
+              </div>
+            </div>
+          </section>
         </div>
-      })()}
+      )}
 
       {journalEditorOpen && (
         <div className="modal-layer" role="presentation">
