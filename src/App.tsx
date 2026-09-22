@@ -1560,6 +1560,11 @@ function App() {
   }
 
   const openDay = (date: Date) => {
+    const isMobile = window.matchMedia('(max-width: 760px)').matches
+    if (isMobile && selectedDate && toDateKey(selectedDate) === toDateKey(date)) {
+      setSelectedDate(null)
+      return
+    }
     setSelectedDate(date)
     if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
       setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
@@ -3433,7 +3438,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.6.1</span>
+        <span>Zing Calendar · v0.9.6.2</span>
       </footer>
 
       {selectedDate && (
@@ -3729,16 +3734,25 @@ function App() {
             </div>
             <div className="editor-body task-view-body">
               <div className="task-view-primary-meta">
-                <span className={`task-view-priority priority-${viewingTask.priority}`}>P{viewingTask.priority}</span>
-                <span>{formatTaskRange(viewingTask)}</span>
-                {!viewingTask.allDay && viewingTask.time && <span>{viewingTask.time}</span>}
-                {viewingTask.allDay && <span>全天</span>}
-                <span>{viewingTask.status==='completed'?'已完成':viewingTask.status==='abandoned'?'已放弃':'待办'}</span>
+                <button
+                  type="button"
+                  className={`task-view-checkbox priority-${viewingTask.priority} status-${viewingTask.status}`}
+                  aria-label={viewingTask.status==='completed'?'取消完成':'完成任务'}
+                  onClick={()=>{
+                    const nextStatus:TaskStatus=viewingTask.status==='completed'?'todo':'completed'
+                    setTaskStatus(viewingTask,nextStatus)
+                    setViewingTask(current=>current?{...current,status:nextStatus,completedAt:nextStatus==='completed'?new Date().toISOString():undefined}:current)
+                  }}
+                >{viewingTask.status==='completed'?'✓':viewingTask.status==='abandoned'?'×':''}</button>
+                <span className="task-view-date">
+                  {isMultiDayTask(viewingTask)
+                    ? formatTaskRange(viewingTask)
+                    : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}
+                </span>
               </div>
 
               {(viewingTask.attachments ?? []).some(item=>item.type==='image') && (
                 <section className="task-view-section task-view-images">
-                  <h3>图片</h3>
                   <div className="attachment-list">
                     {(viewingTask.attachments ?? []).filter(item=>item.type==='image').map(attachment=>
                       <AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />

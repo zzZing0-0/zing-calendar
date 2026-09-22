@@ -3167,3 +3167,42 @@ button {
   .task-view-images .attachment-card{min-height:0}
   .actual-duration-field>.actual-duration-inputs{max-width:none}
 }
+
+/* v0.9.6.2 — clean Task Detail + mobile Day Detail bottom sheet */
+.task-view-primary-meta{gap:10px;margin-bottom:12px}
+.task-view-checkbox{
+  width:24px;height:24px;flex:0 0 24px;padding:0;border:2px solid #77a285;border-radius:7px;
+  background:#fff;color:#fff;display:grid;place-items:center;font-size:14px;font-weight:800;cursor:pointer
+}
+.task-view-checkbox.priority-1{border-color:#d7b94b}
+.task-view-checkbox.priority-2{border-color:#d98b43}
+.task-view-checkbox.priority-3{border-color:#c85c54}
+.task-view-checkbox.status-completed{background:#77a285;border-color:#77a285}
+.task-view-checkbox.priority-1.status-completed{background:#d7b94b;border-color:#d7b94b}
+.task-view-checkbox.priority-2.status-completed{background:#d98b43;border-color:#d98b43}
+.task-view-checkbox.priority-3.status-completed{background:#c85c54;border-color:#c85c54}
+.task-view-checkbox.status-abandoned{background:#9aa29d;border-color:#9aa29d}
+.task-view-date{color:#68716c;font-size:14px}
+.task-view-images{padding-top:2px}
+
+@media (max-width:760px){
+  /* Keep the calendar visible; the day detail becomes a bottom sheet instead of a full-screen drawer. */
+  .drawer-backdrop{display:none}
+  .day-drawer{
+    top:auto;right:0;bottom:0;left:0;width:100%;height:auto;max-height:68dvh;
+    border:1px solid #e1e6e2;border-bottom:0;border-radius:18px 18px 0 0;
+    box-shadow:0 -16px 45px rgba(35,46,40,.14);
+    animation:day-sheet-in 180ms ease-out;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  @keyframes day-sheet-in{
+    from{transform:translateY(28px);opacity:.65}
+    to{transform:translateY(0);opacity:1}
+  }
+  .day-drawer .drawer-header{
+    position:sticky;top:0;z-index:2;background:#fbfcfb;border-radius:18px 18px 0 0;
+    padding-top:16px;padding-bottom:14px
+  }
+  /* Give the calendar enough visible room above the sheet for the selected week context. */
+  body:has(.day-drawer){padding-bottom:42dvh}
+}
