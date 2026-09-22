@@ -11,7 +11,7 @@ type RecurrenceEnd = { type: 'date'; date: string } | { type: 'count'; count: nu
 type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: number[]; end?: RecurrenceEnd }
 type PostponeEvent = { from: string; to: string; at: string }
 type Attachment = { id: string; type: 'image' | 'audio'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string; duration?: number }
-type RecurrenceException = { deleted?: boolean; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
+type RecurrenceException = { deleted?: boolean; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 type CalendarDay = {
   date: Date
@@ -29,6 +29,7 @@ type Task = {
   time?: string
   deadline?: string
   notes?: string
+  actualDurationMinutes?: number
   createdAt: string
   updatedAt: string
   completedAt?: string
@@ -115,6 +116,8 @@ type TaskDraft = {
   time: string
   deadline: string
   notes: string
+  actualDurationHours: string
+  actualDurationMinutes: string
   tagIds: string[]
   attachments: Attachment[]
   repeatPreset: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
@@ -327,6 +330,8 @@ function emptyDraft(date: Date, defaultPriority: TaskPriority = 1): TaskDraft {
     time: '',
     deadline: '',
     notes: '',
+    actualDurationHours: '',
+    actualDurationMinutes: '',
     tagIds: [DEFAULT_TAG_ID],
     attachments: [],
     repeatPreset: 'none',
@@ -587,6 +592,15 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatActualDuration(minutes?: number) {
+  if (!minutes || minutes <= 0) return ''
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours && rest) return `${hours} 小时 ${rest} 分钟`
+  if (hours) return `${hours} 小时`
+  return `${rest} 分钟`
 }
 
 function AttachmentThumb({ attachment, onRemove, onPreview }: { attachment: Attachment; onRemove?: () => void; onPreview: (attachment: Attachment) => void }) {
@@ -1071,6 +1085,7 @@ function App() {
   const [journalEditorOpen, setJournalEditorOpen] = useState(false)
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null)
   const [viewingJournalId, setViewingJournalId] = useState<string | null>(null)
+  const [viewingTask, setViewingTask] = useState<Task | null>(null)
   const [recording, setRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
@@ -1583,7 +1598,12 @@ function App() {
     setEditorOpen(true)
   }
 
+  const openTaskDetail = (task: Task) => {
+    setViewingTask(task)
+  }
+
   const editTask = (task: Task) => {
+    setViewingTask(null)
     const series = task.seriesId ? tasks.find(item => item.id === task.seriesId) : task
     if (!series) return
     setEditingTaskId(series.id)
@@ -1597,6 +1617,8 @@ function App() {
       time: task.time ?? '',
       deadline: task.deadline ?? '',
       notes: task.notes ?? '',
+      actualDurationHours: task.actualDurationMinutes ? String(Math.floor(task.actualDurationMinutes / 60)) : '',
+      actualDurationMinutes: task.actualDurationMinutes ? String(task.actualDurationMinutes % 60) : '',
       tagIds: task.tagIds?.length ? task.tagIds : [DEFAULT_TAG_ID],
       attachments: task.attachments ?? [],
       ...draftRepeat(series),
@@ -1619,6 +1641,12 @@ function App() {
       priority: draft.priority, allDay: draft.allDay,
       time: draft.allDay ? undefined : draft.time || undefined,
       deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
+      actualDurationMinutes: (() => {
+        const hours = Math.max(0, Number.parseInt(draft.actualDurationHours || '0', 10) || 0)
+        const minutes = Math.max(0, Number.parseInt(draft.actualDurationMinutes || '0', 10) || 0)
+        const total = hours * 60 + minutes
+        return total > 0 ? total : undefined
+      })(),
       tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
       attachments: draft.attachments,
     })
@@ -2035,7 +2063,7 @@ function App() {
     setVisibleMonth(new Date(year,month-1,1))
     setSelectedDate(date)
     setOverdueInboxOpen(false)
-    window.setTimeout(()=>editTask(task),0)
+    window.setTimeout(()=>openTaskDetail(task),0)
   }
 
   const openSearchResult = (result: SearchResult) => {
@@ -2049,7 +2077,7 @@ function App() {
       setVisibleMonth(new Date(date.getFullYear(),date.getMonth(),1))
       setSelectedDate(date)
       window.setTimeout(()=>{
-        if(result.kind==='task') editTask(result.item)
+        if(result.kind==='task') openTaskDetail(result.item)
         else setViewingJournalId(result.id)
       },0)
     } else openAnniversaryEditor(result.item)
@@ -3237,7 +3265,7 @@ function App() {
               <div className="sync-summary-grid">
                 {githubSyncSummary.rows.map(row=><div className="sync-summary-row" key={row.label}><b>{row.label}</b><span>新增 {row.added}</span><span>更新 {row.updated}</span><span>删除 {row.deleted}</span><small>当前 {row.total}</small></div>)}
               </div>
-              <div className="sync-summary-cloud"><b>云端状态</b><span>有效数据 {githubSyncSummary.pushedRecords} 条</span><span>删除记录 {githubSyncSummary.pushedTombstones} 条</span></div>
+              <div className="sync-summary-cloud"><b>云端状态</b><span>有效数据 {githubSyncSummary.pushedRecords} 条</span><span>历史删除标记 {githubSyncSummary.pushedTombstones} 条</span></div><small className="sync-summary-tombstone-note">历史删除标记用于防止其他设备把已删除的数据重新恢复，不代表本次删除。</small>
               <button className="github-sync-now" type="button" onClick={()=>setGithubSyncSummary(null)}>完成</button>
             </div>
           </section>
@@ -3379,7 +3407,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !monthPickerTarget && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !monthPickerTarget && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => setMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => setMainView('anniversaries')}><span>🎂</span>纪念日</button>
@@ -3405,7 +3433,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.6.0</span>
+        <span>Zing Calendar · v0.9.6.1</span>
       </footer>
 
       {selectedDate && (
@@ -3451,7 +3479,7 @@ function App() {
                     <article
                       key={task.id}
                       className={`task-item priority-${task.priority} status-${task.status} ${deadlineStage(task)}${isTaskOverdue(task) ? ' task-overdue' : ''}`}
-                      onClick={() => editTask(task)}
+                      onClick={() => openTaskDetail(task)}
                     >
                       <span className="task-priority-bar" />
                       <button
@@ -3688,6 +3716,69 @@ function App() {
         </div>
       )}
 
+      {viewingTask && (
+        <div className="modal-layer task-view-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭任务详情" onClick={()=>setViewingTask(null)} />
+          <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
+            <div className="editor-header task-view-header">
+              <div>
+                <span className="eyebrow">TASK</span>
+                <h2 id="task-view-title">{viewingTask.title}</h2>
+              </div>
+              <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>
+            </div>
+            <div className="editor-body task-view-body">
+              <div className="task-view-primary-meta">
+                <span className={`task-view-priority priority-${viewingTask.priority}`}>P{viewingTask.priority}</span>
+                <span>{formatTaskRange(viewingTask)}</span>
+                {!viewingTask.allDay && viewingTask.time && <span>{viewingTask.time}</span>}
+                {viewingTask.allDay && <span>全天</span>}
+                <span>{viewingTask.status==='completed'?'已完成':viewingTask.status==='abandoned'?'已放弃':'待办'}</span>
+              </div>
+
+              {(viewingTask.attachments ?? []).some(item=>item.type==='image') && (
+                <section className="task-view-section task-view-images">
+                  <h3>图片</h3>
+                  <div className="attachment-list">
+                    {(viewingTask.attachments ?? []).filter(item=>item.type==='image').map(attachment=>
+                      <AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {viewingTask.actualDurationMinutes && viewingTask.actualDurationMinutes > 0 && (
+                <section className="task-view-section">
+                  <h3>实际用时</h3><p>{formatActualDuration(viewingTask.actualDurationMinutes)}</p>
+                </section>
+              )}
+
+              {viewingTask.deadline && <section className="task-view-section"><h3>截止日期</h3><p>{viewingTask.deadline}</p></section>}
+
+              {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).length>0 && (
+                <section className="task-view-section">
+                  <h3>标签</h3>
+                  <div className="entry-tags task-view-tags">
+                    {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).map(id=>{
+                      const tag=tags.find(item=>item.id===id)
+                      return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {viewingTask.notes && <section className="task-view-section"><h3>备注</h3><div className="task-view-notes">{viewingTask.notes}</div></section>}
+            </div>
+            <div className="editor-footer">
+              <div className="editor-primary-actions">
+                <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
+                <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
       {viewingJournal && (
         <div className="modal-layer journal-view-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭记录详情" onClick={() => setViewingJournalId(null)} />
@@ -3841,6 +3932,15 @@ function App() {
                 <label className="attachment-add">＋ 添加图片<input type="file" accept="image/*" multiple onChange={event => { void addTaskImages(event.target.files); event.currentTarget.value = '' }} /></label>
                 {draft.attachments.length > 0 && <div className="attachment-grid">{draft.attachments.map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeTaskImage(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
                 <small>自动压缩后保存 · 单张上限 1 MB</small>
+              </div>
+
+              <div className="field full-field actual-duration-field">
+                <span>实际用时 · 可选</span>
+                <div className="actual-duration-inputs">
+                  <label><input type="number" min="0" inputMode="numeric" value={draft.actualDurationHours} onChange={event=>setDraft(current=>({...current,actualDurationHours:event.target.value}))} placeholder="0" /><small>小时</small></label>
+                  <label><input type="number" min="0" max="59" inputMode="numeric" value={draft.actualDurationMinutes} onChange={event=>setDraft(current=>({...current,actualDurationMinutes:event.target.value}))} placeholder="0" /><small>分钟</small></label>
+                </div>
+                <small>不计时、不强制填写，只记录你对这个任务实际耗时的大致估计。</small>
               </div>
 
               <label className="field full-field">

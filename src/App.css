@@ -3139,3 +3139,31 @@ button {
 .sync-summary-cloud{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0;padding:12px 14px;background:rgba(47,82,64,.06);border-radius:12px}
 .github-sync-credential-remove{margin-top:8px;border:0;background:transparent;text-decoration:underline;cursor:pointer}
 @media(max-width:640px){.sync-summary-row{grid-template-columns:1fr 1fr}.sync-summary-row b{grid-column:1/-1}.sync-summary-row small{grid-column:1/-1}}
+
+/* v0.9.6.1 task detail + optional actual duration */
+.task-view-layer{z-index:105}
+.task-viewer{max-width:720px}
+.task-view-header h2{max-width:560px}
+.task-view-primary-meta{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:18px;color:var(--muted,#6f746f);font-size:14px}
+.task-view-priority{display:inline-flex;align-items:center;justify-content:center;min-width:38px;padding:5px 8px;border-radius:9px;font-weight:700;color:#222;background:rgba(0,0,0,.06)}
+.task-view-priority.priority-3{background:#f2cccc}
+.task-view-priority.priority-2{background:#f2d3b2}
+.task-view-priority.priority-1{background:#f1e5ac}
+.task-view-priority.priority-0{background:#cfe2d4}
+.task-view-section{padding:16px 0;border-top:1px solid rgba(0,0,0,.07)}
+.task-view-section h3{margin:0 0 10px;font-size:13px;color:var(--muted,#777);font-weight:650}
+.task-view-section p,.task-view-notes{margin:0;white-space:pre-wrap;line-height:1.65}
+.task-view-images{padding-top:4px;border-top:0}
+.task-view-images .attachment-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.actual-duration-field>.actual-duration-inputs{display:flex;gap:10px;max-width:360px}
+.actual-duration-inputs label{display:flex;align-items:center;gap:7px;flex:1}
+.actual-duration-inputs input{min-width:0;width:100%}
+.actual-duration-inputs small{white-space:nowrap}
+.sync-summary-tombstone-note{display:block;margin:-8px 0 14px;color:var(--muted,#777);line-height:1.5}
+@media(max-width:640px){
+  .task-viewer{width:min(100% - 20px,720px);max-height:88dvh}
+  .task-view-header h2{font-size:24px}
+  .task-view-images .attachment-list{grid-template-columns:1fr}
+  .task-view-images .attachment-card{min-height:0}
+  .actual-duration-field>.actual-duration-inputs{max-width:none}
+}
