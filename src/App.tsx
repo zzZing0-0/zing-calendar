@@ -2703,8 +2703,19 @@ function App() {
       const [nextTasks,nextJournals,nextMoods,nextTags,nextAnniversaries] = await Promise.all([
         loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
       ])
+      const hydratedTags = nextTags.some(tag=>tag.id===DEFAULT_TAG_ID)?nextTags:[DEFAULT_TAG,...nextTags]
+      // Remote merge is hydration, not a local user edit. Reset the diff baselines
+      // before React state changes so pulled records/deletes do not generate fresh tombstones.
+      syncSnapshotsRef.current = {
+        task: nextTasks,
+        journal: nextJournals,
+        mood: nextMoods,
+        tag: hydratedTags,
+        anniversary: nextAnniversaries,
+      }
+      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, tag:true, anniversary:true }
       setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods)
-      setTags(nextTags.some(tag=>tag.id===DEFAULT_TAG_ID)?nextTags:[DEFAULT_TAG,...nextTags])
+      setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -3337,7 +3348,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.5.4</span>
+        <span>Zing Calendar · v0.9.5.5</span>
       </footer>
 
       {selectedDate && (

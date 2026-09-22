@@ -304,8 +304,25 @@ function entityUpdatedAt(row: any): string {
   return String(row.updatedAt ?? row.createdAt ?? '1970-01-01T00:00:00.000Z')
 }
 
+async function pruneStaleSyncTombstones(): Promise<number> {
+  const tombstones = await loadSyncTombstones()
+  if (!tombstones.length) return 0
+  const liveTimes = new Map<string, number>()
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'tag', 'anniversary']
+  for (const entityType of entityTypes) {
+    const rows = await loadAll<any>(entityStoreName(entityType))
+    rows.forEach(row => liveTimes.set(`${entityType}:${entityIdOf(entityType, row)}`, Date.parse(entityUpdatedAt(row)) || 0))
+  }
+  // A valid current bundle must never carry both a live record and its tombstone.
+  // If both exist, the entity currently exists locally, so the tombstone is stale/polluted.
+  const stale = tombstones.filter(t => liveTimes.has(t.key))
+  for (const t of stale) await clearSyncTombstone(t.key)
+  return stale.length
+}
+
 export async function createSyncBundle(): Promise<SyncBundle> {
   const deviceId = getOrCreateDeviceId()
+  await pruneStaleSyncTombstones()
   const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'tag', 'anniversary']
   const records: SyncEntityRecord[] = []
   for (const entityType of entityTypes) {
@@ -338,6 +355,7 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
   const local = await createSyncBundle()
   const localRecords = new Map(local.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
   const localTombstones = new Map(local.tombstones.map(tombstone => [tombstone.key, tombstone]))
+  const remoteRecords = new Map(remote.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
   const upserts: SyncEntityRecord[] = []
   const deletes: SyncTombstone[] = []
   let ignoredRemoteRecords = 0
@@ -359,9 +377,16 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
 
   for (const remoteDelete of remote.tombstones) {
     const key = remoteDelete.key
+    const remoteRecord = remoteRecords.get(key)
+    const remoteDeleteTime = Date.parse(remoteDelete.deletedAt) || 0
+    // A bundle can contain an old tombstone plus a later recreated/live record.
+    // Resolve that conflict inside the remote bundle before comparing with local state.
+    if (remoteRecord) {
+      ignoredRemoteTombstones += 1
+      continue
+    }
     const localRecord = localRecords.get(key)
     const localDelete = localTombstones.get(key)
-    const remoteDeleteTime = Date.parse(remoteDelete.deletedAt) || 0
     const localRecordTime = localRecord ? (Date.parse(localRecord.updatedAt) || 0) : 0
     const localDeleteTime = localDelete ? (Date.parse(localDelete.deletedAt) || 0) : 0
     if (remoteDeleteTime > Math.max(localRecordTime, localDeleteTime)) deletes.push(remoteDelete)
