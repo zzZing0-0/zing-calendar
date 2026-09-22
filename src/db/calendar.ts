@@ -583,13 +583,26 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
     rawJson = await rawResponse.text()
   }
 
-  let bundle: SyncBundle
+  let parsed: any
   try {
-    bundle = JSON.parse(rawJson) as SyncBundle
+    parsed = JSON.parse(rawJson)
   } catch {
     throw new Error('GitHub 同步文件 JSON 无法解析')
   }
-  if (bundle.protocolVersion !== 1) throw new Error(`不支持的同步协议版本：${bundle.protocolVersion}`)
+
+  // Some GitHub/browser combinations can still return Contents API metadata
+  // even for a raw-media request. If so, unwrap its base64 content instead of
+  // mistaking the metadata object for a SyncBundle (protocolVersion=undefined).
+  if (parsed?.protocolVersion === undefined && parsed?.encoding === 'base64' && typeof parsed?.content === 'string' && parsed.content) {
+    try {
+      parsed = JSON.parse(base64ToUtf8(parsed.content))
+    } catch {
+      throw new Error('GitHub 同步文件内容 JSON 无法解析')
+    }
+  }
+
+  const bundle = parsed as SyncBundle
+  if (bundle.protocolVersion !== 1) throw new Error(`不支持的同步协议版本：${String(bundle.protocolVersion)}`)
   if (!Array.isArray(bundle.records) || !Array.isArray(bundle.tombstones)) throw new Error('GitHub 同步文件结构无效')
   return { bundle, sha: file.sha }
 }
