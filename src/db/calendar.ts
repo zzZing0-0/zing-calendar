@@ -498,9 +498,10 @@ export type GitHubSyncConfig = {
 
 type GitHubContentsFile = {
   type: 'file'
-  encoding: 'base64'
-  content: string
+  encoding?: string
+  content?: string
   sha: string
+  download_url?: string | null
 }
 
 const GITHUB_API_BASE = 'https://api.github.com'
@@ -538,9 +539,35 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
   if (response.status === 404) return {}
   if (!response.ok) throw new Error(`GitHub 同步读取失败（HTTP ${response.status}）`)
   const file = await response.json() as GitHubContentsFile
-  if (file.type !== 'file' || file.encoding !== 'base64') throw new Error('GitHub 同步文件格式不受支持')
-  const bundle = JSON.parse(base64ToUtf8(file.content)) as SyncBundle
+  if (file.type !== 'file') throw new Error('GitHub 同步路径不是文件')
+
+  let rawJson = ''
+  if (file.encoding === 'base64' && file.content) {
+    rawJson = base64ToUtf8(file.content)
+  } else if (file.download_url) {
+    // GitHub Contents API does not include base64 content for larger files
+    // (our first real bundle is already large enough to hit that behavior).
+    // Fetch the authenticated raw representation instead.
+    const rawResponse = await fetch(file.download_url, {
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    })
+    if (!rawResponse.ok) throw new Error(`GitHub 同步文件下载失败（HTTP ${rawResponse.status}）`)
+    rawJson = await rawResponse.text()
+  } else {
+    throw new Error('GitHub 同步文件内容不可读取')
+  }
+
+  let bundle: SyncBundle
+  try {
+    bundle = JSON.parse(rawJson) as SyncBundle
+  } catch {
+    throw new Error('GitHub 同步文件 JSON 无法解析')
+  }
   if (bundle.protocolVersion !== 1) throw new Error(`不支持的同步协议版本：${bundle.protocolVersion}`)
+  if (!Array.isArray(bundle.records) || !Array.isArray(bundle.tombstones)) throw new Error('GitHub 同步文件结构无效')
   return { bundle, sha: file.sha }
 }
 
