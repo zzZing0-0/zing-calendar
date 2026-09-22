@@ -544,20 +544,18 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
   let rawJson = ''
   if (file.encoding === 'base64' && file.content) {
     rawJson = base64ToUtf8(file.content)
-  } else if (file.download_url) {
-    // GitHub Contents API does not include base64 content for larger files
-    // (our first real bundle is already large enough to hit that behavior).
-    // Fetch the authenticated raw representation instead.
-    const rawResponse = await fetch(file.download_url, {
+  } else {
+    // For larger files GitHub may omit base64 content from the JSON response.
+    // Request the same authenticated Contents API endpoint as raw media instead
+    // of following download_url (whose host/auth behavior can differ).
+    const rawResponse = await fetch(url, {
       headers: {
-        Authorization: `Bearer ${config.token}`,
-        'X-GitHub-Api-Version': '2022-11-28',
+        ...githubHeaders(config),
+        Accept: 'application/vnd.github.raw+json',
       },
     })
     if (!rawResponse.ok) throw new Error(`GitHub 同步文件下载失败（HTTP ${rawResponse.status}）`)
     rawJson = await rawResponse.text()
-  } else {
-    throw new Error('GitHub 同步文件内容不可读取')
   }
 
   let bundle: SyncBundle

@@ -3337,7 +3337,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.5.3</span>
+        <span>Zing Calendar · v0.9.5.4</span>
       </footer>
 
       {selectedDate && (
