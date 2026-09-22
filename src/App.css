@@ -3129,3 +3129,13 @@ button {
 .github-sync-status.working{background:#f2f4f2;color:#536159}
 .github-sync-status.success{background:#edf5ef;color:#376247}
 .github-sync-status.error{background:#f8eeee;color:#8a4d4d}
+
+.github-sync-summary-layer{z-index:110}
+.github-sync-summary-modal{max-width:620px}
+.sync-summary-time{margin:0 0 14px;color:var(--muted,#777);font-size:13px}
+.sync-summary-grid{display:grid;gap:8px}
+.sync-summary-row{display:grid;grid-template-columns:minmax(72px,1fr) repeat(3,auto);gap:12px;align-items:center;padding:12px 14px;border:1px solid rgba(0,0,0,.08);border-radius:12px}
+.sync-summary-row small{grid-column:1/-1;color:var(--muted,#777)}
+.sync-summary-cloud{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0;padding:12px 14px;background:rgba(47,82,64,.06);border-radius:12px}
+.github-sync-credential-remove{margin-top:8px;border:0;background:transparent;text-decoration:underline;cursor:pointer}
+@media(max-width:640px){.sync-summary-row{grid-template-columns:1fr 1fr}.sync-summary-row b{grid-column:1/-1}.sync-summary-row small{grid-column:1/-1}}

@@ -269,6 +269,50 @@ export async function clearSyncTombstone(key: string): Promise<void> {
 }
 
 
+
+export type GitHubDeviceCredential = {
+  key: 'githubCredential'
+  token: string
+  savedAt: string
+}
+
+export async function loadGitHubDeviceCredential(): Promise<GitHubDeviceCredential | undefined> {
+  const db = await openDatabase()
+  try {
+    return await new Promise<GitHubDeviceCredential | undefined>((resolve, reject) => {
+      const req = db.transaction(SYNC_META_STORE, 'readonly').objectStore(SYNC_META_STORE).get('githubCredential')
+      req.onsuccess = () => resolve(req.result as GitHubDeviceCredential | undefined)
+      req.onerror = () => reject(req.error)
+    })
+  } finally { db.close() }
+}
+
+export async function saveGitHubDeviceCredential(token: string): Promise<void> {
+  const db = await openDatabase()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SYNC_META_STORE, 'readwrite')
+      tx.objectStore(SYNC_META_STORE).put({ key:'githubCredential', token, savedAt:new Date().toISOString() })
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error)
+    })
+  } finally { db.close() }
+}
+
+export async function clearGitHubDeviceCredential(): Promise<void> {
+  const db = await openDatabase()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SYNC_META_STORE, 'readwrite')
+      tx.objectStore(SYNC_META_STORE).delete('githubCredential')
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error)
+    })
+  } finally { db.close() }
+}
+
 // ---- v0.9.2 portable sync engine ------------------------------------------
 // A transport-neutral bundle: later the same object can travel through an old
 // Mac server, a hosted API, or another backend without changing merge semantics.

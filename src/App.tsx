@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
@@ -1027,6 +1027,8 @@ function App() {
   const [githubSyncRepo, setGithubSyncRepo] = useState(() => localStorage.getItem('zing:githubSyncRepo') || 'zing-calendar-data')
   const [githubSyncBranch, setGithubSyncBranch] = useState(() => localStorage.getItem('zing:githubSyncBranch') || 'main')
   const [githubSyncToken, setGithubSyncToken] = useState('')
+  const [githubTokenSaved, setGithubTokenSaved] = useState(false)
+  const [githubSyncSummary, setGithubSyncSummary] = useState<{rows:{label:string;added:number;updated:number;deleted:number;total:number}[]; pushedRecords:number; pushedTombstones:number; finishedAt:string}|null>(null)
   const [githubSyncBusy, setGithubSyncBusy] = useState(false)
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
@@ -1379,6 +1381,12 @@ function App() {
       void recordSyncDiff('mood', previous, dailyMoods).catch(error => console.error('Failed to record mood sync changes', error))
     }
   }, [dailyMoods, moodsHydrated])
+
+  useEffect(() => {
+    loadGitHubDeviceCredential().then(saved => {
+      if (saved?.token) { setGithubSyncToken(saved.token); setGithubTokenSaved(true) }
+    }).catch(error => console.error('Failed to load GitHub device credential', error))
+  }, [])
 
   useEffect(() => { localStorage.setItem('zing:greeting', greeting || 'Hello, Zing') }, [greeting])
   useEffect(() => { localStorage.setItem('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
@@ -2671,6 +2679,19 @@ function App() {
   }
 
 
+  const syncRows = (before:any[], after:any[], type:'task'|'journal'|'mood'|'tag'|'anniversary', label:string) => {
+    const id = (row:any) => type === 'mood' ? String(row.date) : String(row.id)
+    const b = new Map(before.map(row=>[id(row),row]))
+    const n = new Map(after.map(row=>[id(row),row]))
+    let added=0, updated=0, deleted=0
+    for (const [key,row] of n) {
+      if (!b.has(key)) added += 1
+      else if (JSON.stringify(b.get(key)) !== JSON.stringify(row)) updated += 1
+    }
+    for (const key of b.keys()) if (!n.has(key)) deleted += 1
+    return {label,added,updated,deleted,total:after.length}
+  }
+
   const runGithubSync = async () => {
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
       setGithubSyncMessageKind('error')
@@ -2686,24 +2707,39 @@ function App() {
     setGithubSyncMessageKind('working')
     setGithubSyncMessage('正在连接 GitHub…')
     try {
+      const beforeTasks = tasks, beforeJournals = journalEntries, beforeMoods = dailyMoods, beforeTags = tags, beforeAnniversaries = anniversaries
       const result = await syncWithGitHub({
         owner: githubSyncOwner.trim(),
         repo: githubSyncRepo.trim(),
         branch: githubSyncBranch.trim(),
         token: githubSyncToken.trim(),
       })
+      await saveGitHubDeviceCredential(githubSyncToken.trim())
+      setGithubTokenSaved(true)
       const stamp = result.finishedAt
       setLastGithubSyncAt(stamp)
       localStorage.setItem('zing:lastGithubSyncAt', stamp)
       setGithubSyncMessageKind('success')
       setGithubSyncMessage(result.initializedRemote
-        ? `✓ 首次同步完成 · 已上传 ${result.pushedRecords} 条数据`
-        : `✓ 同步完成 · 拉取 ${result.pulled.upserts} 条更新 / ${result.pulled.deletes} 条删除`)
+        ? `✓ 首次同步完成 · 云端现有 ${result.pushedRecords} 条数据`
+        : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.pushedTombstones} 条删除记录`)
       // Rehydrate merged records so remote changes become visible immediately.
       const [nextTasks,nextJournals,nextMoods,nextTags,nextAnniversaries] = await Promise.all([
         loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
       ])
       const hydratedTags = nextTags.some(tag=>tag.id===DEFAULT_TAG_ID)?nextTags:[DEFAULT_TAG,...nextTags]
+      setGithubSyncSummary({
+        rows: [
+          syncRows(beforeTasks,nextTasks,'task','任务'),
+          syncRows(beforeJournals,nextJournals,'journal','日记'),
+          syncRows(beforeMoods,nextMoods,'mood','心情'),
+          syncRows(beforeAnniversaries,nextAnniversaries,'anniversary','纪念日'),
+          syncRows(beforeTags,hydratedTags,'tag','标签'),
+        ],
+        pushedRecords: result.pushedRecords,
+        pushedTombstones: result.pushedTombstones,
+        finishedAt: stamp,
+      })
       // Remote merge is hydration, not a local user edit. Reset the diff baselines
       // before React state changes so pulled records/deletes do not generate fresh tombstones.
       syncSnapshotsRef.current = {
@@ -3177,11 +3213,32 @@ function App() {
               <label><span>GitHub 用户名</span><input value={githubSyncOwner} onChange={e=>setGithubSyncOwner(e.target.value)} autoCapitalize="none" /></label>
               <label><span>数据仓库</span><input value={githubSyncRepo} onChange={e=>setGithubSyncRepo(e.target.value)} autoCapitalize="none" /></label>
               <label><span>分支</span><input value={githubSyncBranch} onChange={e=>setGithubSyncBranch(e.target.value)} autoCapitalize="none" /></label>
-              <label><span>Fine-grained Token</span><input type="password" value={githubSyncToken} onChange={e=>setGithubSyncToken(e.target.value)} autoComplete="off" placeholder="github_pat_…" /></label>
-              <div className="github-sync-security">🔐 Token 仅保存在当前页面内存中：不会写入 Zing 数据库、localStorage、备份或 GitHub 数据仓库。刷新页面后需要重新输入。</div>
+              <label><span>Fine-grained Token</span><input type="password" value={githubSyncToken} onChange={e=>{setGithubSyncToken(e.target.value);setGithubTokenSaved(false)}} autoComplete="off" placeholder="github_pat_…" /></label>
+              <div className="github-sync-security">🔐 {githubTokenSaved?'此设备已保存 Token。它只保存在本设备 IndexedDB 的同步凭据区，不进入备份或 GitHub 数据仓库。':'同步成功后会将 Token 保存到本设备，下次打开无需重新输入。'}</div>
+              {githubTokenSaved && <button className="github-sync-credential-remove" type="button" onClick={()=>void clearGitHubDeviceCredential().then(()=>{setGithubSyncToken('');setGithubTokenSaved(false);setGithubSyncMessage('已移除此设备保存的 Token');setGithubSyncMessageKind('idle')})}>移除此设备 Token</button>}
               {githubSyncMessage && <div className={`github-sync-status ${githubSyncMessageKind}`} role="status" aria-live="polite">{githubSyncMessage}</div>}
               <button className="github-sync-now" type="button" disabled={githubSyncBusy} onClick={()=>void runGithubSync()}>{githubSyncBusy?'正在同步…':'立即同步'}</button>
               {lastGithubSyncAt && <small className="github-sync-last">上次成功：{new Date(lastGithubSyncAt).toLocaleString()}</small>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {githubSyncSummary && (
+        <div className="modal-layer github-sync-summary-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭同步结果" onClick={()=>setGithubSyncSummary(null)} />
+          <section className="task-editor github-sync-summary-modal" role="dialog" aria-modal="true" aria-label="同步结果">
+            <div className="editor-header">
+              <div><span className="eyebrow">SYNC RESULT</span><h2>同步完成</h2></div>
+              <button className="close-button" type="button" onClick={()=>setGithubSyncSummary(null)}>×</button>
+            </div>
+            <div className="editor-body">
+              <p className="sync-summary-time">{new Date(githubSyncSummary.finishedAt).toLocaleString()}</p>
+              <div className="sync-summary-grid">
+                {githubSyncSummary.rows.map(row=><div className="sync-summary-row" key={row.label}><b>{row.label}</b><span>新增 {row.added}</span><span>更新 {row.updated}</span><span>删除 {row.deleted}</span><small>当前 {row.total}</small></div>)}
+              </div>
+              <div className="sync-summary-cloud"><b>云端状态</b><span>有效数据 {githubSyncSummary.pushedRecords} 条</span><span>删除记录 {githubSyncSummary.pushedTombstones} 条</span></div>
+              <button className="github-sync-now" type="button" onClick={()=>setGithubSyncSummary(null)}>完成</button>
             </div>
           </section>
         </div>
@@ -3348,7 +3405,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.5.9</span>
+        <span>Zing Calendar · v0.9.6.0</span>
       </footer>
 
       {selectedDate && (
