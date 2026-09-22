@@ -559,49 +559,33 @@ function base64ToUtf8(value: string): string {
 async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?: SyncBundle; sha?: string }> {
   const branch = config.branch?.trim() || 'main'
   const path = githubSyncPath(config)
-  const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`
+  const contentsUrl = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`
 
-  // Request metadata first. We need the current SHA for safe conditional writes.
-  const metaResponse = await fetch(url, { headers: githubHeaders(config) })
+  // Contents API is used only to resolve the file and its blob SHA.
+  const metaResponse = await fetch(contentsUrl, { headers: githubHeaders(config) })
   if (metaResponse.status === 404) return {}
   if (!metaResponse.ok) throw new Error(`GitHub 同步读取失败（HTTP ${metaResponse.status}）`)
   const file = await metaResponse.json() as GitHubContentsFile
   if (file.type !== 'file') throw new Error('GitHub 同步路径不是文件')
   if (!file.sha) throw new Error('GitHub 同步文件缺少 SHA')
 
-  // Small files normally include base64 content in metadata.
-  let rawJson: string | undefined
+  let rawJson: string
+
+  // Contents API includes base64 content for small files.
   if (file.encoding === 'base64' && typeof file.content === 'string' && file.content.length > 0) {
     rawJson = base64ToUtf8(file.content)
-  }
-
-  // Large files can omit `content`. Ask the same authenticated Contents endpoint
-  // for raw bytes. `application/vnd.github.raw` is the documented raw media type.
-  if (rawJson === undefined) {
-    const rawResponse = await fetch(url, {
-      headers: {
-        ...githubHeaders(config),
-        Accept: 'application/vnd.github.raw',
-      },
-    })
-    if (!rawResponse.ok) throw new Error(`GitHub 同步文件下载失败（HTTP ${rawResponse.status}）`)
-    const body = await rawResponse.text()
-
-    // Be defensive: if GitHub/proxy returns Contents metadata despite the raw
-    // Accept header, unwrap it explicitly instead of treating it as a bundle.
-    let maybeJson: any
-    try { maybeJson = JSON.parse(body) } catch { maybeJson = undefined }
-
-    if (maybeJson && typeof maybeJson === 'object' && maybeJson.protocolVersion === 1) {
-      rawJson = body
-    } else if (maybeJson && maybeJson.type === 'file' && maybeJson.encoding === 'base64' && typeof maybeJson.content === 'string' && maybeJson.content) {
-      rawJson = base64ToUtf8(maybeJson.content)
-    } else {
-      const keys = maybeJson && typeof maybeJson === 'object'
-        ? Object.keys(maybeJson).slice(0, 8).join(',')
-        : '非 JSON'
-      throw new Error(`GitHub 同步文件响应异常（字段：${keys || '空'}）`)
+  } else {
+    // Large Contents API responses omit `content`. Fetch the underlying Git blob
+    // by SHA instead. The Git Blobs endpoint returns base64 JSON reliably and
+    // remains on api.github.com with the same fine-grained token authentication.
+    const blobUrl = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/git/blobs/${encodeURIComponent(file.sha)}`
+    const blobResponse = await fetch(blobUrl, { headers: githubHeaders(config) })
+    if (!blobResponse.ok) throw new Error(`GitHub 同步 Blob 读取失败（HTTP ${blobResponse.status}）`)
+    const blob = await blobResponse.json() as { sha?: string; encoding?: string; content?: string; size?: number }
+    if (blob.encoding !== 'base64' || typeof blob.content !== 'string' || !blob.content) {
+      throw new Error(`GitHub 同步 Blob 格式异常（encoding=${String(blob.encoding)}；size=${String(blob.size)}）`)
     }
+    rawJson = base64ToUtf8(blob.content)
   }
 
   let parsed: any
