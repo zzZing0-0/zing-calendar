@@ -560,27 +560,48 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
   const branch = config.branch?.trim() || 'main'
   const path = githubSyncPath(config)
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`
-  const response = await fetch(url, { headers: githubHeaders(config) })
-  if (response.status === 404) return {}
-  if (!response.ok) throw new Error(`GitHub 同步读取失败（HTTP ${response.status}）`)
-  const file = await response.json() as GitHubContentsFile
-  if (file.type !== 'file') throw new Error('GitHub 同步路径不是文件')
 
-  let rawJson = ''
-  if (file.encoding === 'base64' && file.content) {
+  // Request metadata first. We need the current SHA for safe conditional writes.
+  const metaResponse = await fetch(url, { headers: githubHeaders(config) })
+  if (metaResponse.status === 404) return {}
+  if (!metaResponse.ok) throw new Error(`GitHub 同步读取失败（HTTP ${metaResponse.status}）`)
+  const file = await metaResponse.json() as GitHubContentsFile
+  if (file.type !== 'file') throw new Error('GitHub 同步路径不是文件')
+  if (!file.sha) throw new Error('GitHub 同步文件缺少 SHA')
+
+  // Small files normally include base64 content in metadata.
+  let rawJson: string | undefined
+  if (file.encoding === 'base64' && typeof file.content === 'string' && file.content.length > 0) {
     rawJson = base64ToUtf8(file.content)
-  } else {
-    // For larger files GitHub may omit base64 content from the JSON response.
-    // Request the same authenticated Contents API endpoint as raw media instead
-    // of following download_url (whose host/auth behavior can differ).
+  }
+
+  // Large files can omit `content`. Ask the same authenticated Contents endpoint
+  // for raw bytes. `application/vnd.github.raw` is the documented raw media type.
+  if (rawJson === undefined) {
     const rawResponse = await fetch(url, {
       headers: {
         ...githubHeaders(config),
-        Accept: 'application/vnd.github.raw+json',
+        Accept: 'application/vnd.github.raw',
       },
     })
     if (!rawResponse.ok) throw new Error(`GitHub 同步文件下载失败（HTTP ${rawResponse.status}）`)
-    rawJson = await rawResponse.text()
+    const body = await rawResponse.text()
+
+    // Be defensive: if GitHub/proxy returns Contents metadata despite the raw
+    // Accept header, unwrap it explicitly instead of treating it as a bundle.
+    let maybeJson: any
+    try { maybeJson = JSON.parse(body) } catch { maybeJson = undefined }
+
+    if (maybeJson && typeof maybeJson === 'object' && maybeJson.protocolVersion === 1) {
+      rawJson = body
+    } else if (maybeJson && maybeJson.type === 'file' && maybeJson.encoding === 'base64' && typeof maybeJson.content === 'string' && maybeJson.content) {
+      rawJson = base64ToUtf8(maybeJson.content)
+    } else {
+      const keys = maybeJson && typeof maybeJson === 'object'
+        ? Object.keys(maybeJson).slice(0, 8).join(',')
+        : '非 JSON'
+      throw new Error(`GitHub 同步文件响应异常（字段：${keys || '空'}）`)
+    }
   }
 
   let parsed: any
@@ -590,23 +611,17 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
     throw new Error('GitHub 同步文件 JSON 无法解析')
   }
 
-  // Some GitHub/browser combinations can still return Contents API metadata
-  // even for a raw-media request. If so, unwrap its base64 content instead of
-  // mistaking the metadata object for a SyncBundle (protocolVersion=undefined).
-  if (parsed?.protocolVersion === undefined && parsed?.encoding === 'base64' && typeof parsed?.content === 'string' && parsed.content) {
-    try {
-      parsed = JSON.parse(base64ToUtf8(parsed.content))
-    } catch {
-      throw new Error('GitHub 同步文件内容 JSON 无法解析')
-    }
+  if (!parsed || typeof parsed !== 'object') throw new Error('GitHub 同步文件结构无效（不是对象）')
+  if (parsed.protocolVersion !== 1) {
+    const keys = Object.keys(parsed).slice(0, 8).join(',')
+    throw new Error(`GitHub 同步协议无效（protocolVersion=${String(parsed.protocolVersion)}；字段：${keys || '空'}）`)
+  }
+  if (!Array.isArray(parsed.records) || !Array.isArray(parsed.tombstones)) {
+    throw new Error('GitHub 同步文件结构无效（缺少 records/tombstones）')
   }
 
-  const bundle = parsed as SyncBundle
-  if (bundle.protocolVersion !== 1) throw new Error(`不支持的同步协议版本：${String(bundle.protocolVersion)}`)
-  if (!Array.isArray(bundle.records) || !Array.isArray(bundle.tombstones)) throw new Error('GitHub 同步文件结构无效')
-  return { bundle, sha: file.sha }
+  return { bundle: parsed as SyncBundle, sha: file.sha }
 }
-
 async function writeGitHubBundleFile(config: GitHubSyncConfig, bundle: SyncBundle, sha?: string): Promise<void> {
   const branch = config.branch?.trim() || 'main'
   const path = githubSyncPath(config)
