@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '0.9.6.15'
+const APP_VERSION = '0.9.6.16'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1018,6 +1018,7 @@ function rowSyncId(entityType: SyncEntityType, row: any): string {
 
 async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], nextRows: any[]) {
   const deviceId = getOrCreateDeviceId()
+  let changed = false
   const previous = new Map(previousRows.map(row => [rowSyncId(entityType, row), row]))
   const next = new Map(nextRows.map(row => [rowSyncId(entityType, row), row]))
   const now = new Date().toISOString()
@@ -1025,15 +1026,18 @@ async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], n
   for (const [id, row] of next) {
     const before = previous.get(id)
     if (before && JSON.stringify(before) === JSON.stringify(row)) continue
+    changed = true
     await appendSyncChange({ entityType, entityId: id, operation: 'upsert', changedAt: now, deviceId })
   }
 
   for (const id of previous.keys()) {
     if (next.has(id)) continue
+    changed = true
     const tombstone = { key: syncEntityKey(entityType, id), entityType, entityId: id, deletedAt: now, deviceId }
     await saveSyncTombstone(tombstone)
     await appendSyncChange({ entityType, entityId: id, operation: 'delete', changedAt: now, deviceId })
   }
+  return changed
 }
 
 function App() {
@@ -1072,6 +1076,7 @@ function App() {
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
   const [lastGithubSyncAt, setLastGithubSyncAt] = useState(() => localStorage.getItem('zing:lastGithubSyncAt') || '')
+  const [localWriteRevision, setLocalWriteRevision] = useState(0)
   const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
   const [backupRestoring, setBackupRestoring] = useState(false)
   const [resetDataConfirm, setResetDataConfirm] = useState(false)
@@ -1335,7 +1340,7 @@ function App() {
     } else {
       const previous = syncSnapshotsRef.current.task
       syncSnapshotsRef.current.task = tasks
-      void recordSyncDiff('task', previous, tasks).catch(error => console.error('Failed to record task sync changes', error))
+      void recordSyncDiff('task', previous, tasks).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record task sync changes', error))
     }
   }, [tasks, tasksHydrated])
 
@@ -1386,7 +1391,7 @@ function App() {
     } else {
       const previous = syncSnapshotsRef.current.anniversary
       syncSnapshotsRef.current.anniversary = anniversaries
-      void recordSyncDiff('anniversary', previous, anniversaries).catch(error => console.error('Failed to record anniversary sync changes', error))
+      void recordSyncDiff('anniversary', previous, anniversaries).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record anniversary sync changes', error))
     }
   }, [anniversaries, anniversariesHydrated])
 
@@ -1399,7 +1404,7 @@ function App() {
     } else {
       const previous = syncSnapshotsRef.current.journal
       syncSnapshotsRef.current.journal = journalEntries
-      void recordSyncDiff('journal', previous, journalEntries).catch(error => console.error('Failed to record journal sync changes', error))
+      void recordSyncDiff('journal', previous, journalEntries).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record journal sync changes', error))
     }
   }, [journalEntries, journalHydrated])
 
@@ -1412,7 +1417,7 @@ function App() {
     } else {
       const previous = syncSnapshotsRef.current.tag
       syncSnapshotsRef.current.tag = tags
-      void recordSyncDiff('tag', previous, tags).catch(error => console.error('Failed to record tag sync changes', error))
+      void recordSyncDiff('tag', previous, tags).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record tag sync changes', error))
     }
   }, [tags, tagsHydrated])
 
@@ -1425,7 +1430,7 @@ function App() {
     } else {
       const previous = syncSnapshotsRef.current.mood
       syncSnapshotsRef.current.mood = dailyMoods
-      void recordSyncDiff('mood', previous, dailyMoods).catch(error => console.error('Failed to record mood sync changes', error))
+      void recordSyncDiff('mood', previous, dailyMoods).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record mood sync changes', error))
     }
   }, [dailyMoods, moodsHydrated])
 
@@ -2771,7 +2776,7 @@ function App() {
     return {label,added,updated,deleted,total:after.length}
   }
 
-  const runGithubSync = async () => {
+  const runGithubSync = async (automatic = false) => {
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
       setGithubSyncMessageKind('error')
       setGithubSyncMessage('请先填写 GitHub 用户名、数据仓库和分支。')
@@ -2807,7 +2812,7 @@ function App() {
         loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
       ])
       const hydratedTags = nextTags.some(tag=>tag.id===DEFAULT_TAG_ID)?nextTags:[DEFAULT_TAG,...nextTags]
-      setGithubSyncSummary({
+      if (!automatic) setGithubSyncSummary({
         rows: [
           syncRows(beforeTasks,nextTasks,'task','任务'),
           syncRows(beforeJournals,nextJournals,'journal','日记'),
@@ -2840,6 +2845,15 @@ function App() {
       setGithubSyncBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (localWriteRevision === 0 || githubSyncBusy || !githubSyncToken.trim()) return
+    const todayKey = toDateKey(new Date())
+    if (localStorage.getItem('zing:lastAutoSyncDate') === todayKey) return
+    // Claim today's single automatic attempt before starting. A failed attempt is not retried automatically.
+    localStorage.setItem('zing:lastAutoSyncDate', todayKey)
+    void runGithubSync(true)
+  }, [localWriteRevision, githubSyncBusy, githubSyncToken])
 
   return (
     <main className="app-shell">
