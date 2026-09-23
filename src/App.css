@@ -3594,3 +3594,73 @@ button {
     backdrop-filter:saturate(1.06) blur(10px);
   }
 }
+
+
+/* v1.2.5 — mobile search visibility/position correction
+   Keep the launcher viewport-fixed, restore it on Calendar despite older
+   calendar-specific hide rules, and move the expanded search higher so the
+   result list gets most of the usable viewport. */
+@media(max-width:620px){
+  /* Closed launcher: fixed in one screen position on Calendar / Anniversaries / Statistics. */
+  .brand-block{
+    display:block!important;
+    position:fixed!important;
+    left:16px!important;
+    top:190px!important;
+    z-index:70!important;
+  }
+
+  /* Older v1.2.2/v1.2.3 rules hid Calendar's launcher with higher specificity. */
+  .calendar-topbar .brand-block{
+    display:block!important;
+    position:fixed!important;
+    left:16px!important;
+    top:190px!important;
+    z-index:70!important;
+  }
+
+  /* Closed search field remains hidden; when opened, lift the field near the top. */
+  .global-search-wrap{
+    position:fixed!important;
+    left:72px!important;
+    right:12px!important;
+    width:auto!important;
+    margin:0!important;
+    z-index:69!important;
+  }
+  .global-search-wrap.mobile-open,
+  .calendar-topbar .global-search-wrap.mobile-open{
+    display:block!important;
+    position:fixed!important;
+    left:72px!important;
+    right:12px!important;
+    top:74px!important;
+    width:auto!important;
+    z-index:71!important;
+  }
+
+  /* Give search results nearly the whole remaining screen, stopping above bottom nav. */
+  .search-panel{
+    position:fixed!important;
+    left:10px!important;
+    right:10px!important;
+    top:126px!important;
+    bottom:calc(86px + env(safe-area-inset-bottom,0px))!important;
+    width:auto!important;
+    max-height:none!important;
+    overflow:auto!important;
+    z-index:72!important;
+  }
+
+  /* Keep these two requested sticky controls above their scrolling content. */
+  .anniversary-page .page-heading{
+    position:sticky!important;
+    top:0!important;
+    z-index:35!important;
+  }
+  .statistics-page .stats-range{
+    position:sticky!important;
+    top:0!important;
+    z-index:35!important;
+  }
+}
