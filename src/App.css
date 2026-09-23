@@ -3396,3 +3396,26 @@ button {
   .calendar-sticky-header .calendar-toolbar{background:transparent}
   .calendar-sticky-header .weekday-row{background:rgba(250,251,250,.96)}
 }
+
+/* v1.1.0 — mobile continuous calendar + locked Day Detail context */
+@media(max-width:620px){
+  .continuous-calendar{display:block}
+  .continuous-month-section{scroll-margin-top:154px;background:#fff}
+  .continuous-month-section + .continuous-month-section{border-top:10px solid #f4f6f4}
+  .continuous-month-label{
+    padding:10px 12px 8px;border-bottom:1px solid #edf0ed;background:#f8faf8;
+    color:#7d8881;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;
+  }
+  /* Adjacent-month filler cells are kept for week alignment, but hidden so dates never appear twice in the continuous stream. */
+  .continuous-month-section .day-cell.outside-month{visibility:hidden;pointer-events:none}
+  .selected-week-context{
+    display:grid;grid-template-columns:repeat(7,minmax(0,1fr));
+    border-bottom:1px solid #e7ebe8;background:rgba(255,255,255,.98);
+  }
+  .selected-week-context>div{min-width:0;padding:7px 2px 8px;text-align:center;color:#8a948e}
+  .selected-week-context strong{display:block;font-size:13px;line-height:1.15;font-weight:650}
+  .selected-week-context small{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:7px;color:#a2aaa5}
+  .selected-week-context .selected{background:#eef4f0;color:#40584b}
+  .selected-week-context .selected strong{font-weight:800}
+  .selected-week-context .today strong{text-decoration:underline;text-underline-offset:3px}
+}

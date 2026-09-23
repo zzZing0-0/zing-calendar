@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.0.2'
+const APP_VERSION = '1.1.0'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1051,6 +1051,10 @@ async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], n
 function App() {
   const today = new Date()
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
+  const [isMobileCalendar, setIsMobileCalendar] = useState(() => window.matchMedia('(max-width: 620px)').matches)
+  const [mobileActiveMonth, setMobileActiveMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
+  const continuousCalendarRef = useRef<HTMLDivElement | null>(null)
+  const pendingCalendarScrollRef = useRef<string | null>(null)
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
   const [overdueInboxOpen, setOverdueInboxOpen] = useState(false)
@@ -1172,16 +1176,68 @@ function App() {
   }
 
   const openMonthPicker = (target:'calendar'|'mood') => {
-    const source=target==='calendar'?visibleMonth:moodMonth
+    const source=target==='calendar'?(isMobileCalendar?mobileActiveMonth:visibleMonth):moodMonth
     setMonthPickerYear(source.getFullYear())
     setMonthPickerTarget(target)
   }
   const chooseMonth = (monthIndex:number) => {
     const next=new Date(monthPickerYear,monthIndex,1)
-    if(monthPickerTarget==='calendar') setVisibleMonth(next)
-    else if(monthPickerTarget==='mood') setMoodMonth(next)
+    if(monthPickerTarget==='calendar') {
+      pendingCalendarScrollRef.current=`${next.getFullYear()}-${next.getMonth()}`
+      setVisibleMonth(next); setMobileActiveMonth(next)
+    } else if(monthPickerTarget==='mood') setMoodMonth(next)
     setMonthPickerTarget(null)
   }
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 620px)')
+    const update = () => setIsMobileCalendar(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
+
+  const continuousMonths = useMemo(() => {
+    if (!isMobileCalendar) return [visibleMonth]
+    return Array.from({length:25}, (_,index) => new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + index - 12, 1))
+  }, [visibleMonth, isMobileCalendar])
+
+  useLayoutEffect(() => {
+    if (!isMobileCalendar || mainView !== 'calendar') return
+    const targetKey = pendingCalendarScrollRef.current ?? `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`
+    const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`[data-month-key="${targetKey}"]`)
+    if (!target) return
+    target.scrollIntoView({block:'start', behavior: pendingCalendarScrollRef.current ? 'smooth' : 'auto'})
+    pendingCalendarScrollRef.current = null
+  }, [visibleMonth, isMobileCalendar, mainView])
+
+  useEffect(() => {
+    if (!isMobileCalendar || mainView !== 'calendar' || selectedDate) return
+    const nodes = Array.from(continuousCalendarRef.current?.querySelectorAll<HTMLElement>('.continuous-month-section') ?? [])
+    if (!nodes.length) return
+    const observer = new IntersectionObserver(entries => {
+      const candidates = entries.filter(entry => entry.isIntersecting)
+        .sort((a,b) => Math.abs(a.boundingClientRect.top - 170) - Math.abs(b.boundingClientRect.top - 170))
+      const node = candidates[0]?.target as HTMLElement | undefined
+      if (!node) return
+      const year=Number(node.dataset.year), month=Number(node.dataset.month)
+      if (Number.isFinite(year) && Number.isFinite(month)) setMobileActiveMonth(new Date(year,month,1))
+    }, {root:null, rootMargin:'-150px 0px -55% 0px', threshold:[0,.01,.2]})
+    nodes.forEach(node => observer.observe(node))
+    return () => observer.disconnect()
+  }, [continuousMonths, isMobileCalendar, mainView, selectedDate])
+
+  // Lock the calendar underneath Day Detail on mobile and restore the exact scroll position on close.
+  useEffect(() => {
+    if (!isMobileCalendar || !selectedDate) return
+    const y = window.scrollY
+    const previous = {position:document.body.style.position, top:document.body.style.top, width:document.body.style.width, overflow:document.body.style.overflow}
+    document.body.style.position='fixed'; document.body.style.top=`-${y}px`; document.body.style.width='100%'; document.body.style.overflow='hidden'
+    return () => {
+      document.body.style.position=previous.position; document.body.style.top=previous.top; document.body.style.width=previous.width; document.body.style.overflow=previous.overflow
+      window.scrollTo(0,y)
+    }
+  }, [isMobileCalendar, selectedDate])
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
   // It can still be browsed independently afterwards with its own month arrows.
@@ -1559,27 +1615,57 @@ function App() {
   const journalDates = useMemo(() => new Set(journalEntries.map(entry => entry.date)), [journalEntries])
   const moodDays = useMemo(() => buildMonth(moodMonth.getFullYear(), moodMonth.getMonth(), weekStartsMonday), [moodMonth, weekStartsMonday])
 
-  const tasksByDate = useMemo(() => {
-    const map = new Map<string, Task[]>()
-    displayTasks.filter(task => !isMultiDayTask(task)).forEach(task => {
-      const current = map.get(task.date) ?? []
-      current.push(task)
-      current.sort(taskSort)
-      map.set(task.date, current)
+  const renderCalendarMonthGrid = (month: Date) => {
+    const monthDays = buildMonth(month.getFullYear(), month.getMonth(), weekStartsMonday)
+    const rangeStart = toDateKey(monthDays[0].date), rangeEnd = toDateKey(monthDays[monthDays.length-1].date)
+    const monthDisplayTasks = (() => {
+      const expanded=expandTasks(tasks,rangeStart,rangeEnd)
+      return showEndedTasks ? expanded : expanded.filter(task=>task.status==='todo')
+    })()
+    const monthTasksByDate = new Map<string,Task[]>()
+    monthDisplayTasks.filter(task=>!isMultiDayTask(task)).forEach(task=>{
+      const current=monthTasksByDate.get(task.date)??[]; current.push(task); current.sort(taskSort); monthTasksByDate.set(task.date,current)
     })
-    return map
-  }, [displayTasks])
+    const monthSegments=buildMultiDaySegments(monthDisplayTasks,monthDays)
+    const monthOccupied=monthDays.map((_,dayIndex)=>{
+      const week=Math.floor(dayIndex/7), column=dayIndex%7
+      return new Set(monthSegments.filter(segment=>segment.week===week && column>=segment.startColumn && column<segment.startColumn+segment.span).map(segment=>segment.lane).filter(lane=>lane>=0&&lane<5))
+    })
+    const monthAnniversaries=new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
+    const years=Array.from(new Set(monthDays.map(day=>day.date.getFullYear())))
+    anniversaries.forEach(anniversary=>years.forEach(year=>{
+      const occurrence=anniversaryOccurrence(anniversary,year); if(!occurrence)return
+      const key=toDateKey(occurrence), rows=monthAnniversaries.get(key)??[]; rows.push({anniversary,occurrence}); monthAnniversaries.set(key,rows)
+    }))
+    return <div className="calendar-grid">
+      {monthDays.map(({date,inCurrentMonth},dayIndex)=>{
+        const isToday=sameDay(date,today), isSelected=selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date)
+        const dayTasks=monthTasksByDate.get(key)??[], occupiedLanes=monthOccupied[dayIndex]
+        const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot))
+        const visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
+        const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length)
+        const hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
+        const anns=monthAnniversaries.get(key)??[]
+        return <button key={key} type="button" className={`day-cell${inCurrentMonth?'':' outside-month'}${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} onClick={()=>openDay(date)}>
+          <span className="day-number">{date.getDate()}</span>
+          {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
+          {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
+          {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
+          {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
+        </button>
+      })}
+      <div className="multi-day-layer">{monthSegments.map(segment=><button key={`${segment.task.id}-${segment.week}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:segment.week+1,'--lane-offset':`${segment.lane*26}px`} as CSSProperties} onClick={event=>{
+        event.stopPropagation(); const rect=event.currentTarget.getBoundingClientRect(); const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left)); const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span))); const dayIndex=segment.week*7+segment.startColumn+columnOffset; const clickedDay=monthDays[dayIndex]?.date; if(clickedDay)openDay(clickedDay)
+      }} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
+    </div>
+  }
 
-  const multiDaySegments = useMemo(() => buildMultiDaySegments(displayTasks, days), [displayTasks, days])
-  // Reserve exact physical multi-day lane indices for each date.
-  const occupiedMultiLanesByDay = useMemo(() => days.map((_, dayIndex) => {
-    const week = Math.floor(dayIndex / 7)
-    const column = dayIndex % 7
-    return new Set(multiDaySegments
-      .filter(segment => segment.week === week && column >= segment.startColumn && column < segment.startColumn + segment.span)
-      .map(segment => segment.lane)
-      .filter(lane => lane >= 0 && lane < 5))
-  }), [days, multiDaySegments])
+  const selectedWeekDays = useMemo(() => {
+    if (!selectedDate) return [] as Date[]
+    const jsDay=selectedDate.getDay(), offset=weekStartsMonday?(jsDay+6)%7:jsDay
+    const start=new Date(selectedDate); start.setDate(start.getDate()-offset)
+    return Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d})
+  },[selectedDate,weekStartsMonday])
 
   const endedTasksViewToggle = (className='') => (
     <label className={`ended-view-toggle ${className}`.trim()} title="显示或隐藏已完成和已放弃任务">
@@ -1590,22 +1676,25 @@ function App() {
   )
 
   const moveMonth = (offset: number) => {
+    if (isMobileCalendar) {
+      const next = new Date(mobileActiveMonth.getFullYear(), mobileActiveMonth.getMonth() + offset, 1)
+      pendingCalendarScrollRef.current=`${next.getFullYear()}-${next.getMonth()}`
+      setVisibleMonth(next); setMobileActiveMonth(next)
+      return
+    }
     setVisibleMonth(current => new Date(current.getFullYear(), current.getMonth() + offset, 1))
-  }
-
-  const openMultiDaySegmentDate = (event: React.MouseEvent<HTMLButtonElement>, segment: MultiDaySegment) => {
-    event.stopPropagation()
-    const rect = event.currentTarget.getBoundingClientRect()
-    const relativeX = Math.max(0, Math.min(rect.width - 0.001, event.clientX - rect.left))
-    const columnOffset = Math.min(segment.span - 1, Math.floor(relativeX / (rect.width / segment.span)))
-    const dayIndex = segment.week * 7 + segment.startColumn + columnOffset
-    const clickedDay = days[dayIndex]?.date
-    if (clickedDay) openDay(clickedDay)
   }
 
   const goToday = () => {
     const now = new Date()
-    setVisibleMonth(new Date(now.getFullYear(), now.getMonth(), 1))
+    const month = new Date(now.getFullYear(), now.getMonth(), 1)
+    if (isMobileCalendar) {
+      pendingCalendarScrollRef.current=`${month.getFullYear()}-${month.getMonth()}`
+      setVisibleMonth(month); setMobileActiveMonth(month)
+      setSelectedDate(null)
+      return
+    }
+    setVisibleMonth(month)
     setSelectedDate(now)
   }
 
@@ -1616,7 +1705,7 @@ function App() {
       return
     }
     setSelectedDate(date)
-    if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
+    if (!isMobile && (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear())) {
       setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     }
   }
@@ -2929,7 +3018,7 @@ function App() {
         <div className="calendar-toolbar">
           <div className="month-navigation">
             <button className="nav-button" type="button" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
-            <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[visibleMonth.getMonth()]} {visibleMonth.getFullYear()} <span>⌄</span></button>
+            <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>Today</button>
           </div>
@@ -2942,84 +3031,20 @@ function App() {
         <div className="weekday-row">
           {displayWeekdays.map(day => <div key={day}>{day}</div>)}
         </div>
+        {isMobileCalendar && selectedDate && <div className="selected-week-context" aria-label="当前日期所在周">
+          {selectedWeekDays.map(date=><div key={toDateKey(date)} className={`${sameDay(date,selectedDate)?'selected ':''}${sameDay(date,today)?'today':''}`.trim()}><strong>{date.getDate()}</strong><small>{lunarCalendarLabel(date)}</small></div>)}
+        </div>}
         </div>
 
-        <div className="calendar-grid">
-          {days.map(({ date, inCurrentMonth }, dayIndex) => {
-            const isToday = sameDay(date, today)
-            const isSelected = selectedDate ? sameDay(date, selectedDate) : false
-            const key = toDateKey(date)
-            const dayTasks = tasksByDate.get(key) ?? []
-            // Keep a five-slot visual budget per day. Multi-day bars consume
-            // slots only on dates they actually cover; the remaining slots are
-            // available to ordinary tasks. This avoids showing “+1” while the
-            // lower half of an otherwise empty cell is still unused.
-            const occupiedLanes = occupiedMultiLanesByDay[dayIndex]
-            const freeSlots = [0, 1, 2, 3, 4].filter(slot => !occupiedLanes.has(slot))
-            const visibleCapacity = dayTasks.length <= freeSlots.length ? freeSlots.length : Math.max(0, freeSlots.length - 1)
-            const visibleDayTasks = dayTasks.slice(0, visibleCapacity)
-            const visibleTaskSlots = freeSlots.slice(0, visibleDayTasks.length)
-            const hiddenDayTaskCount = Math.max(0, dayTasks.length - visibleDayTasks.length)
-            const overflowSlot = hiddenDayTaskCount > 0 ? freeSlots[visibleDayTasks.length] : undefined
-            return (
-              <button
-                key={key}
-                type="button"
-                className={`day-cell${inCurrentMonth ? '' : ' outside-month'}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}`}
-                aria-label={formatDate(date)}
-                onClick={() => openDay(date)}
-              >
-                <span className="day-number">{date.getDate()}</span>
-                {isToday && (
-                  <svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true">
-                    <path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37" />
-                    <path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35" />
-                    <path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14" />
-                  </svg>
-                )}
-                {(() => {
-                  const annotation = calendarAnnotation(date, weekStartsMonday)
-                  return <span className={`lunar-day-label${annotation ? ` calendar-annotation annotation-${annotation.kind}` : ''}`}>{annotation?.label ?? lunarCalendarLabel(date)}</span>
-                })()}
-                {(anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 0 && (
-                  <span className="anniversary-cell-icons">
-                    {(anniversaryOccurrencesByDate.get(key) ?? []).slice(0, (anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 3 ? 2 : 3).map(({anniversary}) => (
-                      <span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>
-                    ))}
-                    {(anniversaryOccurrencesByDate.get(key)?.length ?? 0) > 3 && <span className="anniversary-overflow">+{(anniversaryOccurrencesByDate.get(key)?.length ?? 0)-2}</span>}
-                  </span>
-                )}
-                {dayTasks.length > 0 && (
-                  <span className="task-preview-list">
-                    {visibleDayTasks.map((task, visibleIndex) => (
-                      <span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{ '--calendar-slot': visibleTaskSlots[visibleIndex] } as any}>
-                        {task.status === 'todo' ? <span className="priority-dot" /> : <span className="calendar-status-mark" aria-label={task.status === 'completed' ? '已完成' : '已放弃'}>{task.status === 'completed' ? '✓' : '×'}</span>}
-                        <span className="task-preview-title">{task.title}</span>
-                        {!task.allDay && task.time && <span className="task-preview-time">{task.time}</span>}
-                      </span>
-                    ))}
-                    {hiddenDayTaskCount > 0 && overflowSlot !== undefined && <span className="more-tasks" style={{ '--calendar-slot': overflowSlot } as any}>+{hiddenDayTaskCount}</span>}
-                  </span>
-                )}
-              </button>
-            )
+        {isMobileCalendar ? <div className="continuous-calendar" ref={continuousCalendarRef}>
+          {continuousMonths.map(month=>{
+            const key=`${month.getFullYear()}-${month.getMonth()}`
+            return <section className="continuous-month-section" key={key} data-month-key={key} data-year={month.getFullYear()} data-month={month.getMonth()}>
+              <div className="continuous-month-label">{MONTHS[month.getMonth()]} {month.getFullYear()}</div>
+              {renderCalendarMonthGrid(month)}
+            </section>
           })}
-          <div className="multi-day-layer">
-            {multiDaySegments.map(segment => (
-              <button
-                key={`${segment.task.id}-${segment.week}`}
-                type="button"
-                className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`}
-                style={{ gridColumn: `${segment.startColumn + 1} / span ${segment.span}`, gridRow: segment.week + 1, '--lane-offset': `${segment.lane * 26}px` } as CSSProperties}
-                onClick={event => openMultiDaySegmentDate(event, segment)}
-                title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}
-              >
-                {segment.task.status === 'todo' ? <span className="priority-dot" /> : <span className="calendar-status-mark" aria-label={segment.task.status === 'completed' ? '已完成' : '已放弃'}>{segment.task.status === 'completed' ? '✓' : '×'}</span>}
-                <span className="multi-day-title">{segment.task.title}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        </div> : renderCalendarMonthGrid(visibleMonth)}
       </section>}
 
       {mainView === 'statistics' && (
@@ -3752,7 +3777,7 @@ function App() {
               <button type="button" onClick={()=>setMonthPickerYear(y=>y+1)} aria-label="下一年">›</button>
             </div>
             <div className="month-picker-grid">
-              {MONTHS.map((name,index)=><button key={name} type="button" className={(monthPickerTarget==='calendar'?visibleMonth:moodMonth).getFullYear()===monthPickerYear && (monthPickerTarget==='calendar'?visibleMonth:moodMonth).getMonth()===index?'active':''} onClick={()=>chooseMonth(index)}>{name}</button>)}
+              {MONTHS.map((name,index)=><button key={name} type="button" className={(monthPickerTarget==='calendar'?(isMobileCalendar?mobileActiveMonth:visibleMonth):moodMonth).getFullYear()===monthPickerYear && (monthPickerTarget==='calendar'?(isMobileCalendar?mobileActiveMonth:visibleMonth):moodMonth).getMonth()===index?'active':''} onClick={()=>chooseMonth(index)}>{name}</button>)}
             </div>
             <button className="month-picker-today" type="button" onClick={()=>{setMonthPickerYear(today.getFullYear());chooseMonth(today.getMonth())}}>今年本月</button>
           </section>
