@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.2.3'
+const APP_VERSION = '1.2.4'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -3106,7 +3106,7 @@ function App() {
   return (
     <main className="app-shell">
       <header className={`topbar${mainView==='calendar'?' calendar-topbar':''}`}>
-        {!(mainView==='calendar' && isMobileCalendar) && <div className="brand-block">
+        {mainView!=='settings' && <div className="brand-block">
           <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}><span className="brand-mark-desktop">Z</span><span className="brand-mark-mobile" aria-hidden="true">🔍</span></button>
           <div className="brand-copy">
             <p>{greeting}</p>
@@ -3158,9 +3158,6 @@ function App() {
         </div>
 
         {isMobileCalendar ? <>
-          <div className="mobile-calendar-search-row">
-            <button className="mobile-calendar-search-button" type="button" aria-label="打开搜索" onClick={()=>{setMobileSearchVisible(true);setSearchOpen(false)}}>🔍 <span>搜索</span></button>
-          </div>
           <div className="continuous-calendar" ref={continuousCalendarRef}>
             {continuousCalendarContent}
           </div>

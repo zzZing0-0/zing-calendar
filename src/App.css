@@ -3531,3 +3531,66 @@ button {
   }
   .mobile-calendar-search-button{position:static!important}
 }
+
+
+/* v1.2.4 — stable mobile chrome
+   Search is a true viewport-fixed launcher on every main page except Settings.
+   Calendar keeps its existing sticky header; Anniversaries pins its heading;
+   Statistics pins the range selector. */
+@media(max-width:620px){
+  /* Search: fixed to the viewport and deliberately below all sticky page chrome. */
+  .brand-block{
+    display:block!important;
+    position:fixed!important;
+    left:16px!important;
+    top:220px!important;
+    z-index:70!important;
+  }
+  .global-search-wrap{
+    position:fixed!important;
+    left:72px!important;
+    right:12px!important;
+    top:220px!important;
+    width:auto!important;
+    z-index:69!important;
+    margin:0!important;
+  }
+  .global-search-wrap.mobile-open{
+    display:block!important;
+    position:fixed!important;
+    left:72px!important;
+    right:12px!important;
+    top:220px!important;
+    width:auto!important;
+    z-index:71!important;
+  }
+  .search-panel{top:62px!important;z-index:72!important}
+
+  /* The old calendar-only in-flow launcher is retired. */
+  .mobile-calendar-search-row{display:none!important}
+
+  /* Anniversaries: title + add button stay pinned while the list scrolls. */
+  .anniversary-page .page-heading{
+    position:sticky;
+    top:0;
+    z-index:35;
+    margin:0 -12px 14px;
+    padding:12px 12px 10px;
+    background:rgba(255,255,255,.97);
+    border-bottom:1px solid rgba(30,35,32,.06);
+    -webkit-backdrop-filter:saturate(1.06) blur(10px);
+    backdrop-filter:saturate(1.06) blur(10px);
+  }
+
+  /* Statistics: the period selector is persistent; the page title still scrolls normally. */
+  .statistics-page .stats-range{
+    position:sticky;
+    top:0;
+    z-index:35;
+    margin-bottom:18px;
+    background:rgba(255,255,255,.97);
+    box-shadow:0 5px 14px rgba(40,52,45,.06);
+    -webkit-backdrop-filter:saturate(1.06) blur(10px);
+    backdrop-filter:saturate(1.06) blur(10px);
+  }
+}
