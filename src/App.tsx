@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '0.9.6.19'
+const APP_VERSION = '0.9.6.20'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2123,6 +2123,7 @@ function App() {
   const openSearchResult = (result: SearchResult) => {
     if (result.kind === 'tag') return
     setSearchOpen(false)
+    setMobileSearchVisible(false)
     if (result.kind === 'task' || result.kind === 'journal') {
       const dateKey=result.kind==='task' ? result.item.date : result.item.date
       const [year,month,day]=dateKey.split('-').map(Number)
@@ -2139,10 +2140,16 @@ function App() {
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
-      if (searchWrapRef.current && !searchWrapRef.current.contains(event.target as Node)) setSearchOpen(false)
+      if (searchWrapRef.current && !searchWrapRef.current.contains(event.target as Node)) {
+        setSearchOpen(false)
+        setMobileSearchVisible(false)
+      }
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSearchOpen(false)
+      if (event.key === 'Escape') {
+        setSearchOpen(false)
+        setMobileSearchVisible(false)
+      }
     }
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -3503,7 +3510,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !monthPickerTarget && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => setMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => setMainView('anniversaries')}><span>🎂</span>纪念日</button>
@@ -3531,12 +3538,12 @@ function App() {
       {autoSyncToast && <div className="auto-sync-toast" role="status" aria-live="polite">{autoSyncToast}</div>}
 
       <footer className="status-line">
-        <span>Zing Calendar · v{APP_VERSION}</span>
         <span className="status-links" aria-label="基础设施快捷入口">
-          <a href="https://github.com/zzZing0-0/zing-calendar" target="_blank" rel="noreferrer">GitHub</a>
-          <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Vercel</a>
+          <a href="https://github.com/zzZing0-0/zing-calendar" target="_blank" rel="noreferrer">GitHub</a><i aria-hidden="true">·</i>
+          <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Vercel</a><i aria-hidden="true">·</i>
           <a href="https://secure.backblaze.com/b2_buckets.htm" target="_blank" rel="noreferrer">Backblaze B2</a>
         </span>
+        <span className="status-version">Zing Calendar · v{APP_VERSION}</span>
       </footer>
 
       {selectedDate && (

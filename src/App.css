@@ -3324,3 +3324,30 @@ button {
   .status-links{width:100%;justify-content:center;gap:10px}
   .status-links::before{display:none}
 }
+
+
+/* v0.9.6.20 — mobile overlay + footer interaction polish */
+.status-line{flex-direction:column;gap:4px}
+.status-links::before{display:none}
+.status-links i{font-style:normal;color:#c0c6c2}
+.status-version{color:#b0b6b2}
+
+@media(max-width:620px){
+  /* Z is a true floating launcher: the closed search state reserves no header row. */
+  .app-shell{padding-top:20px}
+  .topbar{position:static!important;min-height:0!important;height:0!important;margin:0!important}
+  .brand-block{position:fixed!important;left:16px;top:16px;z-index:70}
+  .brand-mark{box-shadow:0 8px 22px rgba(34,43,39,.16)}
+  .global-search-wrap{position:fixed!important;left:66px!important;right:12px!important;top:16px!important;width:auto!important;z-index:69;margin:0!important}
+  .global-search-wrap.mobile-open{display:block}
+  .search-panel{top:62px!important;z-index:71}
+
+  /* Day detail is modal for interaction even though the calendar stays visually visible. */
+  .drawer-backdrop{display:block!important;z-index:60;background:transparent!important;backdrop-filter:none!important}
+  .day-drawer{z-index:61}
+
+  .status-line{align-items:center;gap:5px;margin-top:20px;margin-bottom:18px;text-align:center}
+  .status-links{width:auto;justify-content:center;gap:7px}
+  .status-links a{font-size:11px}
+  .status-version{font-size:10px}
+}
