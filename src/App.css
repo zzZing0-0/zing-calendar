@@ -3458,3 +3458,6 @@ button {
     overscroll-behavior:contain;
   }
 }
+
+/* v1.1.4 — performance: Day Detail uses instant document positioning.
+   The only animated surface is the GPU-friendly drawer transform. */

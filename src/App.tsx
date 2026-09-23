@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.1.3'
+const APP_VERSION = '1.1.4'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1629,7 +1629,7 @@ function App() {
     }))
     return <div className="calendar-grid">
       {monthDays.map(({date,inCurrentMonth},dayIndex)=>{
-        const isToday=sameDay(date,today), isSelected=selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date)
+        const isToday=sameDay(date,today), isSelected=!isMobileCalendar && selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date)
         const dayTasks=monthTasksByDate.get(key)??[], occupiedLanes=monthOccupied[dayIndex]
         const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot))
         const visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
@@ -1687,7 +1687,7 @@ function App() {
     if (!selectedDate || dayDetailClosing) return
     const origin = dayDetailOriginScrollRef.current
     setDayDetailClosing(true)
-    if (isMobileCalendar && origin !== null) window.scrollTo({top:origin,behavior:'smooth'})
+    if (isMobileCalendar && origin !== null) window.scrollTo({top:origin,behavior:'auto'})
     window.setTimeout(() => {
       setSelectedDate(null); setDayDetailClosing(false); dayDetailOriginScrollRef.current=null
     }, 260)
@@ -1698,7 +1698,7 @@ function App() {
 
     // v1.1.3: while Day Detail is already open, tapping another visible day should
     // switch the detail immediately. Never close/reopen the sheet just to change date.
-    if (isMobile && selectedDate) {
+    if (isMobile && document.querySelector('.day-drawer')) {
       if (dayDetailClosing) return
       setSelectedDate(date)
       return
@@ -1720,7 +1720,7 @@ function App() {
           const cellTop=cell.getBoundingClientRect().top
           const stickyBottom=sticky.getBoundingClientRect().bottom
           const target=Math.max(0,window.scrollY + cellTop - stickyBottom)
-          if (Math.abs(window.scrollY-target) > 1) window.scrollTo({top:target,behavior:'smooth'})
+          if (Math.abs(window.scrollY-target) > 1) window.scrollTo({top:target,behavior:'auto'})
         })
       })
       return
@@ -1731,6 +1731,19 @@ function App() {
       setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     }
   }
+
+
+  // v1.1.4: the continuous calendar is intentionally expensive (25 months of
+  // lunar labels, task lanes and anniversaries). Keep that tree stable while
+  // Day Detail changes dates so a 10 → 11 switch does not rebuild ~1,000 cells.
+  // Mobile selection lives in the drawer; desktop keeps the in-cell selected style.
+  const continuousCalendarContent = useMemo(() => continuousMonths.map(month=>{
+    const key=`${month.getFullYear()}-${month.getMonth()}`
+    return <section className="continuous-month-section" key={key} data-month-key={key} data-year={month.getFullYear()} data-month={month.getMonth()}>
+      <div className="continuous-month-label">{MONTHS[month.getMonth()]} {month.getFullYear()}</div>
+      {renderCalendarMonthGrid(month)}
+    </section>
+  }), [continuousMonths, tasks, showEndedTasks, anniversaries, weekStartsMonday, today, isMobileCalendar])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
@@ -3056,13 +3069,7 @@ function App() {
         </div>
 
         {isMobileCalendar ? <div className="continuous-calendar" ref={continuousCalendarRef}>
-          {continuousMonths.map(month=>{
-            const key=`${month.getFullYear()}-${month.getMonth()}`
-            return <section className="continuous-month-section" key={key} data-month-key={key} data-year={month.getFullYear()} data-month={month.getMonth()}>
-              <div className="continuous-month-label">{MONTHS[month.getMonth()]} {month.getFullYear()}</div>
-              {renderCalendarMonthGrid(month)}
-            </section>
-          })}
+          {continuousCalendarContent}
         </div> : renderCalendarMonthGrid(visibleMonth)}
       </section>}
 
