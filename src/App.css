@@ -3424,12 +3424,12 @@ button {
     animation:day-detail-push-out 260ms cubic-bezier(.4,0,.6,1) both;
   }
   @keyframes day-detail-push-in{
-    from{transform:translate3d(0,72px,0);opacity:.72}
-    to{transform:translate3d(0,0,0);opacity:1}
+    from{transform:translate3d(0,72px,0)}
+    to{transform:translate3d(0,0,0)}
   }
   @keyframes day-detail-push-out{
-    from{transform:translate3d(0,0,0);opacity:1}
-    to{transform:translate3d(0,72px,0);opacity:.35}
+    from{transform:translate3d(0,0,0)}
+    to{transform:translate3d(0,72px,0)}
   }
   @media (prefers-reduced-motion:reduce){
     .day-drawer,.day-drawer.closing{animation-duration:1ms}
@@ -3461,3 +3461,10 @@ button {
 
 /* v1.1.4 — performance: Day Detail uses instant document positioning.
    The only animated surface is the GPU-friendly drawer transform. */
+
+
+/* v1.1.5 — keep the mobile detail sheet opaque during transitions so a busy
+   Safari frame can never leave a translucent 'ghost' over the calendar. */
+@media(max-width:620px){
+  .day-drawer{opacity:1!important}
+}

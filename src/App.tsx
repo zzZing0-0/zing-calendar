@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.1.4'
+const APP_VERSION = '1.1.6'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1049,12 +1049,17 @@ async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], n
 }
 
 function App() {
-  const today = new Date()
+  // v1.1.6: keep the current-day object stable across ordinary UI renders.
+  // A fresh Date here invalidated the entire continuous-calendar memo on every
+  // button click (search, Today, Day Detail, etc.), rebuilding all month cells.
+  const [today] = useState(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [isMobileCalendar, setIsMobileCalendar] = useState(() => window.matchMedia('(max-width: 620px)').matches)
   const [mobileActiveMonth, setMobileActiveMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
+  const [mobileMonths, setMobileMonths] = useState(() => Array.from({length:7}, (_,index) => new Date(today.getFullYear(), today.getMonth() + index - 3, 1)))
   const continuousCalendarRef = useRef<HTMLDivElement | null>(null)
   const pendingCalendarScrollRef = useRef<string | null>(null)
+  const pendingPrependAnchorRef = useRef<{key:string; top:number} | null>(null)
   const dayDetailOriginScrollRef = useRef<number | null>(null)
   const [dayDetailClosing, setDayDetailClosing] = useState(false)
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
@@ -1199,19 +1204,33 @@ function App() {
     return () => media.removeEventListener?.('change', update)
   }, [])
 
-  const continuousMonths = useMemo(() => {
-    if (!isMobileCalendar) return [visibleMonth]
-    return Array.from({length:25}, (_,index) => new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + index - 12, 1))
-  }, [visibleMonth, isMobileCalendar])
+  const continuousMonths = useMemo(() => isMobileCalendar ? mobileMonths : [visibleMonth], [mobileMonths, visibleMonth, isMobileCalendar])
+
+  useEffect(() => {
+    if (!isMobileCalendar) return
+    const found = mobileMonths.some(month => month.getFullYear()===visibleMonth.getFullYear() && month.getMonth()===visibleMonth.getMonth())
+    if (found) return
+    setMobileMonths(Array.from({length:7}, (_,index) => new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + index - 3, 1)))
+  }, [visibleMonth, isMobileCalendar, mobileMonths])
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependAnchorRef.current
+    if (!pending) return
+    const anchor = continuousCalendarRef.current?.querySelector<HTMLElement>(`[data-month-key="${pending.key}"]`)
+    if (!anchor) return
+    const delta = anchor.getBoundingClientRect().top - pending.top
+    if (Math.abs(delta) > 0.5) window.scrollBy({top:delta,behavior:'auto'})
+    pendingPrependAnchorRef.current = null
+  }, [mobileMonths])
 
   useLayoutEffect(() => {
     if (!isMobileCalendar || mainView !== 'calendar') return
     const targetKey = pendingCalendarScrollRef.current ?? `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`
     const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`[data-month-key="${targetKey}"]`)
     if (!target) return
-    target.scrollIntoView({block:'start', behavior: pendingCalendarScrollRef.current ? 'smooth' : 'auto'})
+    target.scrollIntoView({block:'start', behavior:'auto'})
     pendingCalendarScrollRef.current = null
-  }, [visibleMonth, isMobileCalendar, mainView])
+  }, [visibleMonth, isMobileCalendar, mainView, continuousMonths])
 
   useEffect(() => {
     if (!isMobileCalendar || mainView !== 'calendar' || selectedDate) return
@@ -1223,7 +1242,29 @@ function App() {
       const node = candidates[0]?.target as HTMLElement | undefined
       if (!node) return
       const year=Number(node.dataset.year), month=Number(node.dataset.month)
-      if (Number.isFinite(year) && Number.isFinite(month)) setMobileActiveMonth(new Date(year,month,1))
+      if (!Number.isFinite(year) || !Number.isFinite(month)) return
+      setMobileActiveMonth(current =>
+        current.getFullYear()===year && current.getMonth()===month ? current : new Date(year,month,1)
+      )
+
+      const index = nodes.indexOf(node)
+      if (index >= nodes.length - 2) {
+        setMobileMonths(current => {
+          const last=current[current.length-1]
+          const additions=Array.from({length:4},(_,offset)=>new Date(last.getFullYear(),last.getMonth()+offset+1,1))
+          return [...current,...additions]
+        })
+      } else if (index <= 1) {
+        const firstNode=nodes[0]
+        if (firstNode && !pendingPrependAnchorRef.current) {
+          pendingPrependAnchorRef.current={key:firstNode.dataset.monthKey ?? '',top:firstNode.getBoundingClientRect().top}
+          setMobileMonths(current => {
+            const first=current[0]
+            const additions=Array.from({length:4},(_,offset)=>new Date(first.getFullYear(),first.getMonth()-(4-offset),1))
+            return [...additions,...current]
+          })
+        }
+      }
     }, {root:null, rootMargin:'-150px 0px -55% 0px', threshold:[0,.01,.2]})
     nodes.forEach(node => observer.observe(node))
     return () => observer.disconnect()
@@ -1700,6 +1741,10 @@ function App() {
     // switch the detail immediately. Never close/reopen the sheet just to change date.
     if (isMobile && document.querySelector('.day-drawer')) {
       if (dayDetailClosing) return
+      if (selectedDate && sameDay(selectedDate,date)) {
+        closeDayDetail()
+        return
+      }
       setSelectedDate(date)
       return
     }
@@ -1733,17 +1778,17 @@ function App() {
   }
 
 
-  // v1.1.4: the continuous calendar is intentionally expensive (25 months of
-  // lunar labels, task lanes and anniversaries). Keep that tree stable while
-  // Day Detail changes dates so a 10 → 11 switch does not rebuild ~1,000 cells.
-  // Mobile selection lives in the drawer; desktop keeps the in-cell selected style.
+  // v1.1.6: the month tree must stay referentially stable during unrelated UI
+  // interactions. On mobile, selecting another day is rendered in Day Detail and
+  // must not rebuild the calendar. Desktop still needs selection styling in cells.
+  const calendarSelectionKey = isMobileCalendar ? '' : (selectedDate ? toDateKey(selectedDate) : '')
   const continuousCalendarContent = useMemo(() => continuousMonths.map(month=>{
     const key=`${month.getFullYear()}-${month.getMonth()}`
     return <section className="continuous-month-section" key={key} data-month-key={key} data-year={month.getFullYear()} data-month={month.getMonth()}>
       <div className="continuous-month-label">{MONTHS[month.getMonth()]} {month.getFullYear()}</div>
       {renderCalendarMonthGrid(month)}
     </section>
-  }), [continuousMonths, tasks, showEndedTasks, anniversaries, weekStartsMonday, today, isMobileCalendar])
+  }), [continuousMonths, tasks, showEndedTasks, anniversaries, weekStartsMonday, today, isMobileCalendar, calendarSelectionKey])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
