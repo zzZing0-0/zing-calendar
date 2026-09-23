@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.2.1'
+const APP_VERSION = '1.2.2'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1115,6 +1115,8 @@ function App() {
   const [searchFilter, setSearchFilter] = useState<'all' | 'task' | 'journal' | 'anniversary'>('all')
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileSearchVisible, setMobileSearchVisible] = useState(false)
+  const [mobileCalendarScrolling, setMobileCalendarScrolling] = useState(false)
+  const mobileCalendarScrollTimerRef = useRef<number | null>(null)
   const searchWrapRef = useRef<HTMLDivElement | null>(null)
   const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
   const [defaultPriority, setDefaultPriority] = useState<TaskPriority>(() => {
@@ -1272,6 +1274,28 @@ function App() {
     nodes.forEach(node => observer.observe(node))
     return () => observer.disconnect()
   }, [continuousMonths, isMobileCalendar, mainView, selectedDate])
+
+  // v1.2.2: scrolling is a lightweight visual state only. While the user is
+  // moving through the week stream, each Gregorian month boundary is shown by
+  // replacing that month's day 1 label with a compact month chip. No extra
+  // month section/row is inserted, so every date remains in one continuous grid.
+  useEffect(() => {
+    if (!isMobileCalendar || mainView !== 'calendar') return
+    const onScroll = () => {
+      setMobileCalendarScrolling(current => current ? current : true)
+      if (mobileCalendarScrollTimerRef.current !== null) window.clearTimeout(mobileCalendarScrollTimerRef.current)
+      mobileCalendarScrollTimerRef.current = window.setTimeout(() => {
+        setMobileCalendarScrolling(false)
+        mobileCalendarScrollTimerRef.current = null
+      }, 120)
+    }
+    window.addEventListener('scroll', onScroll, {passive:true})
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (mobileCalendarScrollTimerRef.current !== null) window.clearTimeout(mobileCalendarScrollTimerRef.current)
+      mobileCalendarScrollTimerRef.current = null
+    }
+  }, [isMobileCalendar, mainView])
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
   // It can still be browsed independently afterwards with its own month arrows.
@@ -1681,9 +1705,11 @@ function App() {
         const hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
         const anns=monthAnniversaries.get(key)??[]
         return <button key={key} type="button" className={`day-cell${inCurrentMonth?'':' outside-month'}${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
-          <span className="day-number">{date.getDate()}</span>
-          {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
-          {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
+          {mobileCalendarScrolling && date.getDate()===1 ? <span className="scroll-month-chip" data-month-key={`${date.getFullYear()}-${date.getMonth()}`}>{MONTHS[date.getMonth()].slice(0,3)}</span> : <>
+            <span className="day-number" data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
+            {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
+            {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
+          </>}
           {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
           {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
         </button>
@@ -1714,9 +1740,11 @@ function App() {
         const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length), hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
         const anns=anniversaryMap.get(key)??[]
         return <button key={key} type="button" className={`day-cell${isToday?' today':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
-          <span className="day-number">{date.getDate()}</span>
-          {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
-          {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
+          {mobileCalendarScrolling && date.getDate()===1 ? <span className="scroll-month-chip" data-month-key={`${date.getFullYear()}-${date.getMonth()}`}>{MONTHS[date.getMonth()].slice(0,3)}</span> : <>
+            <span className="day-number" data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
+            {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
+            {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
+          </>}
           {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
           {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
         </button>
@@ -1819,23 +1847,20 @@ function App() {
     const firstGrid=buildMonth(firstMonth.getFullYear(),firstMonth.getMonth(),weekStartsMonday)
     const lastGrid=buildMonth(lastMonth.getFullYear(),lastMonth.getMonth(),weekStartsMonday)
     const start=new Date(firstGrid[0].date), end=new Date(lastGrid[lastGrid.length-1].date)
-    const weeks:{days:CalendarDay[];key:string;activeMonth:Date;marker:Date|null}[]=[]
+    const weeks:{days:CalendarDay[];key:string;activeMonth:Date}[]=[]
     for(let cursor=new Date(start);cursor<=end;cursor.setDate(cursor.getDate()+7)){
       const days=Array.from({length:7},(_,index)=>{const date=new Date(cursor);date.setDate(cursor.getDate()+index);return {date,inCurrentMonth:true}})
       const middle=days[3].date
       const activeMonth=new Date(middle.getFullYear(),middle.getMonth(),1)
-      const firstOfMonth=days.find(day=>day.date.getDate()===1)?.date??null
-      weeks.push({days,key:toDateKey(days[0].date),activeMonth,marker:firstOfMonth?new Date(firstOfMonth.getFullYear(),firstOfMonth.getMonth(),1):null})
+      weeks.push({days,key:toDateKey(days[0].date),activeMonth})
     }
-    return weeks.map((week,index)=>{
-      const marker=week.marker ?? (index===0?new Date(week.activeMonth.getFullYear(),week.activeMonth.getMonth(),1):null)
+    return weeks.map(week=>{
       const activeKey=`${week.activeMonth.getFullYear()}-${week.activeMonth.getMonth()}`
       return <section className="continuous-week-section" key={week.key} data-week-key={week.key} data-year={week.activeMonth.getFullYear()} data-month={week.activeMonth.getMonth()}>
-        {marker&&<div className="continuous-month-label" data-month-key={`${marker.getFullYear()}-${marker.getMonth()}`}>{MONTHS[marker.getMonth()]} {marker.getFullYear()}</div>}
         <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days)}</div>
       </section>
     })
-  }, [continuousMonths,tasks,showEndedTasks,anniversaries,weekStartsMonday,today,isMobileCalendar])
+  }, [continuousMonths,tasks,showEndedTasks,anniversaries,weekStartsMonday,today,isMobileCalendar,mobileCalendarScrolling])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
@@ -3108,7 +3133,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
+      <header className={`topbar${mainView==='calendar'?' calendar-topbar':''}`}>
         <div className="brand-block">
           <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}><span className="brand-mark-desktop">Z</span><span className="brand-mark-mobile" aria-hidden="true">🔍</span></button>
           <div className="brand-copy">
@@ -3160,9 +3185,14 @@ function App() {
         </div>
         </div>
 
-        {isMobileCalendar ? <div className="continuous-calendar" ref={continuousCalendarRef}>
-          {continuousCalendarContent}
-        </div> : renderCalendarMonthGrid(visibleMonth)}
+        {isMobileCalendar ? <>
+          <div className="mobile-calendar-search-row">
+            <button className="mobile-calendar-search-button" type="button" aria-label="打开搜索" onClick={()=>{setMobileSearchVisible(true);setSearchOpen(false)}}>🔍 <span>搜索</span></button>
+          </div>
+          <div className="continuous-calendar" ref={continuousCalendarRef}>
+            {continuousCalendarContent}
+          </div>
+        </> : renderCalendarMonthGrid(visibleMonth)}
       </section>}
 
       {mainView === 'statistics' && (

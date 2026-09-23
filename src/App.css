@@ -3488,3 +3488,34 @@ button {
   .global-search-wrap{top:420px!important}
   .global-search-wrap.mobile-open{position:absolute!important;left:72px!important;right:12px!important;z-index:69}
 }
+
+/* v1.2.2 — truly continuous week stream: no standalone month rows.
+   During active scrolling, day 1 temporarily becomes a compact month chip. */
+@media(max-width:620px){
+  .continuous-week-section .continuous-month-label{display:none!important}
+  .scroll-month-chip{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:38px;height:24px;margin:7px auto 0;padding:0 7px;border-radius:8px;
+    background:#e8eee9;color:#52645a;font-size:10px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;position:relative;z-index:3;
+  }
+
+  /* Calendar search launcher lives in normal document flow, below the sticky
+     calendar controls. It scrolls away with the calendar instead of floating
+     over the year/month navigation. */
+  .calendar-topbar .brand-block{display:none!important}
+  .mobile-calendar-search-row{padding:10px 12px 6px;background:#fff}
+  .mobile-calendar-search-button{
+    display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:0 12px;
+    border:1px solid #e1e7e2;border-radius:12px;background:#f8faf8;color:#657169;
+    font:inherit;font-size:12px;font-weight:650;
+  }
+  .mobile-calendar-search-button:active{transform:translateY(1px)}
+
+  /* When opened from the in-flow launcher, the actual search field may overlay
+     the top briefly; the closed launcher itself never floats. */
+  .calendar-topbar .global-search-wrap.mobile-open{
+    display:block!important;position:fixed!important;left:16px!important;right:16px!important;
+    top:16px!important;width:auto!important;z-index:71!important;
+  }
+}
