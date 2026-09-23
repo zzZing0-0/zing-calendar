@@ -3519,3 +3519,15 @@ button {
     top:16px!important;width:auto!important;z-index:71!important;
   }
 }
+
+/* v1.2.3 — stable continuous calendar: no scroll-driven date mutations.
+   Calendar search is an ordinary in-flow control; the floating launcher is not
+   rendered on the mobile calendar at all. */
+@media(max-width:620px){
+  .calendar-topbar .global-search-wrap:not(.mobile-open){display:none!important}
+  .mobile-calendar-search-row{
+    display:flex;align-items:center;padding:12px 12px 8px;background:#fff;
+    position:static!important;z-index:auto!important;
+  }
+  .mobile-calendar-search-button{position:static!important}
+}
