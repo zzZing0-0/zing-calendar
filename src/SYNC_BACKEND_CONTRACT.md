@@ -43,3 +43,13 @@ Binary attachment transport is intentionally not part of protocol v1 yet.
 Metadata remains in Journal/Task payloads. Attachment upload/download will get a
 separate content-addressed endpoint so large images/audio do not force full JSON
 bundle transfers.
+
+## v0.9.6.3 attachment transport
+
+GitHub sync now transports referenced image/audio binaries separately from the JSON bundle.
+Each immutable attachment `storageKey` maps to `zing/attachments/<encoded-storageKey>` in the
+private data repository. During sync, Zing uploads locally available binaries missing from GitHub
+and downloads GitHub binaries missing from the current browser's IndexedDB. Metadata that refers
+to a binary missing on both sides is preserved and reported as missing; it is never silently deleted.
+This is intentionally separate from `sync-bundle.json` so binary growth does not inflate every
+structured-data merge.

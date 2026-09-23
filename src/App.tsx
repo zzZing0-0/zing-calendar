@@ -1042,7 +1042,7 @@ function App() {
   const [githubSyncBranch, setGithubSyncBranch] = useState(() => localStorage.getItem('zing:githubSyncBranch') || 'main')
   const [githubSyncToken, setGithubSyncToken] = useState('')
   const [githubTokenSaved, setGithubTokenSaved] = useState(false)
-  const [githubSyncSummary, setGithubSyncSummary] = useState<{rows:{label:string;added:number;updated:number;deleted:number;total:number}[]; pushedRecords:number; pushedTombstones:number; finishedAt:string}|null>(null)
+  const [githubSyncSummary, setGithubSyncSummary] = useState<{rows:{label:string;added:number;updated:number;deleted:number;total:number}[]; pushedRecords:number; pushedTombstones:number; attachments:{uploaded:number;downloaded:number;missing:number;total:number}; finishedAt:string}|null>(null)
   const [githubSyncBusy, setGithubSyncBusy] = useState(false)
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
@@ -2754,8 +2754,8 @@ function App() {
       localStorage.setItem('zing:lastGithubSyncAt', stamp)
       setGithubSyncMessageKind('success')
       setGithubSyncMessage(result.initializedRemote
-        ? `✓ 首次同步完成 · 云端现有 ${result.pushedRecords} 条数据`
-        : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.pushedTombstones} 条删除记录`)
+        ? `✓ 首次同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件`
+        : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       // Rehydrate merged records so remote changes become visible immediately.
       const [nextTasks,nextJournals,nextMoods,nextTags,nextAnniversaries] = await Promise.all([
         loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
@@ -2771,6 +2771,7 @@ function App() {
         ],
         pushedRecords: result.pushedRecords,
         pushedTombstones: result.pushedTombstones,
+        attachments: result.attachments,
         finishedAt: stamp,
       })
       // Remote merge is hydration, not a local user edit. Reset the diff baselines
@@ -3270,7 +3271,7 @@ function App() {
               <div className="sync-summary-grid">
                 {githubSyncSummary.rows.map(row=><div className="sync-summary-row" key={row.label}><b>{row.label}</b><span>新增 {row.added}</span><span>更新 {row.updated}</span><span>删除 {row.deleted}</span><small>当前 {row.total}</small></div>)}
               </div>
-              <div className="sync-summary-cloud"><b>云端状态</b><span>有效数据 {githubSyncSummary.pushedRecords} 条</span><span>历史删除标记 {githubSyncSummary.pushedTombstones} 条</span></div><small className="sync-summary-tombstone-note">历史删除标记用于防止其他设备把已删除的数据重新恢复，不代表本次删除。</small>
+              <div className="sync-summary-cloud"><b>云端状态</b><span>有效数据 {githubSyncSummary.pushedRecords} 条</span><span>附件 {githubSyncSummary.attachments.total} 个</span><span>历史删除标记 {githubSyncSummary.pushedTombstones} 条</span></div><small className="sync-summary-tombstone-note">本次附件：上传 {githubSyncSummary.attachments.uploaded} · 下载 {githubSyncSummary.attachments.downloaded}{githubSyncSummary.attachments.missing ? ` · 缺失 ${githubSyncSummary.attachments.missing}` : ''}。历史删除标记用于防止其他设备把已删除的数据重新恢复，不代表本次删除。</small>
               <button className="github-sync-now" type="button" onClick={()=>setGithubSyncSummary(null)}>完成</button>
             </div>
           </section>
@@ -3438,7 +3439,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.6.2</span>
+        <span>Zing Calendar · v0.9.6.4</span>
       </footer>
 
       {selectedDate && (

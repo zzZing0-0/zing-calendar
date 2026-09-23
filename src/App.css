@@ -3206,3 +3206,20 @@ button {
   /* Give the calendar enough visible room above the sheet for the selected week context. */
   body:has(.day-drawer){padding-bottom:42dvh}
 }
+
+/* v0.9.6.4 — bottom scroll clearance hotfix
+   Keep the final status/version line reachable above the fixed bottom navigation,
+   including short DevTools/mobile viewports and iOS safe areas. */
+.app-shell{
+  padding-bottom:calc(128px + env(safe-area-inset-bottom, 0px));
+}
+.status-line{
+  position:relative;
+  z-index:1;
+  margin-bottom:12px;
+}
+@media(max-width:620px){
+  .app-shell{
+    padding-bottom:calc(118px + env(safe-area-inset-bottom, 0px));
+  }
+}
