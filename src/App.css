@@ -3346,6 +3346,10 @@ button {
   .drawer-backdrop{display:block!important;z-index:60;background:transparent!important;backdrop-filter:none!important}
   .day-drawer{z-index:61}
 
+  /* Keep editors above the mobile day-detail sheet. The sheet intentionally sits
+     above the calendar/bottom nav, so mobile modal layers need the next tier. */
+  .modal-layer{z-index:80}
+
   .status-line{align-items:center;gap:5px;margin-top:20px;margin-bottom:18px;text-align:center}
   .status-links{width:auto;justify-content:center;gap:7px}
   .status-links a{font-size:11px}
