@@ -3468,3 +3468,23 @@ button {
 @media(max-width:620px){
   .day-drawer{opacity:1!important}
 }
+
+/* v1.2.0 — one continuous mobile week stream + scrollable search launcher */
+@media(max-width:620px){
+  .continuous-month-section{display:none}
+  .continuous-week-section{background:#fff}
+  .continuous-week-section + .continuous-week-section{border-top:0}
+  .continuous-week-section .continuous-month-label{
+    padding:10px 12px 8px;border-top:1px solid #edf0ed;border-bottom:1px solid #edf0ed;
+    background:#f8faf8;color:#7d8881;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;
+    scroll-margin-top:154px;
+  }
+  .continuous-week-grid{grid-auto-rows:146px}
+  .continuous-week-grid .day-cell{height:146px}
+  .continuous-week-grid .multi-day-layer{grid-template-rows:146px}
+
+  /* Search now belongs to the scrollable calendar area instead of sitting on top of month navigation. */
+  .brand-block{position:absolute!important;left:16px!important;top:420px!important;z-index:20}
+  .global-search-wrap{top:420px!important}
+  .global-search-wrap.mobile-open{position:absolute!important;left:72px!important;right:12px!important;z-index:69}
+}
