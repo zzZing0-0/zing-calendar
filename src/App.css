@@ -3443,3 +3443,18 @@ button {
 
 /* v1.1.2 — Day Detail scroll locking keeps the document in normal flow.
    Background touch/wheel gestures are blocked in JS only after the real week row settles. */
+
+
+/* v1.1.3 — responsive Day Detail switching + lightweight background lock */
+@media(max-width:620px){
+  /* The transparent backdrop used to swallow taps on the exposed calendar row.
+     The real row remains interactive so switching 11 → 10 updates the open detail in place. */
+  .drawer-backdrop{display:none!important}
+
+  /* Stop finger-driven background panning while Day Detail is open without changing
+     document coordinates. Programmatic scrollTo still positions/restores the week row. */
+  .calendar-card.day-detail-open .continuous-calendar{
+    touch-action:none;
+    overscroll-behavior:contain;
+  }
+}

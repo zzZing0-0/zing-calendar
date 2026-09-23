@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.1.2'
+const APP_VERSION = '1.1.3'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1056,8 +1056,6 @@ function App() {
   const continuousCalendarRef = useRef<HTMLDivElement | null>(null)
   const pendingCalendarScrollRef = useRef<string | null>(null)
   const dayDetailOriginScrollRef = useRef<number | null>(null)
-  const dayDetailScrollLockRef = useRef(false)
-  const dayDetailSettleFrameRef = useRef<number | null>(null)
   const [dayDetailClosing, setDayDetailClosing] = useState(false)
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
@@ -1230,26 +1228,6 @@ function App() {
     nodes.forEach(node => observer.observe(node))
     return () => observer.disconnect()
   }, [continuousMonths, isMobileCalendar, mainView, selectedDate])
-
-  // v1.1.2: keep the document in its normal coordinate system. Once the selected row has
-  // settled beneath the sticky header, block background gestures instead of fixing <body>.
-  useEffect(() => {
-    if (!isMobileCalendar || mainView !== 'calendar' || !selectedDate) return
-    const blockBackgroundScroll = (event: TouchEvent | WheelEvent) => {
-      if (!dayDetailScrollLockRef.current) return
-      const target = event.target as Element | null
-      if (target?.closest('.day-drawer')) return
-      event.preventDefault()
-    }
-    document.addEventListener('touchmove', blockBackgroundScroll, {passive:false})
-    document.addEventListener('wheel', blockBackgroundScroll, {passive:false})
-    return () => {
-      document.removeEventListener('touchmove', blockBackgroundScroll)
-      document.removeEventListener('wheel', blockBackgroundScroll)
-      dayDetailScrollLockRef.current=false
-      if (dayDetailSettleFrameRef.current !== null) { cancelAnimationFrame(dayDetailSettleFrameRef.current); dayDetailSettleFrameRef.current=null }
-    }
-  }, [isMobileCalendar, mainView, selectedDate])
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
   // It can still be browsed independently afterwards with its own month arrows.
@@ -1705,59 +1683,51 @@ function App() {
     setSelectedDate(now)
   }
 
-  const stopDayDetailScrollLock = () => {
-    dayDetailScrollLockRef.current=false
-    if (dayDetailSettleFrameRef.current !== null) { cancelAnimationFrame(dayDetailSettleFrameRef.current); dayDetailSettleFrameRef.current=null }
-  }
-
   const closeDayDetail = () => {
     if (!selectedDate || dayDetailClosing) return
     const origin = dayDetailOriginScrollRef.current
     setDayDetailClosing(true)
-    stopDayDetailScrollLock()
     if (isMobileCalendar && origin !== null) window.scrollTo({top:origin,behavior:'smooth'})
     window.setTimeout(() => {
       setSelectedDate(null); setDayDetailClosing(false); dayDetailOriginScrollRef.current=null
-    }, 280)
+    }, 260)
   }
 
   const openDay = (date: Date) => {
     const isMobile = window.matchMedia('(max-width: 760px)').matches
-    if (isMobile && selectedDate && toDateKey(selectedDate) === toDateKey(date)) { closeDayDetail(); return }
-    if (isMobile && !selectedDate) {
-      stopDayDetailScrollLock()
-      dayDetailOriginScrollRef.current=window.scrollY
-      const key=toDateKey(date)
-      const cell=continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${key}"]`)
-      const sticky=document.querySelector<HTMLElement>('.calendar-sticky-header')
-      if (cell && sticky) {
-        const cellTop=cell.getBoundingClientRect().top
-        const stickyBottom=sticky.getBoundingClientRect().bottom
-        const target=Math.max(0,window.scrollY + cellTop - stickyBottom)
-        window.scrollTo({top:target,behavior:'smooth'})
 
-        // Do not guess how long Safari smooth scrolling takes. Wait until the actual
-        // scroll position has remained stable for several frames, then lock gestures.
-        let lastY=window.scrollY, stableFrames=0, frames=0
-        const watchScroll = () => {
-          const y=window.scrollY
-          if (Math.abs(y-lastY) < .75) stableFrames += 1
-          else stableFrames=0
-          lastY=y; frames += 1
-          if (stableFrames >= 4 || frames >= 90 || Math.abs(y-target) < 1) {
-            dayDetailScrollLockRef.current=true
-            dayDetailSettleFrameRef.current=null
-            return
-          }
-          dayDetailSettleFrameRef.current=requestAnimationFrame(watchScroll)
-        }
-        dayDetailSettleFrameRef.current=requestAnimationFrame(watchScroll)
-      } else {
-        dayDetailScrollLockRef.current=true
-      }
+    // v1.1.3: while Day Detail is already open, tapping another visible day should
+    // switch the detail immediately. Never close/reopen the sheet just to change date.
+    if (isMobile && selectedDate) {
+      if (dayDetailClosing) return
+      setSelectedDate(date)
+      return
     }
+
+    if (isMobile) {
+      dayDetailOriginScrollRef.current=window.scrollY
+      setSelectedDate(date)
+
+      // Let React paint the sheet first so the tap gets immediate visual feedback.
+      // Then move the real week row into position; CSS blocks user panning while the
+      // detail is open, without any body-fixed coordinate changes or scroll polling.
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const key=toDateKey(date)
+          const cell=continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${key}"]`)
+          const sticky=document.querySelector<HTMLElement>('.calendar-sticky-header')
+          if (!cell || !sticky) return
+          const cellTop=cell.getBoundingClientRect().top
+          const stickyBottom=sticky.getBoundingClientRect().bottom
+          const target=Math.max(0,window.scrollY + cellTop - stickyBottom)
+          if (Math.abs(window.scrollY-target) > 1) window.scrollTo({top:target,behavior:'smooth'})
+        })
+      })
+      return
+    }
+
     setSelectedDate(date)
-    if (!isMobile && (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear())) {
+    if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
       setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     }
   }
@@ -3065,7 +3035,7 @@ function App() {
         </div>
       </header>
 
-      {mainView === 'calendar' && <section className="calendar-card" aria-label="月历">
+      {mainView === 'calendar' && <section className={`calendar-card${isMobileCalendar && selectedDate ? ' day-detail-open' : ''}`} aria-label="月历">
         <div className="calendar-sticky-header">
         <div className="calendar-toolbar">
           <div className="month-navigation">
