@@ -1250,7 +1250,7 @@ function App() {
     const added: Attachment[] = []
     for (const file of Array.from(files).filter(file => file.type.startsWith('image/')).slice(0, room)) {
       const blob = await compressImage(file)
-      const id = crypto.randomUUID(), storageKey = `journal:${id}`
+      const id = crypto.randomUUID(), storageKey = `attachment:${id}`
       await putAttachmentBlob(storageKey, blob)
       added.push({ id, type: 'image', filename: file.name, mimeType: blob.type || 'image/webp', size: blob.size, storageKey, createdAt: new Date().toISOString() })
     }
@@ -1287,7 +1287,7 @@ function App() {
           window.alert('录音内容为空或时间太短，没有保存。请重新录制。')
           return
         }
-        const id = crypto.randomUUID(), storageKey = `journal-audio:${id}`
+        const id = crypto.randomUUID(), storageKey = `attachment:${id}`
         await putAttachmentBlob(storageKey, blob)
         const extension = blob.type.includes('mp4') ? 'm4a' : 'webm'
         setJournalDraft(current => ({ ...current, attachments: [...current.attachments.filter(a => a.type !== 'audio'), {

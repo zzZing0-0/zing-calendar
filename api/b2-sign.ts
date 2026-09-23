@@ -16,7 +16,9 @@ const sha256 = (value: string) => crypto.createHash('sha256').update(value, 'utf
 const awsEncode = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 
 function safeKey(raw: string | null): string | null {
-  if (!raw || !/^attachment:[0-9a-f-]{16,}$/i.test(raw)) return null
+  // New attachments use attachment:<uuid>. Keep the two legacy Journal prefixes
+  // readable/signable so existing pre-fix records can migrate to B2 without rewriting data.
+  if (!raw || !/^(?:attachment|journal|journal-audio):[0-9a-f-]{16,}$/i.test(raw)) return null
   return raw
 }
 
