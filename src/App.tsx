@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.3.0'
+const APP_VERSION = '1.3.1'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1721,7 +1721,7 @@ function App() {
           {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
         </button>
       })}
-      <div className="multi-day-layer">{segments.filter(segment=>segment.week===0).map(segment=><button key={`${segment.task.id}-${rangeStart}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:1,'--lane-offset':`${segment.lane*26}px`} as CSSProperties} onClick={event=>{event.stopPropagation();const rect=event.currentTarget.getBoundingClientRect();const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left));const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span)));const clickedDay=weekDays[segment.startColumn+columnOffset]?.date;if(clickedDay)openDay(clickedDay)}} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
+      <div className="multi-day-layer">{segments.filter(segment=>segment.week===0).map(segment=><button key={`${segment.task.id}-${rangeStart}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:1,'--lane-offset':`${segment.lane*19}px`} as CSSProperties} onClick={event=>{event.stopPropagation();const rect=event.currentTarget.getBoundingClientRect();const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left));const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span)));const clickedDay=weekDays[segment.startColumn+columnOffset]?.date;if(clickedDay)openDay(clickedDay)}} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
     </div>
   }
 

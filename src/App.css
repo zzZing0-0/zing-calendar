@@ -3697,3 +3697,27 @@ button {
     display:none!important;
   }
 }
+
+
+/* v1.3.1 — mobile calendar spacing corrections.
+   Anniversary marker sits a little lower; continuous-week multi-day tasks use
+   the exact same 19px slot geometry as single-day previews. */
+@media(max-width:620px){
+  .anniversary-cell-icons{
+    top:14px!important;
+    right:5px!important;
+    max-width:18px!important;
+    overflow:visible!important;
+  }
+
+  .continuous-week-grid .multi-day-bar{
+    top:44px!important;
+    height:18px!important;
+    margin-inline:4px!important;
+    padding:2px 4px!important;
+    border-radius:5px!important;
+    font-size:8px!important;
+    line-height:14px!important;
+    box-sizing:border-box!important;
+  }
+}
