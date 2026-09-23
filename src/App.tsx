@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.2.0'
+const APP_VERSION = '1.2.1'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -565,10 +565,12 @@ type MultiDaySegment = { task: Task; week: number; startColumn: number; span: nu
 
 function buildMultiDaySegments(tasks: Task[], days: CalendarDay[]): MultiDaySegment[] {
   const segments: MultiDaySegment[] = []
-  for (let week = 0; week < 6; week += 1) {
+  const weekCount = Math.ceil(days.length / 7)
+  for (let week = 0; week < weekCount; week += 1) {
     const weekDays = days.slice(week * 7, week * 7 + 7)
+    if (weekDays.length === 0) continue
     const weekStart = toDateKey(weekDays[0].date)
-    const weekEnd = toDateKey(weekDays[6].date)
+    const weekEnd = toDateKey(weekDays[weekDays.length - 1].date)
     const candidates = tasks
       .filter(task => isMultiDayTask(task) && task.date <= weekEnd && taskEndDate(task) >= weekStart)
       .sort((a, b) => a.date.localeCompare(b.date) || taskEndDate(b).localeCompare(taskEndDate(a)) || b.priority - a.priority)
@@ -578,6 +580,7 @@ function buildMultiDaySegments(tasks: Task[], days: CalendarDay[]): MultiDaySegm
       const clippedEnd = taskEndDate(task) > weekEnd ? weekEnd : taskEndDate(task)
       const startColumn = weekDays.findIndex(day => toDateKey(day.date) === clippedStart)
       const endColumn = weekDays.findIndex(day => toDateKey(day.date) === clippedEnd)
+      if (startColumn < 0 || endColumn < 0) return
       let lane = 0
       while ((lanes[lane] ?? []).some(item => !(endColumn < item.start || startColumn > item.end))) lane += 1
       if (!lanes[lane]) lanes[lane] = []
