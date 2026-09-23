@@ -2411,29 +2411,7 @@ button {
 
 /* v0.6.21.3.2 Journal editor polish */
 .journal-image-field .journal-file-input {
-  display:block;
-  width:100%;
-  box-sizing:border-box;
-  min-height:38px;
-  margin:0;
-  padding:0;
-  border:1px solid #dce3de;
-  border-radius:9px;
-  background:#fff;
-  color:#4d5751;
-  font:inherit;
-  overflow:hidden;
-}
-.journal-image-field .journal-file-input::file-selector-button {
-  height:36px;
-  margin:0 10px 0 0;
-  padding:0 12px;
-  border:0;
-  border-right:1px solid #dce3de;
-  background:#f7f9f7;
-  color:#4d5751;
-  font:inherit;
-  cursor:pointer;
+  display:none;
 }
 
 /* v0.6.21.5 anniversary type-specific metadata */
