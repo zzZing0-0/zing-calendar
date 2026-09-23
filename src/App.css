@@ -3379,3 +3379,20 @@ button {
   .global-search-wrap input{box-shadow:0 10px 30px rgba(34,43,39,.14)}
   .search-panel{z-index:71}
 }
+
+
+/* v1.0.2 — mobile sticky calendar header */
+@media(max-width:620px){
+  /* Keep month controls, status controls and weekdays visible while the tall month grid scrolls. */
+  .calendar-card{overflow:visible}
+  .calendar-sticky-header{
+    position:sticky;top:0;z-index:30;
+    background:rgba(255,255,255,.97);
+    border-radius:22px 22px 0 0;
+    box-shadow:0 7px 18px rgba(40,52,45,.07);
+    -webkit-backdrop-filter:saturate(1.08) blur(10px);
+    backdrop-filter:saturate(1.08) blur(10px);
+  }
+  .calendar-sticky-header .calendar-toolbar{background:transparent}
+  .calendar-sticky-header .weekday-row{background:rgba(250,251,250,.96)}
+}

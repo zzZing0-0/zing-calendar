@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.0.1'
+const APP_VERSION = '1.0.2'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2925,6 +2925,7 @@ function App() {
       </header>
 
       {mainView === 'calendar' && <section className="calendar-card" aria-label="月历">
+        <div className="calendar-sticky-header">
         <div className="calendar-toolbar">
           <div className="month-navigation">
             <button className="nav-button" type="button" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
@@ -2940,6 +2941,7 @@ function App() {
 
         <div className="weekday-row">
           {displayWeekdays.map(day => <div key={day}>{day}</div>)}
+        </div>
         </div>
 
         <div className="calendar-grid">
