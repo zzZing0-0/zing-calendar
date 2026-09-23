@@ -3664,3 +3664,15 @@ button {
     z-index:35!important;
   }
 }
+
+
+/* v1.2.6 — keep the floating search launcher attached to the opened field. */
+@media(max-width:620px){
+  .brand-block.search-open,
+  .calendar-topbar .brand-block.search-open{
+    position:fixed!important;
+    left:16px!important;
+    top:74px!important;
+    z-index:73!important;
+  }
+}
