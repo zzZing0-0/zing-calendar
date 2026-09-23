@@ -772,9 +772,23 @@ async function readLegacyGitHubAttachment(config: GitHubSyncConfig, meta: SyncAt
 type B2SignedUrl = { url: string }
 
 async function signedB2Url(storageKey: string, method: 'GET'|'HEAD'|'PUT'): Promise<string> {
-  const response = await fetch(`/api/attachments?key=${encodeURIComponent(storageKey)}&method=${method}`, { cache: 'no-store' })
-  if (!response.ok) throw new Error(`B2 签名失败（HTTP ${response.status} · ${storageKey}）`)
-  const payload = await response.json() as B2SignedUrl
+  const response = await fetch(`/api/attachments?key=${encodeURIComponent(storageKey)}&method=${method}`, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  })
+  const contentType = response.headers.get('content-type') || ''
+  const raw = await response.text()
+  if (!response.ok) {
+    let detail = ''
+    try { detail = String((JSON.parse(raw) as { error?: unknown }).error || '') } catch { detail = raw.slice(0, 120).replace(/\s+/g, ' ') }
+    throw new Error(`B2 签名失败（HTTP ${response.status}${detail ? ` · ${detail}` : ''} · ${storageKey}）`)
+  }
+  if (!contentType.includes('application/json')) {
+    throw new Error(`B2 签名接口未作为 Vercel Function 运行（返回 ${contentType || '未知内容类型'}）`)
+  }
+  let payload: B2SignedUrl
+  try { payload = JSON.parse(raw) as B2SignedUrl }
+  catch { throw new Error(`B2 签名接口返回了无效 JSON（${storageKey}）`) }
   if (!payload.url) throw new Error(`B2 签名响应异常（${storageKey}）`)
   return payload.url
 }
