@@ -3440,3 +3440,6 @@ button {
   /* v1.1.1 no longer creates layout space for a cloned week; avoid the old :has() reflow. */
   body:has(.day-drawer){padding-bottom:0}
 }
+
+/* v1.1.2 — Day Detail scroll locking keeps the document in normal flow.
+   Background touch/wheel gestures are blocked in JS only after the real week row settles. */

@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.1.1'
+const APP_VERSION = '1.1.2'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1056,9 +1056,8 @@ function App() {
   const continuousCalendarRef = useRef<HTMLDivElement | null>(null)
   const pendingCalendarScrollRef = useRef<string | null>(null)
   const dayDetailOriginScrollRef = useRef<number | null>(null)
-  const dayDetailLockTimerRef = useRef<number | null>(null)
-  const dayDetailLockedScrollRef = useRef<number | null>(null)
-  const dayDetailBodyStyleRef = useRef<{position:string;top:string;width:string;overflow:string} | null>(null)
+  const dayDetailScrollLockRef = useRef(false)
+  const dayDetailSettleFrameRef = useRef<number | null>(null)
   const [dayDetailClosing, setDayDetailClosing] = useState(false)
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
@@ -1232,21 +1231,25 @@ function App() {
     return () => observer.disconnect()
   }, [continuousMonths, isMobileCalendar, mainView, selectedDate])
 
-  // Let the real calendar row glide into place first; lock the page only after that motion finishes.
+  // v1.1.2: keep the document in its normal coordinate system. Once the selected row has
+  // settled beneath the sticky header, block background gestures instead of fixing <body>.
   useEffect(() => {
-    if (!isMobileCalendar || !selectedDate || dayDetailLockedScrollRef.current !== null) return
-    if (dayDetailLockTimerRef.current !== null) window.clearTimeout(dayDetailLockTimerRef.current)
-    dayDetailLockTimerRef.current = window.setTimeout(() => {
-      const y = window.scrollY
-      dayDetailBodyStyleRef.current = {position:document.body.style.position, top:document.body.style.top, width:document.body.style.width, overflow:document.body.style.overflow}
-      dayDetailLockedScrollRef.current = y
-      document.body.style.position='fixed'; document.body.style.top=`-${y}px`; document.body.style.width='100%'; document.body.style.overflow='hidden'
-      dayDetailLockTimerRef.current = null
-    }, 300)
-    return () => {
-      if (dayDetailLockTimerRef.current !== null) { window.clearTimeout(dayDetailLockTimerRef.current); dayDetailLockTimerRef.current = null }
+    if (!isMobileCalendar || mainView !== 'calendar' || !selectedDate) return
+    const blockBackgroundScroll = (event: TouchEvent | WheelEvent) => {
+      if (!dayDetailScrollLockRef.current) return
+      const target = event.target as Element | null
+      if (target?.closest('.day-drawer')) return
+      event.preventDefault()
     }
-  }, [isMobileCalendar, selectedDate])
+    document.addEventListener('touchmove', blockBackgroundScroll, {passive:false})
+    document.addEventListener('wheel', blockBackgroundScroll, {passive:false})
+    return () => {
+      document.removeEventListener('touchmove', blockBackgroundScroll)
+      document.removeEventListener('wheel', blockBackgroundScroll)
+      dayDetailScrollLockRef.current=false
+      if (dayDetailSettleFrameRef.current !== null) { cancelAnimationFrame(dayDetailSettleFrameRef.current); dayDetailSettleFrameRef.current=null }
+    }
+  }, [isMobileCalendar, mainView, selectedDate])
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
   // It can still be browsed independently afterwards with its own month arrows.
@@ -1702,22 +1705,16 @@ function App() {
     setSelectedDate(now)
   }
 
-  const unlockDayDetailBody = () => {
-    if (dayDetailLockTimerRef.current !== null) { window.clearTimeout(dayDetailLockTimerRef.current); dayDetailLockTimerRef.current = null }
-    const lockedY = dayDetailLockedScrollRef.current
-    const previous = dayDetailBodyStyleRef.current
-    if (lockedY !== null && previous) {
-      document.body.style.position=previous.position; document.body.style.top=previous.top; document.body.style.width=previous.width; document.body.style.overflow=previous.overflow
-      window.scrollTo(0,lockedY)
-    }
-    dayDetailLockedScrollRef.current=null; dayDetailBodyStyleRef.current=null
+  const stopDayDetailScrollLock = () => {
+    dayDetailScrollLockRef.current=false
+    if (dayDetailSettleFrameRef.current !== null) { cancelAnimationFrame(dayDetailSettleFrameRef.current); dayDetailSettleFrameRef.current=null }
   }
 
   const closeDayDetail = () => {
     if (!selectedDate || dayDetailClosing) return
     const origin = dayDetailOriginScrollRef.current
     setDayDetailClosing(true)
-    unlockDayDetailBody()
+    stopDayDetailScrollLock()
     if (isMobileCalendar && origin !== null) window.scrollTo({top:origin,behavior:'smooth'})
     window.setTimeout(() => {
       setSelectedDate(null); setDayDetailClosing(false); dayDetailOriginScrollRef.current=null
@@ -1728,6 +1725,7 @@ function App() {
     const isMobile = window.matchMedia('(max-width: 760px)').matches
     if (isMobile && selectedDate && toDateKey(selectedDate) === toDateKey(date)) { closeDayDetail(); return }
     if (isMobile && !selectedDate) {
+      stopDayDetailScrollLock()
       dayDetailOriginScrollRef.current=window.scrollY
       const key=toDateKey(date)
       const cell=continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${key}"]`)
@@ -1737,6 +1735,25 @@ function App() {
         const stickyBottom=sticky.getBoundingClientRect().bottom
         const target=Math.max(0,window.scrollY + cellTop - stickyBottom)
         window.scrollTo({top:target,behavior:'smooth'})
+
+        // Do not guess how long Safari smooth scrolling takes. Wait until the actual
+        // scroll position has remained stable for several frames, then lock gestures.
+        let lastY=window.scrollY, stableFrames=0, frames=0
+        const watchScroll = () => {
+          const y=window.scrollY
+          if (Math.abs(y-lastY) < .75) stableFrames += 1
+          else stableFrames=0
+          lastY=y; frames += 1
+          if (stableFrames >= 4 || frames >= 90 || Math.abs(y-target) < 1) {
+            dayDetailScrollLockRef.current=true
+            dayDetailSettleFrameRef.current=null
+            return
+          }
+          dayDetailSettleFrameRef.current=requestAnimationFrame(watchScroll)
+        }
+        dayDetailSettleFrameRef.current=requestAnimationFrame(watchScroll)
+      } else {
+        dayDetailScrollLockRef.current=true
       }
     }
     setSelectedDate(date)
