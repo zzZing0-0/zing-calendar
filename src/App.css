@@ -3275,3 +3275,52 @@ button {
 .auto-sync-toast{position:fixed;right:24px;bottom:24px;z-index:1200;padding:10px 14px;border-radius:12px;background:rgba(43,55,48,.94);color:#fff;font-size:13px;line-height:1.35;box-shadow:0 8px 28px rgba(0,0,0,.16);pointer-events:none;animation:autoSyncToastIn .18s ease-out}
 @keyframes autoSyncToastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:720px){.auto-sync-toast{left:50%;right:auto;bottom:82px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);text-align:center}@keyframes autoSyncToastIn{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}}
+
+/* v0.9.6.19 — final mobile polish before 1.0 */
+.brand-mark{border:0;cursor:default;padding:0}
+.calendar-status-controls{display:flex;align-items:center;gap:10px;margin-left:auto}
+.status-line{flex-wrap:wrap;line-height:1.45}
+.status-links{display:inline-flex;align-items:center;gap:7px}
+.status-links::before{content:"·";color:#c0c6c2}
+.status-links a{color:#8d9791;text-decoration:none}
+.status-links a:hover{text-decoration:underline;color:#617168}
+
+@media(max-width:620px){
+  /* The Z mark is the compact mobile search launcher. */
+  .topbar{position:relative;display:block!important;margin-bottom:16px;min-height:46px}
+  .brand-block{display:inline-flex}
+  .brand-copy{display:none}
+  .brand-mark{cursor:pointer;width:38px;height:38px;border-radius:50%;font-size:19px}
+  .global-search-wrap{display:none;width:calc(100% - 54px)!important;margin:0!important;position:absolute!important;left:50px;top:1px;order:initial!important}
+  .global-search-wrap.mobile-open{display:block}
+  .global-search-wrap input{height:38px}
+  .search-panel{position:fixed;top:76px;left:10px;right:10px;width:auto;max-height:60vh}
+
+  /* Keep month navigation on one row; status actions share a compact row below it. */
+  .calendar-toolbar{display:grid;grid-template-columns:1fr;padding:13px 12px 11px;gap:10px;align-items:center}
+  .month-navigation{width:100%;gap:6px}
+  .month-title-button{min-width:0;flex:1}
+  .calendar-status-controls{width:100%;margin:0;justify-content:flex-start;gap:8px}
+  .overdue-inbox-trigger{min-height:30px;padding:5px 9px!important;border-radius:10px;font-size:11px!important;box-shadow:none}
+  .calendar-ended-toggle{min-height:30px;padding:5px 9px;border:1px solid #e0e6e2;border-radius:10px;background:#f8faf8;color:#748078}
+  .calendar-ended-toggle span{display:inline!important;font-size:11px}
+  .calendar-ended-toggle i{width:25px;height:14px}
+  .calendar-ended-toggle i::after{width:10px;height:10px}
+  .calendar-ended-toggle input:checked + i::after{transform:translateX(11px)}
+
+  /* Reserve a real header band for date/lunar annotation before task slots. */
+  .lunar-day-label{top:31px;right:7px;max-width:calc(100% - 14px);font-size:8px}
+  .task-preview-list{top:44px!important;height:92px!important}
+  .task-preview-list .task-preview,.task-preview-list .more-tasks{top:calc(var(--calendar-slot,0) * 19px)!important}
+  .task-preview{min-height:18px!important;height:18px;padding:2px 4px!important;border-radius:5px;font-size:8px!important;box-sizing:border-box}
+  .task-preview-title{line-height:14px}
+  .task-preview-time{display:none}
+  .more-tasks{height:18px;line-height:14px!important;font-size:8px!important}
+
+  /* Fixed bottom navigation must never cover the last setting/content row. */
+  .app-shell{padding-bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+  .settings-page{padding-bottom:18px}
+  .status-line{gap:5px 7px;margin-bottom:18px}
+  .status-links{width:100%;justify-content:center;gap:10px}
+  .status-links::before{display:none}
+}

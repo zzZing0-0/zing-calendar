@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '0.9.6.18'
+const APP_VERSION = '0.9.6.19'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1100,6 +1100,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFilter, setSearchFilter] = useState<'all' | 'task' | 'journal' | 'anniversary'>('all')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [mobileSearchVisible, setMobileSearchVisible] = useState(false)
   const searchWrapRef = useRef<HTMLDivElement | null>(null)
   const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
   const [defaultPriority, setDefaultPriority] = useState<TaskPriority>(() => {
@@ -2886,13 +2887,13 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-block">
-          <div className="brand-mark" aria-hidden="true">Z</div>
+          <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}>Z</button>
           <div className="brand-copy">
             <p>{greeting}</p>
           </div>
         </div>
 
-        <div className="global-search-wrap" ref={searchWrapRef}>
+        <div className={`global-search-wrap${mobileSearchVisible ? ' mobile-open' : ''}`} ref={searchWrapRef}>
           <span className="global-search-icon">⌕</span>
           <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、纪念日；#标签…" aria-label="全局搜索" />
           {searchQuery && <button type="button" className="search-clear" onClick={() => setSearchQuery('')} aria-label="清空搜索">×</button>}
@@ -2922,9 +2923,11 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[visibleMonth.getMonth()]} {visibleMonth.getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>Today</button>
-            {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
           </div>
-          {endedTasksViewToggle('calendar-ended-toggle')}
+          <div className="calendar-status-controls">
+            {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
+            {endedTasksViewToggle('calendar-ended-toggle')}
+          </div>
         </div>
 
         <div className="weekday-row">
@@ -3292,7 +3295,7 @@ function App() {
                 <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片（{allStoredAttachments.filter(item=>item.type==='image').length} 个 · B2）</i><b>{formatBytes(effectiveImageBytes)}</b></button>
                 <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音（{allStoredAttachments.filter(item=>item.type==='audio').length} 个 · B2）</i><b>{formatBytes(effectiveAudioBytes)}</b></button>
               </div>
-              <small>任务 {tasks.length} · 记录 {journalEntries.length} · 纪念日 {anniversaries.length} · 有效附件 {allStoredAttachments.length}。本设备同时在 IndexedDB 保留数据与附件缓存，用于离线使用；这里显示的是当前有效内容，不代表 GitHub 仓库或 B2 桶的实际总占用。</small>
+              <small>本设备同时在 IndexedDB 保留数据与附件缓存，用于离线使用；这里显示的是当前有效内容，不代表 GitHub 仓库或 B2 桶的实际总占用。</small>
             </div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务与记录共用的标签。</small></span><b>›</b></button>
             <div className="backup-settings-block">
@@ -3529,6 +3532,11 @@ function App() {
 
       <footer className="status-line">
         <span>Zing Calendar · v{APP_VERSION}</span>
+        <span className="status-links" aria-label="基础设施快捷入口">
+          <a href="https://github.com/zzZing0-0/zing-calendar" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Vercel</a>
+          <a href="https://secure.backblaze.com/b2_buckets.htm" target="_blank" rel="noreferrer">Backblaze B2</a>
+        </span>
       </footer>
 
       {selectedDate && (
