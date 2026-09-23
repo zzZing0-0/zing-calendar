@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import { appendSyncChange, cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
@@ -579,16 +580,33 @@ function buildMultiDaySegments(tasks: Task[], days: CalendarDay[]): MultiDaySegm
 
 async function compressImage(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file)
-  const maxSide = 1800
-  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  const targetBytes = 1024 * 1024
+  let width = bitmap.width
+  let height = bitmap.height
+  const initialScale = Math.min(1, 1800 / Math.max(width, height))
+  width = Math.max(1, Math.round(width * initialScale))
+  height = Math.max(1, Math.round(height * initialScale))
+
+  const render = (w: number, h: number, quality: number) => new Promise<Blob>((resolve, reject) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h)
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('图片压缩失败')), 'image/webp', quality)
+  })
+
+  let blob: Blob | null = null
+  // Mobile photos can remain several MB after one quality pass. Reduce quality first,
+  // then dimensions, and validate the final stored blob rather than trusting one pass.
+  for (let resizeRound = 0; resizeRound < 6; resizeRound += 1) {
+    for (const quality of [0.82, 0.72, 0.62, 0.52, 0.42]) {
+      blob = await render(width, height, quality)
+      if (blob.size <= targetBytes) { bitmap.close(); return blob }
+    }
+    width = Math.max(640, Math.round(width * 0.82))
+    height = Math.max(640, Math.round(height * 0.82))
+  }
   bitmap.close()
-  const toBlob = (quality: number) => new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image compression failed')), 'image/webp', quality))
-  let blob = await toBlob(0.84)
-  if (blob.size > 1024 * 1024) blob = await toBlob(0.70)
+  if (!blob || blob.size > targetBytes) throw new Error('这张图片压缩后仍超过 1 MB，请选择分辨率更低的图片')
   return blob
 }
 
@@ -1209,7 +1227,14 @@ function App() {
     attachments: journalDraft.attachments,
   }
   if (editingJournalId) {
-    setJournalEntries(current => current.map(entry => entry.id === editingJournalId ? { ...entry, ...fields, updatedAt: now } : entry))
+    setJournalEntries(current => current.map(entry => {
+      if (entry.id !== editingJournalId) return entry
+      const nextKeys = new Set(journalDraft.attachments.map(a => a.storageKey))
+      const tombstones = { ...(entry.attachmentLinkTombstones ?? {}) }
+      ;(entry.attachments ?? []).forEach(a => { if (!nextKeys.has(a.storageKey)) tombstones[a.storageKey] = now })
+      journalDraft.attachments.forEach(a => { delete tombstones[a.storageKey] })
+      return { ...entry, ...fields, attachmentLinkTombstones: tombstones, updatedAt: now }
+    }))
   } else {
     setJournalEntries(current => [...current, { id: crypto.randomUUID(), ...fields, createdAt: now, updatedAt: now }])
   }
@@ -1720,12 +1745,19 @@ function App() {
           : (draft.endDate && draft.endDate > seriesDate ? draft.endDate : undefined)
         const seriesDraft: TaskDraft = { ...draft, date: seriesDate, endDate: seriesEndDate ?? '' }
         const nextRecurrence = recurrenceFromDraft(seriesDraft)
-        return current.map(task => task.id === series.id ? normalizeSingleOccurrenceSeries({
-          ...task, ...buildFields(seriesDate, seriesEndDate),
-          recurrence: nextRecurrence,
-          recurrenceExceptions: nextRecurrence ? task.recurrenceExceptions : undefined,
-          updatedAt: now,
-        }) : task)
+        return current.map(task => {
+          if (task.id !== series.id) return task
+          const nextKeys = new Set(draft.attachments.map(a => a.storageKey))
+          const tombstones = { ...(task.attachmentLinkTombstones ?? {}) }
+          ;(task.attachments ?? []).forEach(a => { if (!nextKeys.has(a.storageKey)) tombstones[a.storageKey] = now })
+          draft.attachments.forEach(a => { delete tombstones[a.storageKey] })
+          return normalizeSingleOccurrenceSeries({
+            ...task, ...buildFields(seriesDate, seriesEndDate), attachmentLinkTombstones: tombstones,
+            recurrence: nextRecurrence,
+            recurrenceExceptions: nextRecurrence ? task.recurrenceExceptions : undefined,
+            updatedAt: now,
+          })
+        })
       })
     } else {
       const task: Task = {
@@ -3456,7 +3488,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.6.5</span>
+        <span>Zing Calendar · v0.9.6.7</span>
       </footer>
 
       {selectedDate && (
@@ -4084,17 +4116,18 @@ function App() {
         </div>
       )}
 
-      {imageLibraryTarget && (
-        <div className="modal-layer attachment-library-layer">
+      {imageLibraryTarget && createPortal(
+        <div className="storage-browser-layer attachment-library-layer" role="dialog" aria-modal="true" aria-label="从图片库选择">
           <button className="modal-backdrop" type="button" aria-label="关闭图片库" onClick={()=>setImageLibraryTarget(null)} />
-          <section className="storage-browser-modal attachment-library-modal">
-            <header><div><span className="eyebrow">IMAGE LIBRARY</span><h2>从图片库选择</h2><small>复用已有图片，不会重复占用存储空间</small></div><button className="close-button" type="button" onClick={()=>setImageLibraryTarget(null)}>×</button></header>
+          <section className="storage-browser attachment-library-modal">
+            <header className="storage-browser-header"><div><span className="eyebrow">IMAGE LIBRARY</span><h2>从图片库选择</h2><small>复用已有图片，不会重复占用存储空间</small></div><button className="close-button" type="button" onClick={()=>setImageLibraryTarget(null)}>×</button></header>
             {libraryImages.length===0 ? <p className="page-empty">图片库还是空的。</p> : <div className="storage-image-grid selectable-library-grid">{libraryImages.map(attachment => {
               const selected = imageLibraryTarget==='task' ? draft.attachments.some(a=>a.storageKey===attachment.storageKey) : journalDraft.attachments.some(a=>a.storageKey===attachment.storageKey)
               return <div className={`library-pick-item ${selected?'selected':''}`} key={attachment.storageKey}><StorageImage attachment={attachment} onPreview={()=>chooseLibraryImage(attachment)} />{selected && <span className="library-picked-mark">✓ 已引用</span>}</div>
             })}</div>}
           </section>
-        </div>
+        </div>,
+        document.body
       )}
 
       {imagePreview && (

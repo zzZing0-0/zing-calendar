@@ -3233,3 +3233,31 @@ button {
 .library-pick-item{position:relative;border:1px solid transparent;border-radius:12px;padding:3px}
 .library-pick-item.selected{border-color:#8fac9a;background:#f2f7f3}
 .library-picked-mark{position:absolute;right:8px;top:8px;background:rgba(255,255,255,.94);border-radius:999px;padding:3px 7px;font-size:11px;color:#567565;pointer-events:none}
+
+
+/* v0.9.6.6 — global modal portal / image-library positioning fix */
+.attachment-library-layer{
+  position:fixed;
+  inset:0;
+  z-index:1400;
+}
+.attachment-library-layer > .modal-backdrop{
+  position:absolute;
+  inset:0;
+  z-index:0;
+}
+.attachment-library-layer > .attachment-library-modal{
+  position:relative;
+  z-index:1;
+  margin:0;
+  width:min(760px,calc(100vw - 40px));
+  max-height:calc(100dvh - 40px);
+  overflow:auto;
+}
+@media(max-width:620px){
+  .attachment-library-layer{padding:10px;align-items:stretch}
+  .attachment-library-layer > .attachment-library-modal{
+    width:100%;
+    max-height:100%;
+  }
+}

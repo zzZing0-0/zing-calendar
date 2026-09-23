@@ -404,18 +404,27 @@ function mergeConcurrentAttachments(localRecord: SyncEntityRecord, remoteRecord:
   const newer = remoteTime > localTime ? remoteRecord : localRecord
   const localItems = Array.isArray(localRecord.payload?.attachments) ? localRecord.payload.attachments : []
   const remoteItems = Array.isArray(remoteRecord.payload?.attachments) ? remoteRecord.payload.attachments : []
-  const lm = new Map(localItems.map((a:any)=>[String(a.id||a.storageKey),a]))
-  const rm = new Map(remoteItems.map((a:any)=>[String(a.id||a.storageKey),a]))
-  const merged:any[] = []
-  const keys = new Set([...lm.keys(), ...rm.keys()])
-  keys.forEach(key => {
-    const l:any=lm.get(key), r:any=rm.get(key)
-    if (l && r) { merged.push((Date.parse(r.createdAt)||0) > (Date.parse(l.createdAt)||0) ? r : l); return }
-    if (l) { if ((Date.parse(l.createdAt)||0) > remoteTime) merged.push(l); return }
-    if (r) { if ((Date.parse(r.createdAt)||0) > localTime) merged.push(r) }
+  const localDeletes: Record<string,string> = localRecord.payload?.attachmentLinkTombstones ?? {}
+  const remoteDeletes: Record<string,string> = remoteRecord.payload?.attachmentLinkTombstones ?? {}
+  const deletes: Record<string,string> = { ...localDeletes }
+  Object.entries(remoteDeletes).forEach(([key, at]) => {
+    if (!deletes[key] || (Date.parse(at)||0) > (Date.parse(deletes[key])||0)) deletes[key] = at
   })
-  merged.sort((a,b)=>(Date.parse(a.createdAt)||0)-(Date.parse(b.createdAt)||0))
-  return { ...newer, updatedAt: new Date(Math.max(localTime,remoteTime)).toISOString(), payload: { ...newer.payload, attachments: merged } }
+
+  // storageKey identifies the shared immutable binary. A link deletion is an explicit
+  // per-attachment tombstone; unrelated task edits can no longer erase a concurrent add.
+  const candidates = new Map<string, any>()
+  ;[...localItems, ...remoteItems].forEach((a:any) => {
+    const key = String(a.storageKey || a.id)
+    const previous = candidates.get(key)
+    if (!previous || (Date.parse(a.createdAt)||0) > (Date.parse(previous.createdAt)||0)) candidates.set(key, a)
+  })
+  const merged = [...candidates.entries()].filter(([key, a]) => {
+    const deletedAt = deletes[key]
+    return !deletedAt || (Date.parse(a.createdAt)||0) > (Date.parse(deletedAt)||0)
+  }).map(([,a])=>a).sort((a,b)=>(Date.parse(a.createdAt)||0)-(Date.parse(b.createdAt)||0))
+
+  return { ...newer, updatedAt: new Date(Math.max(localTime,remoteTime)).toISOString(), payload: { ...newer.payload, attachments: merged, attachmentLinkTombstones: deletes } }
 }
 
 export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> {
