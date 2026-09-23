@@ -3676,3 +3676,24 @@ button {
     z-index:73!important;
   }
 }
+
+
+/* v1.3.0 — Anniversary semantics + mobile calendar marker.
+   Mobile reuses the existing desktop top-right marker, but only the first item is visible. */
+@media(max-width:620px){
+  .anniversary-cell-icons{
+    display:flex!important;
+    top:7px!important;
+    right:5px!important;
+    gap:0!important;
+    font-size:11px!important;
+    max-width:14px!important;
+    overflow:hidden!important;
+  }
+  .anniversary-cell-icons > span:not(:first-child){
+    display:none!important;
+  }
+  .anniversary-overflow{
+    display:none!important;
+  }
+}

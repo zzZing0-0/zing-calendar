@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.2.6'
+const APP_VERSION = '1.3.0'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -176,7 +176,7 @@ const ANNIVERSARY_TYPES: { value: AnniversaryType; label: string; icon: string }
 ]
 function anniversaryIcon(type: AnniversaryType) { return ANNIVERSARY_TYPES.find(item => item.value === type)?.icon ?? '📌' }
 function emptyAnniversaryDraft(date: Date): AnniversaryDraft {
-  return { title:'', type:'birthday', calendar:'solar', year:'', month:date.getMonth()+1, day:date.getDate(), isLeapMonth:false, repeatYearly:true, notes:'' }
+  return { title:'', type:'birthday', calendar:'solar', year:String(date.getFullYear()), month:date.getMonth()+1, day:date.getDate(), isLeapMonth:false, repeatYearly:true, notes:'' }
 }
 function daysInMonth(year:number, month:number) { return new Date(year, month, 0).getDate() }
 function lunarOccurrence(ann: Anniversary, solarYear: number): Date | null {
@@ -1846,8 +1846,9 @@ function App() {
   }
   const saveAnniversary = () => {
     const title=anniversaryDraft.title.trim(); if (!title) return
+    if (anniversaryDraft.type!=='birthday' && !anniversaryDraft.year) return
     const now=new Date().toISOString()
-    const fields={ title, type:anniversaryDraft.type, calendar:anniversaryDraft.calendar, year:anniversaryDraft.year ? Number(anniversaryDraft.year) : undefined, month:anniversaryDraft.month, day:anniversaryDraft.day, isLeapMonth:anniversaryDraft.calendar==='lunar' ? anniversaryDraft.isLeapMonth : undefined, repeatYearly:anniversaryDraft.repeatYearly, notes:anniversaryDraft.notes.trim() || undefined, updatedAt:now }
+    const fields={ title, type:anniversaryDraft.type, calendar:anniversaryDraft.calendar, year:anniversaryDraft.year ? Number(anniversaryDraft.year) : undefined, month:anniversaryDraft.month, day:anniversaryDraft.day, isLeapMonth:anniversaryDraft.calendar==='lunar' ? anniversaryDraft.isLeapMonth : undefined, repeatYearly:anniversaryDraft.type==='birthday' ? true : anniversaryDraft.repeatYearly, notes:anniversaryDraft.notes.trim() || undefined, updatedAt:now }
     if (editingAnniversaryId) setAnniversaries(cur=>cur.map(a=>a.id===editingAnniversaryId ? {...a,...fields}:a))
     else setAnniversaries(cur=>[...cur,{id:crypto.randomUUID(),...fields,createdAt:now}])
     setAnniversaryEditorOpen(false); setEditingAnniversaryId(null)
@@ -3908,18 +3909,18 @@ function App() {
             <div className="editor-header"><div><span className="eyebrow">ANNIVERSARY</span><h2 id="anniversary-editor-title">{editingAnniversaryId ? '编辑纪念日' : '新建纪念日'}</h2></div><button className="close-button" type="button" onClick={() => setAnniversaryEditorOpen(false)}>×</button></div>
             <div className="editor-body">
               <label className="field"><span>名称</span><input value={anniversaryDraft.title} onChange={e=>setAnniversaryDraft(d=>({...d,title:e.target.value}))} placeholder="例如：小A生日" autoFocus /></label>
-              <div className="anniversary-type-grid">{ANNIVERSARY_TYPES.map(item=><button key={item.value} type="button" className={`anniversary-type-button${anniversaryDraft.type===item.value?' selected':''}`} onClick={()=>setAnniversaryDraft(d=>({...d,type:item.value}))}><span>{item.icon}</span>{item.label}</button>)}</div>
+              <div className="anniversary-type-grid">{ANNIVERSARY_TYPES.map(item=><button key={item.value} type="button" className={`anniversary-type-button${anniversaryDraft.type===item.value?' selected':''}`} onClick={()=>setAnniversaryDraft(d=>({...d,type:item.value,repeatYearly:item.value==='birthday'?true:d.repeatYearly,year:item.value!=='birthday'&&!d.year?String(today.getFullYear()):d.year}))}><span>{item.icon}</span>{item.label}</button>)}</div>
               <div className="segmented-control"><button type="button" className={anniversaryDraft.calendar==='solar'?'active':''} onClick={()=>setAnniversaryDraft(d=>({...d,calendar:'solar',isLeapMonth:false}))}>公历</button><button type="button" className={anniversaryDraft.calendar==='lunar'?'active':''} onClick={()=>setAnniversaryDraft(d=>({...d,calendar:'lunar'}))}>农历</button></div>
               <div className="anniversary-date-grid">
-                <label className="field"><span>年份（可选）</span><input type="number" min="1900" max="2200" value={anniversaryDraft.year} onChange={e=>setAnniversaryDraft(d=>({...d,year:e.target.value}))} placeholder="不填写也可以" /></label>
+                <label className="field"><span>年份{anniversaryDraft.type==='birthday'?'（可选）':''}</span><select value={anniversaryDraft.year} onChange={e=>setAnniversaryDraft(d=>({...d,year:e.target.value}))}>{anniversaryDraft.type==='birthday'&&<option value="">——</option>}{Array.from({length:today.getFullYear()+20-1900+1},(_,i)=>today.getFullYear()+20-i).map(year=><option key={year} value={year}>{year}年</option>)}</select></label>
                 <label className="field"><span>月</span><select value={anniversaryDraft.month} onChange={e=>setAnniversaryDraft(d=>({...d,month:Number(e.target.value)}))}>{Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}月</option>)}</select></label>
                 <label className="field"><span>日</span><select value={anniversaryDraft.day} onChange={e=>setAnniversaryDraft(d=>({...d,day:Number(e.target.value)}))}>{Array.from({length:30},(_,i)=><option key={i+1} value={i+1}>{i+1}日</option>)}</select></label>
               </div>
               {anniversaryDraft.calendar==='lunar' && <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.isLeapMonth} onChange={e=>setAnniversaryDraft(d=>({...d,isLeapMonth:e.target.checked}))} /> 闰月</label>}
-              <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.repeatYearly} onChange={e=>setAnniversaryDraft(d=>({...d,repeatYearly:e.target.checked}))} /> 每年重复</label>
+              {anniversaryDraft.type!=='birthday' && <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.repeatYearly} onChange={e=>setAnniversaryDraft(d=>({...d,repeatYearly:e.target.checked}))} /> 每年重复</label>}
               <label className="field"><span>备注</span><textarea rows={3} value={anniversaryDraft.notes} onChange={e=>setAnniversaryDraft(d=>({...d,notes:e.target.value}))} placeholder="可选" /></label>
             </div>
-            <div className="editor-actions">{editingAnniversaryId && <button className="danger-button" type="button" onClick={deleteAnniversary}>删除</button>}<button className="ghost-button" type="button" onClick={()=>setAnniversaryEditorOpen(false)}>取消</button><button className="save-button" type="button" onClick={saveAnniversary} disabled={!anniversaryDraft.title.trim()}>保存</button></div>
+            <div className="editor-actions">{editingAnniversaryId && <button className="danger-button" type="button" onClick={deleteAnniversary}>删除</button>}<button className="ghost-button" type="button" onClick={()=>setAnniversaryEditorOpen(false)}>取消</button><button className="save-button" type="button" onClick={saveAnniversary} disabled={!anniversaryDraft.title.trim() || (anniversaryDraft.type!=='birthday' && !anniversaryDraft.year)}>保存</button></div>
           </section>
         </div>
       )}
