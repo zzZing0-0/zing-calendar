@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '0.9.6.14'
+const APP_VERSION = '0.9.6.15'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -3245,22 +3245,13 @@ function App() {
           <div className="settings-group">
             <div className="settings-group-title"><h3>数据</h3></div>
             <div className="storage-card">
-              <div className="storage-total"><span>本设备缓存（IndexedDB）</span><strong>{formatBytes(storageStats.total)}</strong></div>
-              <div className="storage-breakdown">
-                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片缓存</i><b>{formatBytes(storageStats.images)}</b></button>
-                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音缓存</i><b>{formatBytes(storageStats.audio)}</b></button>
-                <span><i>结构化数据</i><b>{formatBytes(storageStats.data)}</b></span>
-              </div>
-              <small>这是当前设备实际缓存，不代表云端占用。</small>
-            </div>
-            <div className="storage-card">
               <div className="storage-total"><span>当前有效数据</span><strong>{formatBytes(storageStats.data + effectiveAttachmentBytes)}</strong></div>
               <div className="storage-breakdown">
-                <span><i>数据（GitHub）</i><b>{formatBytes(storageStats.data)}</b></span>
-                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片（B2）</i><b>{formatBytes(effectiveImageBytes)}</b></button>
-                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音（B2）</i><b>{formatBytes(effectiveAudioBytes)}</b></button>
+                <span><i>结构化数据（GitHub）</i><b>{formatBytes(storageStats.data)}</b></span>
+                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片（{allStoredAttachments.filter(item=>item.type==='image').length} 个 · B2）</i><b>{formatBytes(effectiveImageBytes)}</b></button>
+                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音（{allStoredAttachments.filter(item=>item.type==='audio').length} 个 · B2）</i><b>{formatBytes(effectiveAudioBytes)}</b></button>
               </div>
-              <small>任务 {tasks.length} · 记录 {journalEntries.length} · 纪念日 {anniversaries.length} · 有效附件 {allStoredAttachments.length}。B2 数字按当前有效引用计算，不含孤立对象或历史版本；实际桶占用以 Backblaze 为准。</small>
+              <small>任务 {tasks.length} · 记录 {journalEntries.length} · 纪念日 {anniversaries.length} · 有效附件 {allStoredAttachments.length}。本设备同时在 IndexedDB 保留数据与附件缓存，用于离线使用；这里显示的是当前有效内容，不代表 GitHub 仓库或 B2 桶的实际总占用。</small>
             </div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务与记录共用的标签。</small></span><b>›</b></button>
             <div className="backup-settings-block">
