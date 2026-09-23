@@ -3721,3 +3721,13 @@ button {
     box-sizing:border-box!important;
   }
 }
+
+
+/* v1.3.2 — continuous mobile week separators.
+   Each week is its own 7-cell grid, so the generic :nth-last-child rule
+   removes every week's bottom border. Restore that border explicitly. */
+@media(max-width:620px){
+  .continuous-week-grid .day-cell{
+    border-bottom:1px solid #edf0ed!important;
+  }
+}
