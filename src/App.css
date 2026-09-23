@@ -3711,7 +3711,7 @@ button {
   }
 
   .continuous-week-grid .multi-day-bar{
-    top:44px!important;
+    top:calc(44px + var(--lane-offset, 0px))!important;
     height:18px!important;
     margin-inline:4px!important;
     padding:2px 4px!important;
