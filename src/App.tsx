@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, migrateActiveAttachmentsToB2, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
+
+const APP_VERSION = '0.9.6.14'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1069,7 +1071,6 @@ function App() {
   const [githubSyncBusy, setGithubSyncBusy] = useState(false)
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
-  const [attachmentMigrationBusy, setAttachmentMigrationBusy] = useState(false)
   const [lastGithubSyncAt, setLastGithubSyncAt] = useState(() => localStorage.getItem('zing:lastGithubSyncAt') || '')
   const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
   const [backupRestoring, setBackupRestoring] = useState(false)
@@ -2413,6 +2414,9 @@ function App() {
   }, [tasks, journalEntries])
   const browsedAttachments = storageBrowser ? allStoredAttachments.filter(item => item.type === storageBrowser) : []
   const libraryImages = allStoredAttachments.filter(item => item.type === 'image')
+  const effectiveImageBytes = allStoredAttachments.filter(item => item.type === 'image').reduce((sum,item)=>sum+item.size,0)
+  const effectiveAudioBytes = allStoredAttachments.filter(item => item.type === 'audio').reduce((sum,item)=>sum+item.size,0)
+  const effectiveAttachmentBytes = effectiveImageBytes + effectiveAudioBytes
   const chooseLibraryImage = (source: Attachment) => {
     const linked: Attachment = { ...source, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
     if (imageLibraryTarget === 'task') {
@@ -2765,25 +2769,6 @@ function App() {
     }
     for (const key of b.keys()) if (!n.has(key)) deleted += 1
     return {label,added,updated,deleted,total:after.length}
-  }
-
-  const runAttachmentMigration = async () => {
-    if (!githubSyncToken.trim()) {
-      setGithubSyncMessageKind('error')
-      setGithubSyncMessage('请先输入本设备的 GitHub Token。')
-      return
-    }
-    setAttachmentMigrationBusy(true)
-    setGithubSyncMessageKind('working')
-    setGithubSyncMessage('正在检查并迁移有效附件…')
-    try {
-      const result = await migrateActiveAttachmentsToB2({ owner: githubSyncOwner.trim(), repo: githubSyncRepo.trim(), branch: githubSyncBranch.trim(), token: githubSyncToken.trim() })
-      setGithubSyncMessageKind(result.missing ? 'error' : 'success')
-      setGithubSyncMessage(`附件检查完成 · 有效 ${result.total} · B2 已有 ${result.alreadyInB2} · 本机迁移 ${result.migratedFromLocal} · GitHub 迁移 ${result.migratedFromGitHub} · 缺失 ${result.missing}`)
-    } catch (error) {
-      setGithubSyncMessageKind('error')
-      setGithubSyncMessage(error instanceof Error ? `附件迁移失败 · ${error.message}` : '附件迁移失败')
-    } finally { setAttachmentMigrationBusy(false) }
   }
 
   const runGithubSync = async () => {
@@ -3260,13 +3245,22 @@ function App() {
           <div className="settings-group">
             <div className="settings-group-title"><h3>数据</h3></div>
             <div className="storage-card">
-              <div className="storage-total"><span>本地存储</span><strong>{formatBytes(storageStats.total)}</strong></div>
+              <div className="storage-total"><span>本设备缓存（IndexedDB）</span><strong>{formatBytes(storageStats.total)}</strong></div>
               <div className="storage-breakdown">
-                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片</i><b>{formatBytes(storageStats.images)}</b></button>
-                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音</i><b>{formatBytes(storageStats.audio)}</b></button>
-                <span><i>数据</i><b>{formatBytes(storageStats.data)}</b></span>
+                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片缓存</i><b>{formatBytes(storageStats.images)}</b></button>
+                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音缓存</i><b>{formatBytes(storageStats.audio)}</b></button>
+                <span><i>结构化数据</i><b>{formatBytes(storageStats.data)}</b></span>
               </div>
-              <small>任务 {tasks.length} · 记录 {journalEntries.length} · 纪念日 {anniversaries.length} · 附件 {storageStats.attachmentCount}</small>
+              <small>这是当前设备实际缓存，不代表云端占用。</small>
+            </div>
+            <div className="storage-card">
+              <div className="storage-total"><span>当前有效数据</span><strong>{formatBytes(storageStats.data + effectiveAttachmentBytes)}</strong></div>
+              <div className="storage-breakdown">
+                <span><i>数据（GitHub）</i><b>{formatBytes(storageStats.data)}</b></span>
+                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片（B2）</i><b>{formatBytes(effectiveImageBytes)}</b></button>
+                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音（B2）</i><b>{formatBytes(effectiveAudioBytes)}</b></button>
+              </div>
+              <small>任务 {tasks.length} · 记录 {journalEntries.length} · 纪念日 {anniversaries.length} · 有效附件 {allStoredAttachments.length}。B2 数字按当前有效引用计算，不含孤立对象或历史版本；实际桶占用以 Backblaze 为准。</small>
             </div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务与记录共用的标签。</small></span><b>›</b></button>
             <div className="backup-settings-block">
@@ -3313,7 +3307,6 @@ function App() {
               {githubTokenSaved && <button className="github-sync-credential-remove" type="button" onClick={()=>void clearGitHubDeviceCredential().then(()=>{setGithubSyncToken('');setGithubTokenSaved(false);setGithubSyncMessage('已移除此设备保存的 Token');setGithubSyncMessageKind('idle')})}>移除此设备 Token</button>}
               {githubSyncMessage && <div className={`github-sync-status ${githubSyncMessageKind}`} role="status" aria-live="polite">{githubSyncMessage}</div>}
               <button className="github-sync-now" type="button" disabled={githubSyncBusy} onClick={()=>void runGithubSync()}>{githubSyncBusy?'正在同步…':'立即同步'}</button>
-              <button className="github-sync-now" type="button" disabled={githubSyncBusy || attachmentMigrationBusy} onClick={()=>void runAttachmentMigration()}>{attachmentMigrationBusy?'正在迁移…':'检查并迁移旧附件到 B2'}</button>
               {lastGithubSyncAt && <small className="github-sync-last">上次成功：{new Date(lastGithubSyncAt).toLocaleString()}</small>}
             </div>
           </section>
@@ -3501,7 +3494,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.6.8</span>
+        <span>Zing Calendar · v{APP_VERSION}</span>
       </footer>
 
       {selectedDate && (

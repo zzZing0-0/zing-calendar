@@ -738,37 +738,6 @@ function attachmentMetasFromBundle(bundle: SyncBundle): SyncAttachmentMeta[] {
   return [...byKey.values()]
 }
 
-function attachmentGitHubPath(storageKey: string): string {
-  // Legacy path used only as a one-time migration fallback from the pre-B2 transport.
-  return `zing/attachments/${encodeURIComponent(storageKey)}`
-}
-
-type AttachmentTransfer = { uploaded: number; downloaded: number; missing: number }
-
-async function readLegacyGitHubAttachment(config: GitHubSyncConfig, meta: SyncAttachmentMeta): Promise<Blob | undefined> {
-  const branch = config.branch?.trim() || 'main'
-  const path = attachmentGitHubPath(meta.storageKey)
-  const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path}?ref=${encodeURIComponent(branch)}`
-  const response = await fetch(url, { headers: githubHeaders(config) })
-  if (response.status === 404) return undefined
-  if (!response.ok) throw new Error(`旧附件迁移读取失败（HTTP ${response.status} · ${meta.storageKey}）`)
-  const file = await response.json() as GitHubContentsFile
-  if (!file.sha) return undefined
-  let content = file.encoding === 'base64' && file.content ? file.content : ''
-  if (!content) {
-    const blobUrl = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/git/blobs/${encodeURIComponent(file.sha)}`
-    const blobResponse = await fetch(blobUrl, { headers: githubHeaders(config) })
-    if (!blobResponse.ok) return undefined
-    const remoteBlob = await blobResponse.json() as { encoding?: string; content?: string }
-    if (remoteBlob.encoding !== 'base64' || !remoteBlob.content) return undefined
-    content = remoteBlob.content
-  }
-  const binary = atob(content.replace(/\s/g, ''))
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-  return new Blob([bytes], { type: meta.mimeType || 'application/octet-stream' })
-}
-
 type B2SignedUrl = { url: string }
 
 async function signedB2Url(storageKey: string, method: 'GET'|'HEAD'|'PUT'): Promise<string> {
@@ -819,8 +788,8 @@ async function writeB2Attachment(meta: SyncAttachmentMeta, blob: Blob): Promise<
   if (!response.ok) throw new Error(`B2 附件上传失败（HTTP ${response.status} · ${meta.storageKey}）`)
 }
 
-async function syncB2Attachments(config: GitHubSyncConfig, bundle: SyncBundle): Promise<AttachmentTransfer> {
-  const result: AttachmentTransfer = { uploaded: 0, downloaded: 0, missing: 0 }
+async function syncB2Attachments(bundle: SyncBundle): Promise<{ uploaded: number; downloaded: number; missing: number }> {
+  const result = { uploaded: 0, downloaded: 0, missing: 0 }
   const metas = attachmentMetasFromBundle(bundle)
   for (const meta of metas) {
     let local = await getAttachmentBlob(meta.storageKey)
@@ -836,49 +805,12 @@ async function syncB2Attachments(config: GitHubSyncConfig, bundle: SyncBundle): 
       continue
     }
 
-    if (!local) {
-      // One-time bridge for v0.9.6.3–v0.9.6.7: recover the immutable binary from
-      // the old GitHub attachment path, cache it locally, then move it into B2.
-      local = await readLegacyGitHubAttachment(config, meta)
-      if (local) await putAttachmentBlob(meta.storageKey, local)
-    }
     if (local) {
       await writeB2Attachment(meta, local)
       result.uploaded += 1
     } else {
       result.missing += 1
     }
-  }
-  return result
-}
-
-export type AttachmentMigrationResult = {
-  total: number
-  alreadyInB2: number
-  migratedFromLocal: number
-  migratedFromGitHub: number
-  missing: number
-}
-
-export async function migrateActiveAttachmentsToB2(config: GitHubSyncConfig): Promise<AttachmentMigrationResult> {
-  if (!config.owner.trim() || !config.repo.trim()) throw new Error('GitHub 数据仓库信息不完整')
-  if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
-  const metas = attachmentMetasFromBundle(await createSyncBundle())
-  const result: AttachmentMigrationResult = { total: metas.length, alreadyInB2: 0, migratedFromLocal: 0, migratedFromGitHub: 0, missing: 0 }
-  for (const meta of metas) {
-    if (await b2AttachmentExists(meta.storageKey)) { result.alreadyInB2 += 1; continue }
-    let blob = await getAttachmentBlob(meta.storageKey)
-    let source: 'local' | 'github' = 'local'
-    if (!blob) {
-      blob = await readLegacyGitHubAttachment(config, meta)
-      source = 'github'
-      if (blob) await putAttachmentBlob(meta.storageKey, blob)
-    }
-    if (!blob) { result.missing += 1; continue }
-    await writeB2Attachment(meta, blob)
-    if (!(await b2AttachmentExists(meta.storageKey))) throw new Error(`B2 迁移验证失败（${meta.storageKey}）`)
-    if (source === 'github') result.migratedFromGitHub += 1
-    else result.migratedFromLocal += 1
   }
   return result
 }
@@ -922,10 +854,9 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
     const writeResult = await writeGitHubBundleFile(config, mergedLocal, remote.sha)
 
     if (writeResult === 'ok') {
-      // Binary files are immutable by storageKey and now live in private Backblaze B2.
-      // GitHub remains the structured-data ledger; legacy GitHub binaries are read only
-      // as a one-time migration fallback when B2 does not yet contain the object.
-      const attachmentTransfer = await syncB2Attachments(config, mergedLocal)
+      // Binary files are immutable by storageKey and live in private Backblaze B2.
+      // GitHub is the structured-data ledger only; attachment binaries are no longer read from GitHub.
+      const attachmentTransfer = await syncB2Attachments(mergedLocal)
       const finishedAt = new Date().toISOString()
       const state = await loadSyncState()
       await saveSyncState({ ...state, lastSuccessfulSyncAt: finishedAt })
