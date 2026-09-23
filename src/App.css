@@ -3351,3 +3351,27 @@ button {
   .status-links a{font-size:11px}
   .status-version{font-size:10px}
 }
+
+
+/* v0.9.6.21 — focused mobile search + mobile-only settings cleanup */
+.brand-mark-mobile{display:none}
+.mobile-search-backdrop{display:none}
+
+@media(max-width:620px){
+  /* Mobile has no greeting in the header, so its greeting setting is intentionally hidden too. */
+  .personalization-settings{display:none}
+
+  /* Use a larger, immediately recognizable search launcher without changing desktop branding. */
+  .brand-mark{width:44px!important;height:44px!important;min-width:44px!important;font-size:22px!important;background:#fff}
+  .brand-mark-desktop{display:none}
+  .brand-mark-mobile{display:inline;line-height:1}
+
+  /* Search is a focused overlay: blur the page beneath it, while keeping the launcher and field crisp. */
+  .mobile-search-backdrop{
+    display:block;position:fixed;inset:0;z-index:68;border:0;padding:0;
+    background:rgba(247,249,247,.28);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+  }
+  .global-search-wrap{left:72px!important;top:19px!important;z-index:69}
+  .global-search-wrap input{box-shadow:0 10px 30px rgba(34,43,39,.14)}
+  .search-panel{z-index:71}
+}

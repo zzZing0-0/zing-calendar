@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '0.9.6.20'
+const APP_VERSION = '0.9.6.21'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2894,12 +2894,13 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-block">
-          <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}>Z</button>
+          <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}><span className="brand-mark-desktop">Z</span><span className="brand-mark-mobile" aria-hidden="true">🔍</span></button>
           <div className="brand-copy">
             <p>{greeting}</p>
           </div>
         </div>
 
+        {mobileSearchVisible && <button className="mobile-search-backdrop" type="button" aria-label="关闭搜索" onClick={()=>{setMobileSearchVisible(false);setSearchOpen(false)}} />}
         <div className={`global-search-wrap${mobileSearchVisible ? ' mobile-open' : ''}`} ref={searchWrapRef}>
           <span className="global-search-icon">⌕</span>
           <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、纪念日；#标签…" aria-label="全局搜索" />
@@ -3253,7 +3254,7 @@ function App() {
         <section className="settings-page">
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
 
-          <div className="settings-group">
+          <div className="settings-group personalization-settings">
             <div className="settings-group-title"><h3>个人化</h3></div>
             <label className="setting-row">
               <span><strong>顶部问候语</strong><small>显示在左上角品牌标记旁。</small></span>
@@ -3539,8 +3540,8 @@ function App() {
 
       <footer className="status-line">
         <span className="status-links" aria-label="基础设施快捷入口">
-          <a href="https://github.com/zzZing0-0/zing-calendar" target="_blank" rel="noreferrer">GitHub</a><i aria-hidden="true">·</i>
-          <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Vercel</a><i aria-hidden="true">·</i>
+          <a href="https://github.com/zzZing0-0/zing-calendar" target="_blank" rel="noreferrer">GitHub</a><i aria-hidden="true">｜</i>
+          <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Vercel</a><i aria-hidden="true">｜</i>
           <a href="https://secure.backblaze.com/b2_buckets.htm" target="_blank" rel="noreferrer">Backblaze B2</a>
         </span>
         <span className="status-version">Zing Calendar · v{APP_VERSION}</span>
