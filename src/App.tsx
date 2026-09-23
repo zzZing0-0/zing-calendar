@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '0.9.6.16'
+const APP_VERSION = '0.9.6.17'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -101,7 +101,7 @@ type AnniversaryDraft = {
 }
 
 type TagScope = 'task' | 'journal' | 'both'
-type Tag = { id: string; name: string; color: string; scope: TagScope; sortOrder?: number; archived?: boolean; archivedAt?: string; system?: boolean; systemKind?: 'default' | 'import-source'; sourceKey?: string }
+type Tag = { id: string; name: string; color: string; scope: TagScope; sortOrder?: number; archived?: boolean; archivedAt?: string; system?: boolean; systemKind?: 'default' | 'import-source'; sourceKey?: string; updatedAt: string }
 
 type JournalDraft = {
   date: string
@@ -147,17 +147,25 @@ const MOODS: { value: MoodLevel; label: string }[] = [
 ]
 const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
-const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true, systemKind: 'default' }
+const LEGACY_TAG_MIGRATION_AT = '2026-09-23T00:00:00.000Z'
+const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true, systemKind: 'default', updatedAt: LEGACY_TAG_MIGRATION_AT }
 const IMPORT_SOURCE_TAG_PREFIX = 'system-import-source:'
 // Keep the legacy `...:dida` id for the umbrella tag so existing imported tasks remain compatible.
 const EXTERNAL_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida`
 const DIDA_APP_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida-list`
 const GENERIC_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}generic`
-const EXTERNAL_SOURCE_TAG: Tag = { id: EXTERNAL_SOURCE_TAG_ID, name: '从外部导入', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'external' }
-const DIDA_APP_SOURCE_TAG: Tag = { id: DIDA_APP_SOURCE_TAG_ID, name: '滴答清单', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'dida' }
-const GENERIC_SOURCE_TAG: Tag = { id: GENERIC_SOURCE_TAG_ID, name: '通用', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'generic' }
+const EXTERNAL_SOURCE_TAG: Tag = { id: EXTERNAL_SOURCE_TAG_ID, name: '从外部导入', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'external', updatedAt: LEGACY_TAG_MIGRATION_AT }
+const DIDA_APP_SOURCE_TAG: Tag = { id: DIDA_APP_SOURCE_TAG_ID, name: '滴答清单', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'dida', updatedAt: LEGACY_TAG_MIGRATION_AT }
+const GENERIC_SOURCE_TAG: Tag = { id: GENERIC_SOURCE_TAG_ID, name: '通用', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'generic', updatedAt: LEGACY_TAG_MIGRATION_AT }
 function isImportSourceTagId(id:string) { return id.startsWith(IMPORT_SOURCE_TAG_PREFIX) }
 function isImportSourceTag(tag:Tag) { return tag.systemKind === 'import-source' || isImportSourceTagId(tag.id) }
+function normalizeTags(rows: Tag[]): Tag[] { return rows.map(tag => tag.updatedAt ? tag : { ...tag, updatedAt: LEGACY_TAG_MIGRATION_AT }) }
+const REQUIRED_SYSTEM_TAGS: Tag[] = [DEFAULT_TAG, EXTERNAL_SOURCE_TAG, DIDA_APP_SOURCE_TAG, GENERIC_SOURCE_TAG]
+function ensureRequiredSystemTags(rows: Tag[]): Tag[] {
+  const normalized = normalizeTags(rows)
+  const existing = new Set(normalized.map(tag => tag.id))
+  return [...REQUIRED_SYSTEM_TAGS.filter(tag => !existing.has(tag.id)), ...normalized]
+}
 const TAG_COLORS = ['#789c86', '#d3b64b', '#d88b48', '#c8665f', '#8798bd', '#9b83ad', '#789da3', '#a58d72']
 
 const ANNIVERSARY_TYPES: { value: AnniversaryType; label: string; icon: string }[] = [
@@ -1075,6 +1083,7 @@ function App() {
   const [githubSyncBusy, setGithubSyncBusy] = useState(false)
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
+  const [autoSyncToast, setAutoSyncToast] = useState('')
   const [lastGithubSyncAt, setLastGithubSyncAt] = useState(() => localStorage.getItem('zing:lastGithubSyncAt') || '')
   const [localWriteRevision, setLocalWriteRevision] = useState(0)
   const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
@@ -1356,8 +1365,11 @@ function App() {
     })
     loadTags<Tag>().then(rows => {
       if (!active) return
-      const hasDefault = rows.some(tag => tag.id === DEFAULT_TAG_ID)
-      setTags(hasDefault ? rows : [DEFAULT_TAG, ...rows])
+      const normalizedRows = normalizeTags(rows)
+      const healedRows = ensureRequiredSystemTags(normalizedRows)
+      // System provenance tags are schema-level records. Recreate them if an older
+      // sync/clear path dropped their definitions, while preserving task tagIds.
+      setTags(healedRows)
       setTagsHydrated(true)
     }).catch(error => {
       console.error('Failed to load tags', error)
@@ -1942,13 +1954,13 @@ function App() {
   const addTag = () => {
     const name = newTagName.trim()
     if (!name || tags.some(tag => tag.name.toLowerCase() === name.toLowerCase())) return
-    setTags(current => [...current, { id: crypto.randomUUID(), name, color: newTagColor, scope: newTagScope, sortOrder: Math.max(-1, ...current.filter(tag => !tag.system).map(tag => tag.sortOrder ?? 0)) + 1 }])
+    setTags(current => [...current, { id: crypto.randomUUID(), name, color: newTagColor, scope: newTagScope, sortOrder: Math.max(-1, ...current.filter(tag => !tag.system).map(tag => tag.sortOrder ?? 0)) + 1, updatedAt: new Date().toISOString() }])
     setNewTagName('')
   }
 
   const setTagArchived = (id: string, archived: boolean) => {
     const archivedAt = archived ? toDateKey(new Date()) : undefined
-    setTags(current => current.map(tag => tag.id === id ? { ...tag, archived, archivedAt } : tag))
+    setTags(current => current.map(tag => tag.id === id ? { ...tag, archived, archivedAt, updatedAt: new Date().toISOString() } : tag))
   }
 
   const deleteTag = (id: string) => {
@@ -2002,7 +2014,7 @@ function App() {
     if (targetIndex<0) return
     ids.splice(position==='after' ? targetIndex+1 : targetIndex,0,dragId)
     const order=new Map(ids.map((id,index)=>[id,index]))
-    setTags(current=>current.map(tag=>order.has(tag.id)?{...tag,sortOrder:order.get(tag.id)}:tag))
+    setTags(current=>current.map(tag=>order.has(tag.id)?{...tag,sortOrder:order.get(tag.id),updatedAt:new Date().toISOString()}:tag))
   }
 
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
@@ -2483,7 +2495,7 @@ function App() {
         category.split(/[;,，、|]/).map(v=>v.trim()).filter(Boolean).forEach(name=>{
           const key=name.toLowerCase(); let tag=tagByName.get(key)
           if(!tag){
-            tag={id:`import:generic:tag:${crypto.randomUUID()}`,name,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'task'}
+            tag={id:`import:generic:tag:${crypto.randomUUID()}`,name,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'task',updatedAt:new Date().toISOString()}
             tagByName.set(key,tag); importedTags.push(tag)
           }
           ordinaryTagIds.push(tag.id)
@@ -2551,7 +2563,7 @@ function App() {
           const key=name.toLowerCase()
           let tag=tagByName.get(key)
           if(!tag){
-            tag={id:`import:dida:tag:${crypto.randomUUID()}`,name,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'task'}
+            tag={id:`import:dida:tag:${crypto.randomUUID()}`,name,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'task',updatedAt:new Date().toISOString()}
             tagByName.set(key,tag); importedTags.push(tag)
           }
           ordinaryTagIds.push(tag.id)
@@ -2748,7 +2760,7 @@ function App() {
       if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods)
-      setTags(backupPreview.tags); setAnniversaries(backupPreview.anniversaries)
+      setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries)
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
       if (s.dateFormat) setDateFormat(s.dateFormat)
@@ -2807,11 +2819,20 @@ function App() {
       setGithubSyncMessage(result.initializedRemote
         ? `✓ 首次同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件`
         : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
+      if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
       const [nextTasks,nextJournals,nextMoods,nextTags,nextAnniversaries] = await Promise.all([
         loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
       ])
-      const hydratedTags = nextTags.some(tag=>tag.id===DEFAULT_TAG_ID)?nextTags:[DEFAULT_TAG,...nextTags]
+      const normalizedNextTags = normalizeTags(nextTags)
+      const hydratedTags = ensureRequiredSystemTags(normalizedNextTags)
+      const missingSystemTags = hydratedTags.filter(tag => !normalizedNextTags.some(existing => existing.id === tag.id))
+      if (missingSystemTags.length) {
+        // Persist self-healed schema tags and mark them as upserts so the next
+        // GitHub write repairs the cloud tag store instead of losing them again.
+        await saveTags(hydratedTags)
+        await recordSyncDiff('tag', normalizedNextTags, hydratedTags)
+      }
       if (!automatic) setGithubSyncSummary({
         rows: [
           syncRows(beforeTasks,nextTasks,'task','任务'),
@@ -2845,6 +2866,12 @@ function App() {
       setGithubSyncBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (!autoSyncToast) return
+    const timer = window.setTimeout(() => setAutoSyncToast(''), 2800)
+    return () => window.clearTimeout(timer)
+  }, [autoSyncToast])
 
   useEffect(() => {
     if (localWriteRevision === 0 || githubSyncBusy || !githubSyncToken.trim()) return
@@ -3498,6 +3525,8 @@ function App() {
         </div>
       )}
 
+      {autoSyncToast && <div className="auto-sync-toast" role="status" aria-live="polite">{autoSyncToast}</div>}
+
       <footer className="status-line">
         <span>Zing Calendar · v{APP_VERSION}</span>
       </footer>
@@ -3766,14 +3795,14 @@ function App() {
                   <div className="tag-color-control">
                     <button type="button" className="tag-current-color" style={{ background: tag.color }} onClick={() => setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={`修改 ${tag.name} 的颜色`} />
                     {openTagColorId === tag.id && <div className="tag-color-popover">
-                      <div className="tag-popover-palette">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-row-color${tag.color === color ? ' active' : ''}`} style={{ background: color }} onClick={() => { setTags(current => current.map(item => item.id === tag.id ? { ...item, color } : item)); setOpenTagColorId(null) }} aria-label={`设为 ${color}`} />)}</div>
-                      <div className="tag-custom-color"><span>自定义</span><input type="color" value={tag.color} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, color: e.target.value } : item))} /></div>
+                      <div className="tag-popover-palette">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-row-color${tag.color === color ? ' active' : ''}`} style={{ background: color }} onClick={() => { setTags(current => current.map(item => item.id === tag.id ? { ...item, color, updatedAt: new Date().toISOString() } : item)); setOpenTagColorId(null) }} aria-label={`设为 ${color}`} />)}</div>
+                      <div className="tag-custom-color"><span>自定义</span><input type="color" value={tag.color} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, color: e.target.value, updatedAt: new Date().toISOString() } : item))} /></div>
                     </div>}
                   </div>
                   <div className="tag-manage-main">
-                    <input value={tag.name} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value } : item))} />
+                    <input value={tag.name} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value, updatedAt: new Date().toISOString() } : item))} />
                   </div>
-                  <select value={tag.scope} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope } : item))}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select>
+                  <select value={tag.scope} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope, updatedAt: new Date().toISOString() } : item))}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select>
                   <div className="tag-row-actions"><button type="button" className="archive-button" onClick={() => setTagArchived(tag.id,!tag.archived)}>{tag.archived?'取消归档':'归档'}</button><button type="button" className="delete-button compact-delete" onClick={() => deleteTag(tag.id)}>删除</button></div>
                 </div>
               })}</div>
@@ -3830,11 +3859,11 @@ function App() {
 
               {viewingTask.deadline && <section className="task-view-section"><h3>截止日期</h3><p>{viewingTask.deadline}</p></section>}
 
-              {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).length>0 && (
+              {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID).length>0 && (
                 <section className="task-view-section">
                   <h3>标签</h3>
                   <div className="entry-tags task-view-tags">
-                    {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).map(id=>{
+                    {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID).map(id=>{
                       const tag=tags.find(item=>item.id===id)
                       return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null
                     })}

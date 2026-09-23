@@ -3292,3 +3292,8 @@ button {
   display:flex;
 }
 .selectable-library-grid .library-pick-item > .storage-image-item{flex:1}
+
+/* Lightweight feedback for the once-daily first-write auto sync. */
+.auto-sync-toast{position:fixed;right:24px;bottom:24px;z-index:1200;padding:10px 14px;border-radius:12px;background:rgba(43,55,48,.94);color:#fff;font-size:13px;line-height:1.35;box-shadow:0 8px 28px rgba(0,0,0,.16);pointer-events:none;animation:autoSyncToastIn .18s ease-out}
+@keyframes autoSyncToastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:720px){.auto-sync-toast{left:50%;right:auto;bottom:82px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);text-align:center}@keyframes autoSyncToastIn{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}}
