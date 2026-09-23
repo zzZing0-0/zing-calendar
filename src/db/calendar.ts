@@ -852,6 +852,37 @@ async function syncB2Attachments(config: GitHubSyncConfig, bundle: SyncBundle): 
   return result
 }
 
+export type AttachmentMigrationResult = {
+  total: number
+  alreadyInB2: number
+  migratedFromLocal: number
+  migratedFromGitHub: number
+  missing: number
+}
+
+export async function migrateActiveAttachmentsToB2(config: GitHubSyncConfig): Promise<AttachmentMigrationResult> {
+  if (!config.owner.trim() || !config.repo.trim()) throw new Error('GitHub 数据仓库信息不完整')
+  if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
+  const metas = attachmentMetasFromBundle(await createSyncBundle())
+  const result: AttachmentMigrationResult = { total: metas.length, alreadyInB2: 0, migratedFromLocal: 0, migratedFromGitHub: 0, missing: 0 }
+  for (const meta of metas) {
+    if (await b2AttachmentExists(meta.storageKey)) { result.alreadyInB2 += 1; continue }
+    let blob = await getAttachmentBlob(meta.storageKey)
+    let source: 'local' | 'github' = 'local'
+    if (!blob) {
+      blob = await readLegacyGitHubAttachment(config, meta)
+      source = 'github'
+      if (blob) await putAttachmentBlob(meta.storageKey, blob)
+    }
+    if (!blob) { result.missing += 1; continue }
+    await writeB2Attachment(meta, blob)
+    if (!(await b2AttachmentExists(meta.storageKey))) throw new Error(`B2 迁移验证失败（${meta.storageKey}）`)
+    if (source === 'github') result.migratedFromGitHub += 1
+    else result.migratedFromLocal += 1
+  }
+  return result
+}
+
 export type GitHubSyncResult = {
   initializedRemote: boolean
   pulled: { upserts: number; deletes: number }

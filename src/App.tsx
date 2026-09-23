@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, migrateActiveAttachmentsToB2, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
@@ -1069,6 +1069,7 @@ function App() {
   const [githubSyncBusy, setGithubSyncBusy] = useState(false)
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
+  const [attachmentMigrationBusy, setAttachmentMigrationBusy] = useState(false)
   const [lastGithubSyncAt, setLastGithubSyncAt] = useState(() => localStorage.getItem('zing:lastGithubSyncAt') || '')
   const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
   const [backupRestoring, setBackupRestoring] = useState(false)
@@ -2766,6 +2767,25 @@ function App() {
     return {label,added,updated,deleted,total:after.length}
   }
 
+  const runAttachmentMigration = async () => {
+    if (!githubSyncToken.trim()) {
+      setGithubSyncMessageKind('error')
+      setGithubSyncMessage('请先输入本设备的 GitHub Token。')
+      return
+    }
+    setAttachmentMigrationBusy(true)
+    setGithubSyncMessageKind('working')
+    setGithubSyncMessage('正在检查并迁移有效附件…')
+    try {
+      const result = await migrateActiveAttachmentsToB2({ owner: githubSyncOwner.trim(), repo: githubSyncRepo.trim(), branch: githubSyncBranch.trim(), token: githubSyncToken.trim() })
+      setGithubSyncMessageKind(result.missing ? 'error' : 'success')
+      setGithubSyncMessage(`附件检查完成 · 有效 ${result.total} · B2 已有 ${result.alreadyInB2} · 本机迁移 ${result.migratedFromLocal} · GitHub 迁移 ${result.migratedFromGitHub} · 缺失 ${result.missing}`)
+    } catch (error) {
+      setGithubSyncMessageKind('error')
+      setGithubSyncMessage(error instanceof Error ? `附件迁移失败 · ${error.message}` : '附件迁移失败')
+    } finally { setAttachmentMigrationBusy(false) }
+  }
+
   const runGithubSync = async () => {
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
       setGithubSyncMessageKind('error')
@@ -3293,6 +3313,7 @@ function App() {
               {githubTokenSaved && <button className="github-sync-credential-remove" type="button" onClick={()=>void clearGitHubDeviceCredential().then(()=>{setGithubSyncToken('');setGithubTokenSaved(false);setGithubSyncMessage('已移除此设备保存的 Token');setGithubSyncMessageKind('idle')})}>移除此设备 Token</button>}
               {githubSyncMessage && <div className={`github-sync-status ${githubSyncMessageKind}`} role="status" aria-live="polite">{githubSyncMessage}</div>}
               <button className="github-sync-now" type="button" disabled={githubSyncBusy} onClick={()=>void runGithubSync()}>{githubSyncBusy?'正在同步…':'立即同步'}</button>
+              <button className="github-sync-now" type="button" disabled={githubSyncBusy || attachmentMigrationBusy} onClick={()=>void runAttachmentMigration()}>{attachmentMigrationBusy?'正在迁移…':'检查并迁移旧附件到 B2'}</button>
               {lastGithubSyncAt && <small className="github-sync-last">上次成功：{new Date(lastGithubSyncAt).toLocaleString()}</small>}
             </div>
           </section>
