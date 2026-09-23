@@ -394,6 +394,30 @@ export type SyncMergePlan = {
   ignoredRemoteTombstones: number
 }
 
+
+function mergeConcurrentAttachments(localRecord: SyncEntityRecord, remoteRecord: SyncEntityRecord): SyncEntityRecord {
+  if (!['task','journal'].includes(localRecord.entityType) || localRecord.entityType !== remoteRecord.entityType) {
+    return (Date.parse(remoteRecord.updatedAt)||0) > (Date.parse(localRecord.updatedAt)||0) ? remoteRecord : localRecord
+  }
+  const localTime = Date.parse(localRecord.updatedAt) || 0
+  const remoteTime = Date.parse(remoteRecord.updatedAt) || 0
+  const newer = remoteTime > localTime ? remoteRecord : localRecord
+  const localItems = Array.isArray(localRecord.payload?.attachments) ? localRecord.payload.attachments : []
+  const remoteItems = Array.isArray(remoteRecord.payload?.attachments) ? remoteRecord.payload.attachments : []
+  const lm = new Map(localItems.map((a:any)=>[String(a.id||a.storageKey),a]))
+  const rm = new Map(remoteItems.map((a:any)=>[String(a.id||a.storageKey),a]))
+  const merged:any[] = []
+  const keys = new Set([...lm.keys(), ...rm.keys()])
+  keys.forEach(key => {
+    const l:any=lm.get(key), r:any=rm.get(key)
+    if (l && r) { merged.push((Date.parse(r.createdAt)||0) > (Date.parse(l.createdAt)||0) ? r : l); return }
+    if (l) { if ((Date.parse(l.createdAt)||0) > remoteTime) merged.push(l); return }
+    if (r) { if ((Date.parse(r.createdAt)||0) > localTime) merged.push(r) }
+  })
+  merged.sort((a,b)=>(Date.parse(a.createdAt)||0)-(Date.parse(b.createdAt)||0))
+  return { ...newer, updatedAt: new Date(Math.max(localTime,remoteTime)).toISOString(), payload: { ...newer.payload, attachments: merged } }
+}
+
 export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> {
   if (remote.protocolVersion !== 1) throw new Error(`不支持的同步协议版本：${remote.protocolVersion}`)
   const local = await createSyncBundle()
@@ -413,9 +437,14 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
     const localTime = localRecord ? (Date.parse(localRecord.updatedAt) || 0) : 0
     const deleteTime = localDelete ? (Date.parse(localDelete.deletedAt) || 0) : 0
 
-    // Last-write-wins at record level for v0.9.2. A newer local deletion wins
-    // over an older remote record, preventing deleted items from resurrecting.
-    if (remoteTime > Math.max(localTime, deleteTime)) upserts.push(remoteRecord)
+    // Task/journal attachment links are merged independently from the record-level LWW.
+    // If one device removed an old attachment while another added a newer one, the old
+    // link stays removed and the new link survives. The binary itself is immutable/shared.
+    if (localRecord && (remoteRecord.entityType === 'task' || remoteRecord.entityType === 'journal') && deleteTime <= Math.max(localTime, remoteTime)) {
+      const merged = mergeConcurrentAttachments(localRecord, remoteRecord)
+      if (JSON.stringify(merged.payload) !== JSON.stringify(localRecord.payload)) upserts.push(merged)
+      else ignoredRemoteRecords += 1
+    } else if (remoteTime > Math.max(localTime, deleteTime)) upserts.push(remoteRecord)
     else ignoredRemoteRecords += 1
   }
 
@@ -821,13 +850,15 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
     }
 
     const mergedLocal = await createSyncBundle()
-    // Attachment binaries live as separate files in the same private data repo.
-    // This keeps the JSON bundle small and lets a new browser origin/device restore
-    // images and audio before React rehydrates the merged records.
-    const attachmentTransfer = await syncGitHubAttachments(config, mergedLocal)
+    // Commit the bundle first. Uploading separate attachment files also advances the
+    // Git branch HEAD; doing those writes before the SHA-guarded bundle PUT made our
+    // own attachment upload look like a concurrent-device conflict.
     const writeResult = await writeGitHubBundleFile(config, mergedLocal, remote.sha)
 
     if (writeResult === 'ok') {
+      // Binary files are immutable by storageKey, so they can safely follow the
+      // successful metadata commit without invalidating its optimistic-lock SHA.
+      const attachmentTransfer = await syncGitHubAttachments(config, mergedLocal)
       const finishedAt = new Date().toISOString()
       const state = await loadSyncState()
       await saveSyncState({ ...state, lastSuccessfulSyncAt: finishedAt })

@@ -18,6 +18,8 @@ type CalendarDay = {
   inCurrentMonth: boolean
 }
 
+type AttachmentLinkTombstones = Record<string, string>
+
 type Task = {
   id: string
   title: string
@@ -36,6 +38,7 @@ type Task = {
   originalDate?: string
   postponeHistory?: PostponeEvent[]
   attachments?: Attachment[]
+  attachmentLinkTombstones?: AttachmentLinkTombstones
   tagIds?: string[]
   recurrence?: RecurrenceRule
   recurrenceExceptions?: Record<string, RecurrenceException>
@@ -63,6 +66,7 @@ type JournalEntry = {
   updatedAt: string
   tagIds?: string[]
   attachments?: Attachment[]
+  attachmentLinkTombstones?: AttachmentLinkTombstones
 }
 
 type AnniversaryType = 'birthday' | 'anniversary' | 'important' | 'other'
@@ -1034,6 +1038,7 @@ function App() {
   const [showEndedTasks, setShowEndedTasks] = useState(() => localStorage.getItem('zing:showEndedTasks') !== 'false')
   const [storageStats, setStorageStats] = useState({ total:0, images:0, audio:0, data:0, attachmentCount:0 })
   const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
+  const [imageLibraryTarget, setImageLibraryTarget] = useState<'task'|'journal'|null>(null)
   const [backupExporting, setBackupExporting] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
   const [githubSyncOpen, setGithubSyncOpen] = useState(false)
@@ -1228,7 +1233,7 @@ function App() {
   }
 
   const removeJournalAttachment = async (attachment: Attachment) => {
-    await deleteAttachmentBlob(attachment.storageKey)
+    // Unlink only. The same binary may be referenced by another task/journal.
     setJournalDraft(current => ({ ...current, attachments: current.attachments.filter(item => item.id !== attachment.id) }))
   }
 
@@ -1837,7 +1842,7 @@ function App() {
   }
 
   const removeTaskImage = async (attachment: Attachment) => {
-    await deleteAttachmentBlob(attachment.storageKey)
+    // Unlink only. Shared library images keep one binary and can be referenced many times.
     setDraft(current => ({ ...current, attachments: current.attachments.filter(item => item.id !== attachment.id) }))
   }
 
@@ -2382,6 +2387,18 @@ function App() {
     return [...seen.values()].sort((a,b) => b.createdAt.localeCompare(a.createdAt))
   }, [tasks, journalEntries])
   const browsedAttachments = storageBrowser ? allStoredAttachments.filter(item => item.type === storageBrowser) : []
+  const libraryImages = allStoredAttachments.filter(item => item.type === 'image')
+  const chooseLibraryImage = (source: Attachment) => {
+    const linked: Attachment = { ...source, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
+    if (imageLibraryTarget === 'task') {
+      setDraft(current => current.attachments.some(a => a.storageKey === source.storageKey) ? current : { ...current, attachments: [...current.attachments, linked] })
+    } else if (imageLibraryTarget === 'journal') {
+      setJournalDraft(current => {
+        if (current.attachments.some(a => a.storageKey === source.storageKey) || current.attachments.filter(a => a.type === 'image').length >= 9) return current
+        return { ...current, attachments: [...current.attachments, linked] }
+      })
+    }
+  }
 
   const openExternalImport = () => {
     setExternalImportOpen(true); setExternalImportStage('sources'); setDidaImportPreview(null); setExternalImportMessage('')
@@ -3439,7 +3456,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.6.4</span>
+        <span>Zing Calendar · v0.9.6.5</span>
       </footer>
 
       {selectedDate && (
@@ -3836,7 +3853,7 @@ function App() {
               <div className="field full-field"><span>事件影响</span><div className="impact-picker">{IMPACTS.map(impact => <button key={impact} type="button" className={`impact-choice impact-${impact}${journalDraft.impact === impact ? ' active' : ''}`} onClick={() => setJournalDraft(current => ({ ...current, impact }))}>{impact > 0 ? '+' : ''}{impact}</button>)}</div></div>
               <label className="field full-field"><span>正文 · Markdown</span><textarea rows={10} value={journalDraft.content} onChange={event => setJournalDraft(current => ({ ...current, content: event.target.value }))} placeholder="正文可选。支持标题、粗体、斜体、删除线、列表、引用、行内代码、分隔线和链接。" /></label>
               <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />#{tag.name}</button>)}</div></div>
-              <div className="field full-field journal-image-field"><span>图片 · 最多 9 张</span><input className="journal-file-input" type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} />
+              <div className="field full-field journal-image-field"><span>图片 · 最多 9 张</span><div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input className="journal-file-input" type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('journal')} disabled={journalDraft.attachments.filter(a=>a.type==='image').length>=9}>▧ 从图片库选择</button></div>
                 {journalDraft.attachments.some(a => a.type === 'image') && <div className="attachment-list">{journalDraft.attachments.filter(a => a.type === 'image').map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeJournalAttachment(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
                 <small>自动压缩后保存 · 单张约 1 MB · 最多 9 张</small>
               </div>
@@ -3944,7 +3961,7 @@ function App() {
 
               <div className="field full-field attachment-field">
                 <span>图片附件</span>
-                <label className="attachment-add">＋ 添加图片<input type="file" accept="image/*" multiple onChange={event => { void addTaskImages(event.target.files); event.currentTarget.value = '' }} /></label>
+                <div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input type="file" accept="image/*" multiple onChange={event => { void addTaskImages(event.target.files); event.currentTarget.value = '' }} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('task')}>▧ 从图片库选择</button></div>
                 {draft.attachments.length > 0 && <div className="attachment-grid">{draft.attachments.map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeTaskImage(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
                 <small>自动压缩后保存 · 单张上限 1 MB</small>
               </div>
@@ -4063,6 +4080,19 @@ function App() {
                 setSeriesAction(null)
               }}>整个系列</button>
             </div>
+          </section>
+        </div>
+      )}
+
+      {imageLibraryTarget && (
+        <div className="modal-layer attachment-library-layer">
+          <button className="modal-backdrop" type="button" aria-label="关闭图片库" onClick={()=>setImageLibraryTarget(null)} />
+          <section className="storage-browser-modal attachment-library-modal">
+            <header><div><span className="eyebrow">IMAGE LIBRARY</span><h2>从图片库选择</h2><small>复用已有图片，不会重复占用存储空间</small></div><button className="close-button" type="button" onClick={()=>setImageLibraryTarget(null)}>×</button></header>
+            {libraryImages.length===0 ? <p className="page-empty">图片库还是空的。</p> : <div className="storage-image-grid selectable-library-grid">{libraryImages.map(attachment => {
+              const selected = imageLibraryTarget==='task' ? draft.attachments.some(a=>a.storageKey===attachment.storageKey) : journalDraft.attachments.some(a=>a.storageKey===attachment.storageKey)
+              return <div className={`library-pick-item ${selected?'selected':''}`} key={attachment.storageKey}><StorageImage attachment={attachment} onPreview={()=>chooseLibraryImage(attachment)} />{selected && <span className="library-picked-mark">✓ 已引用</span>}</div>
+            })}</div>}
           </section>
         </div>
       )}

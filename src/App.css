@@ -3223,3 +3223,13 @@ button {
     padding-bottom:calc(118px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* v0.9.6.5 shared image library */
+.attachment-source-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.attachment-source-actions .attachment-add{font:inherit}
+.attachment-library-layer{z-index:1200}
+.attachment-library-modal{max-width:760px}
+.selectable-library-grid{padding:4px 0 12px}
+.library-pick-item{position:relative;border:1px solid transparent;border-radius:12px;padding:3px}
+.library-pick-item.selected{border-color:#8fac9a;background:#f2f7f3}
+.library-picked-mark{position:absolute;right:8px;top:8px;background:rgba(255,255,255,.94);border-radius:999px;padding:3px 7px;font-size:11px;color:#567565;pointer-events:none}
