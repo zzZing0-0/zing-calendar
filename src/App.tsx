@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, deleteAttachmentBlob, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
@@ -1312,14 +1312,14 @@ function App() {
   }
 
   const deleteJournal = (id: string) => {
-    const entry = journalEntries.find(item => item.id === id)
     const stillReferenced = new Set<string>()
     tasks.forEach(task => {
       ;(task.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey))
       Object.values(task.recurrenceExceptions ?? {}).forEach(exception => (exception.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
     })
     journalEntries.filter(item => item.id !== id).forEach(item => (item.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
-    ;(entry?.attachments ?? []).forEach(a => { if (!stillReferenced.has(a.storageKey)) void deleteAttachmentBlob(a.storageKey) })
+    // Deleting a journal entry removes only its relation. Attachment binaries are immutable/shared
+    // and are reclaimed only by the explicit orphan-cleanup path after all relations are gone.
     setJournalEntries(current => current.filter(entry => entry.id !== id))
     setViewingJournalId(current => current === id ? null : current)
   }
@@ -1902,17 +1902,9 @@ function App() {
     }
     setTasks(current => {
       const next = current.filter(item => item.id !== seriesId)
-      const stillReferenced = new Set<string>()
-      next.forEach(item => {
-        ;(item.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey))
-        Object.values(item.recurrenceExceptions ?? {}).forEach(exception => (exception.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
-      })
-      journalEntries.forEach(entry => (entry.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
-      const removed = current.find(item => item.id === seriesId)
-      const candidates = new Set<string>()
-      ;(removed?.attachments ?? []).forEach(a => candidates.add(a.storageKey))
-      Object.values(removed?.recurrenceExceptions ?? {}).forEach(exception => (exception.attachments ?? []).forEach(a => candidates.add(a.storageKey)))
-      candidates.forEach(key => { if (!stillReferenced.has(key)) void deleteAttachmentBlob(key) })
+      // Remove only the task→attachment relations here. Never delete the binary as a side effect
+      // of deleting a task: the same storageKey may be shared by another task/journal or arrive
+      // through a concurrent merge. Explicit orphan cleanup is the single reclamation path.
       return next
     })
   }
@@ -4043,7 +4035,7 @@ function App() {
                     const series = tasks.find(task => task.id === editingTaskId)
                     if (!series) return
                     if (editingOccurrenceDate && series.recurrence) setSeriesAction('delete')
-                    else { void Promise.all((series.attachments ?? []).map(a => deleteAttachmentBlob(a.storageKey))); deleteTask(series, 'series'); closeEditor() }
+                    else { deleteTask(series, 'series'); closeEditor() }
                   }}>删除</button>
                 </div>
               )}
@@ -4105,7 +4097,6 @@ function App() {
                 const series = tasks.find(t => t.id === editingTaskId)
                 if (seriesAction === 'save') saveTask('series')
                 else if (series) {
-                  void Promise.all((series.attachments ?? []).map(a => deleteAttachmentBlob(a.storageKey)))
                   deleteTask(series, 'series')
                   closeEditor()
                 }

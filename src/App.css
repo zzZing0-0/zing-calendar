@@ -3261,3 +3261,34 @@ button {
     max-height:100%;
   }
 }
+
+
+/* v0.9.6.11 — shared attachment safety + uniform image-library tiles */
+.storage-image-grid{align-items:stretch}
+.storage-image-item{
+  width:100%;
+  height:100%;
+  min-height:0;
+  box-sizing:border-box;
+  display:grid;
+  grid-template-rows:minmax(0,1fr) auto;
+  gap:0;
+}
+.storage-image-item img,
+.storage-image-item > span{
+  width:100%;
+  aspect-ratio:1 / 1;
+  min-height:0;
+  box-sizing:border-box;
+}
+.storage-image-item > span{
+  display:grid;
+  place-items:center;
+  background:#f1f4f2;
+  border-radius:8px;
+}
+.selectable-library-grid .library-pick-item{
+  min-width:0;
+  display:flex;
+}
+.selectable-library-grid .library-pick-item > .storage-image-item{flex:1}
