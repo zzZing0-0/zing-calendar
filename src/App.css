@@ -3408,14 +3408,35 @@ button {
   }
   /* Adjacent-month filler cells are kept for week alignment, but hidden so dates never appear twice in the continuous stream. */
   .continuous-month-section .day-cell.outside-month{visibility:hidden;pointer-events:none}
-  .selected-week-context{
-    display:grid;grid-template-columns:repeat(7,minmax(0,1fr));
-    border-bottom:1px solid #e7ebe8;background:rgba(255,255,255,.98);
+
+}
+
+
+/* v1.1.1 — real-row push-up transition for mobile Day Detail */
+@media(max-width:620px){
+  /* The calendar itself supplies the date context now; no cloned week row is rendered. */
+  .day-drawer{
+    animation:day-detail-push-in 280ms cubic-bezier(.22,.72,.28,1) both;
+    will-change:transform,opacity;
   }
-  .selected-week-context>div{min-width:0;padding:7px 2px 8px;text-align:center;color:#8a948e}
-  .selected-week-context strong{display:block;font-size:13px;line-height:1.15;font-weight:650}
-  .selected-week-context small{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:7px;color:#a2aaa5}
-  .selected-week-context .selected{background:#eef4f0;color:#40584b}
-  .selected-week-context .selected strong{font-weight:800}
-  .selected-week-context .today strong{text-decoration:underline;text-underline-offset:3px}
+  .day-drawer.closing{
+    pointer-events:none;
+    animation:day-detail-push-out 260ms cubic-bezier(.4,0,.6,1) both;
+  }
+  @keyframes day-detail-push-in{
+    from{transform:translate3d(0,72px,0);opacity:.72}
+    to{transform:translate3d(0,0,0);opacity:1}
+  }
+  @keyframes day-detail-push-out{
+    from{transform:translate3d(0,0,0);opacity:1}
+    to{transform:translate3d(0,72px,0);opacity:.35}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .day-drawer,.day-drawer.closing{animation-duration:1ms}
+  }
+}
+
+@media(max-width:620px){
+  /* v1.1.1 no longer creates layout space for a cloned week; avoid the old :has() reflow. */
+  body:has(.day-drawer){padding-bottom:0}
 }

@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.1.0'
+const APP_VERSION = '1.1.1'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1055,6 +1055,11 @@ function App() {
   const [mobileActiveMonth, setMobileActiveMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const continuousCalendarRef = useRef<HTMLDivElement | null>(null)
   const pendingCalendarScrollRef = useRef<string | null>(null)
+  const dayDetailOriginScrollRef = useRef<number | null>(null)
+  const dayDetailLockTimerRef = useRef<number | null>(null)
+  const dayDetailLockedScrollRef = useRef<number | null>(null)
+  const dayDetailBodyStyleRef = useRef<{position:string;top:string;width:string;overflow:string} | null>(null)
+  const [dayDetailClosing, setDayDetailClosing] = useState(false)
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
   const [overdueInboxOpen, setOverdueInboxOpen] = useState(false)
@@ -1227,15 +1232,19 @@ function App() {
     return () => observer.disconnect()
   }, [continuousMonths, isMobileCalendar, mainView, selectedDate])
 
-  // Lock the calendar underneath Day Detail on mobile and restore the exact scroll position on close.
+  // Let the real calendar row glide into place first; lock the page only after that motion finishes.
   useEffect(() => {
-    if (!isMobileCalendar || !selectedDate) return
-    const y = window.scrollY
-    const previous = {position:document.body.style.position, top:document.body.style.top, width:document.body.style.width, overflow:document.body.style.overflow}
-    document.body.style.position='fixed'; document.body.style.top=`-${y}px`; document.body.style.width='100%'; document.body.style.overflow='hidden'
+    if (!isMobileCalendar || !selectedDate || dayDetailLockedScrollRef.current !== null) return
+    if (dayDetailLockTimerRef.current !== null) window.clearTimeout(dayDetailLockTimerRef.current)
+    dayDetailLockTimerRef.current = window.setTimeout(() => {
+      const y = window.scrollY
+      dayDetailBodyStyleRef.current = {position:document.body.style.position, top:document.body.style.top, width:document.body.style.width, overflow:document.body.style.overflow}
+      dayDetailLockedScrollRef.current = y
+      document.body.style.position='fixed'; document.body.style.top=`-${y}px`; document.body.style.width='100%'; document.body.style.overflow='hidden'
+      dayDetailLockTimerRef.current = null
+    }, 300)
     return () => {
-      document.body.style.position=previous.position; document.body.style.top=previous.top; document.body.style.width=previous.width; document.body.style.overflow=previous.overflow
-      window.scrollTo(0,y)
+      if (dayDetailLockTimerRef.current !== null) { window.clearTimeout(dayDetailLockTimerRef.current); dayDetailLockTimerRef.current = null }
     }
   }, [isMobileCalendar, selectedDate])
 
@@ -1646,7 +1655,7 @@ function App() {
         const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length)
         const hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
         const anns=monthAnniversaries.get(key)??[]
-        return <button key={key} type="button" className={`day-cell${inCurrentMonth?'':' outside-month'}${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} onClick={()=>openDay(date)}>
+        return <button key={key} type="button" className={`day-cell${inCurrentMonth?'':' outside-month'}${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
           <span className="day-number">{date.getDate()}</span>
           {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
           {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
@@ -1660,12 +1669,7 @@ function App() {
     </div>
   }
 
-  const selectedWeekDays = useMemo(() => {
-    if (!selectedDate) return [] as Date[]
-    const jsDay=selectedDate.getDay(), offset=weekStartsMonday?(jsDay+6)%7:jsDay
-    const start=new Date(selectedDate); start.setDate(start.getDate()-offset)
-    return Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d})
-  },[selectedDate,weekStartsMonday])
+
 
   const endedTasksViewToggle = (className='') => (
     <label className={`ended-view-toggle ${className}`.trim()} title="显示或隐藏已完成和已放弃任务">
@@ -1698,11 +1702,42 @@ function App() {
     setSelectedDate(now)
   }
 
+  const unlockDayDetailBody = () => {
+    if (dayDetailLockTimerRef.current !== null) { window.clearTimeout(dayDetailLockTimerRef.current); dayDetailLockTimerRef.current = null }
+    const lockedY = dayDetailLockedScrollRef.current
+    const previous = dayDetailBodyStyleRef.current
+    if (lockedY !== null && previous) {
+      document.body.style.position=previous.position; document.body.style.top=previous.top; document.body.style.width=previous.width; document.body.style.overflow=previous.overflow
+      window.scrollTo(0,lockedY)
+    }
+    dayDetailLockedScrollRef.current=null; dayDetailBodyStyleRef.current=null
+  }
+
+  const closeDayDetail = () => {
+    if (!selectedDate || dayDetailClosing) return
+    const origin = dayDetailOriginScrollRef.current
+    setDayDetailClosing(true)
+    unlockDayDetailBody()
+    if (isMobileCalendar && origin !== null) window.scrollTo({top:origin,behavior:'smooth'})
+    window.setTimeout(() => {
+      setSelectedDate(null); setDayDetailClosing(false); dayDetailOriginScrollRef.current=null
+    }, 280)
+  }
+
   const openDay = (date: Date) => {
     const isMobile = window.matchMedia('(max-width: 760px)').matches
-    if (isMobile && selectedDate && toDateKey(selectedDate) === toDateKey(date)) {
-      setSelectedDate(null)
-      return
+    if (isMobile && selectedDate && toDateKey(selectedDate) === toDateKey(date)) { closeDayDetail(); return }
+    if (isMobile && !selectedDate) {
+      dayDetailOriginScrollRef.current=window.scrollY
+      const key=toDateKey(date)
+      const cell=continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${key}"]`)
+      const sticky=document.querySelector<HTMLElement>('.calendar-sticky-header')
+      if (cell && sticky) {
+        const cellTop=cell.getBoundingClientRect().top
+        const stickyBottom=sticky.getBoundingClientRect().bottom
+        const target=Math.max(0,window.scrollY + cellTop - stickyBottom)
+        window.scrollTo({top:target,behavior:'smooth'})
+      }
     }
     setSelectedDate(date)
     if (!isMobile && (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear())) {
@@ -3031,9 +3066,6 @@ function App() {
         <div className="weekday-row">
           {displayWeekdays.map(day => <div key={day}>{day}</div>)}
         </div>
-        {isMobileCalendar && selectedDate && <div className="selected-week-context" aria-label="当前日期所在周">
-          {selectedWeekDays.map(date=><div key={toDateKey(date)} className={`${sameDay(date,selectedDate)?'selected ':''}${sameDay(date,today)?'today':''}`.trim()}><strong>{date.getDate()}</strong><small>{lunarCalendarLabel(date)}</small></div>)}
-        </div>}
         </div>
 
         {isMobileCalendar ? <div className="continuous-calendar" ref={continuousCalendarRef}>
@@ -3576,8 +3608,8 @@ function App() {
 
       {selectedDate && (
         <>
-          <button className="drawer-backdrop" type="button" aria-label="关闭日期详情" onClick={() => setSelectedDate(null)} />
-          <aside className="day-drawer" aria-label={`${formatUiDate(selectedDate)} 日期详情`}>
+          <button className="drawer-backdrop" type="button" aria-label="关闭日期详情" onClick={closeDayDetail} />
+          <aside className={`day-drawer${dayDetailClosing?' closing':''}`} aria-label={`${formatUiDate(selectedDate)} 日期详情`}>
             <div className="drawer-header">
               <div>
                 <span className="eyebrow">DAY DETAIL</span>
@@ -3587,7 +3619,7 @@ function App() {
                 </div>
                 <span className="drawer-lunar-date">农历 {lunarFullLabel(selectedDate)}</span>
               </div>
-              <button className="close-button" type="button" onClick={() => setSelectedDate(null)} aria-label="关闭">×</button>
+              <button className="close-button" type="button" onClick={closeDayDetail} aria-label="关闭">×</button>
             </div>
 
             {selectedAnniversaries.length > 0 && (
