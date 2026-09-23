@@ -772,7 +772,7 @@ async function readLegacyGitHubAttachment(config: GitHubSyncConfig, meta: SyncAt
 type B2SignedUrl = { url: string }
 
 async function signedB2Url(storageKey: string, method: 'GET'|'HEAD'|'PUT'): Promise<string> {
-  const response = await fetch(`/api/attachments?key=${encodeURIComponent(storageKey)}&method=${method}`, {
+  const response = await fetch(`/api/b2-sign?key=${encodeURIComponent(storageKey)}&method=${method}`, {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
   })
