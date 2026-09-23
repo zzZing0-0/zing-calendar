@@ -3241,7 +3241,7 @@ function App() {
           <div className="settings-group">
             <div className="settings-group-title"><h3>云同步</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setGithubSyncOpen(true)}>
-              <span><strong>GitHub Sync</strong><small>{lastGithubSyncAt ? `上次同步 ${new Date(lastGithubSyncAt).toLocaleString()}` : '使用独立 Private Repository 同步 Zing 数据。'}</small></span><b>›</b>
+              <span><strong>GitHub Sync</strong><small>{lastGithubSyncAt ? `上次同步 ${new Date(lastGithubSyncAt).toLocaleString()}` : 'GitHub 同步结构化数据；B2 同步图片与录音。'}</small></span><b>›</b>
             </button>
           </div>
 
@@ -3320,7 +3320,7 @@ function App() {
               <div className="sync-summary-grid">
                 {githubSyncSummary.rows.map(row=><div className="sync-summary-row" key={row.label}><b>{row.label}</b><span>新增 {row.added}</span><span>更新 {row.updated}</span><span>删除 {row.deleted}</span><small>当前 {row.total}</small></div>)}
               </div>
-              <div className="sync-summary-cloud"><b>云端状态</b><span>有效数据 {githubSyncSummary.pushedRecords} 条</span><span>附件 {githubSyncSummary.attachments.total} 个</span><span>历史删除标记 {githubSyncSummary.pushedTombstones} 条</span></div><small className="sync-summary-tombstone-note">本次附件：上传 {githubSyncSummary.attachments.uploaded} · 下载 {githubSyncSummary.attachments.downloaded}{githubSyncSummary.attachments.missing ? ` · 缺失 ${githubSyncSummary.attachments.missing}` : ''}。历史删除标记用于防止其他设备把已删除的数据重新恢复，不代表本次删除。</small>
+              <div className="sync-summary-cloud"><b>云端状态</b><span>GitHub 数据 {githubSyncSummary.pushedRecords} 条</span><span>B2 附件 {githubSyncSummary.attachments.total} 个</span><span>历史删除标记 {githubSyncSummary.pushedTombstones} 条</span></div><small className="sync-summary-tombstone-note">本次 B2 附件：上传/迁移 {githubSyncSummary.attachments.uploaded} · 下载 {githubSyncSummary.attachments.downloaded}{githubSyncSummary.attachments.missing ? ` · 缺失 ${githubSyncSummary.attachments.missing}` : ''}。历史删除标记用于防止其他设备把已删除的数据重新恢复，不代表本次删除。</small>
               <button className="github-sync-now" type="button" onClick={()=>setGithubSyncSummary(null)}>完成</button>
             </div>
           </section>
@@ -3488,7 +3488,7 @@ function App() {
       )}
 
       <footer className="status-line">
-        <span>Zing Calendar · v0.9.6.7</span>
+        <span>Zing Calendar · v0.9.6.8</span>
       </footer>
 
       {selectedDate && (
