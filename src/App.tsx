@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.5.0'
+const APP_VERSION = '1.5.1'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2515,6 +2515,12 @@ function App() {
     const impactCounts = [-2,-1,0,1,2].map(value=>({value:value as JournalImpact,count:journals.filter(j=>j.impact===value).length}))
     const moodCounts = [1,2,3,4,5].map(value=>({value:value as MoodLevel,count:moods.filter(m=>m.level===value).length}))
     const priorityCounts = [3,2,1,0].map(value=>({value:value as TaskPriority,count:eligibleTasks.filter(t=>t.priority===value).length}))
+    const defaultTagJournals = journals.filter(entry=>(entry.tagIds??[DEFAULT_TAG_ID]).includes(DEFAULT_TAG_ID))
+    const defaultTagImpactRow = {
+      tag: DEFAULT_TAG,
+      journals: defaultTagJournals.length,
+      impacts: [-2,-1,0,1,2].map(value=>({value:value as JournalImpact,count:defaultTagJournals.filter(j=>j.impact===value).length}))
+    }
 
     const tagRows = managedTags.map(tag=>{
       const tagTasks=eligibleTasks.filter(task=>(task.tagIds??[DEFAULT_TAG_ID]).includes(tag.id))
@@ -2657,7 +2663,7 @@ function App() {
 
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
       postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,
-      impactCounts,moodCounts,priorityCounts,tagRows,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
+      impactCounts,moodCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
   },[tasks,journalEntries,dailyMoods,managedTags,statsRange,weekStartsMonday,wordCloudIgnored])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
@@ -3407,6 +3413,16 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
+                  {statistics.defaultTagImpactRow.journals>0 && <tr key={DEFAULT_TAG_ID}>
+                    <th scope="row">#默认</th>
+                    {statistics.defaultTagImpactRow.impacts.map(item=>{
+                      const ratio=statistics.defaultTagImpactRow.journals ? item.count/statistics.defaultTagImpactRow.journals : 0
+                      return <td key={item.value} title={`${impactLabel(item.value)} · ${item.count}篇 · ${statsPercent(ratio)}`}>
+                        {item.count>0 ? <span className={`impact-cell impact-cell-${item.value<0?'negative':item.value>0?'positive':'neutral'}`} style={{'--impact-alpha':Math.max(.10,ratio*.78)} as any}>{item.count}</span> : <span className="impact-cell-zero">—</span>}
+                      </td>
+                    })}
+                    <td className="tag-journal-total"><strong>{statistics.defaultTagImpactRow.journals}</strong><small>篇</small></td>
+                  </tr>}
                   {[...statistics.tagRows].filter(row=>row.journals>0).sort((a,b)=>b.journals-a.journals||a.tag.name.localeCompare(b.tag.name)).map(row=><tr key={row.tag.id}>
                     <th scope="row">#{row.tag.name}</th>
                     {row.impacts.map(item=>{
@@ -3426,7 +3442,7 @@ function App() {
                   </tr>}
                 </tbody>
               </table>
-              {statistics.tagRows.every(row=>row.journals===0) && <p className="page-empty compact">当前时间范围还没有带标签的 Journal。</p>}
+              {statistics.defaultTagImpactRow.journals===0 && statistics.tagRows.every(row=>row.journals===0) && <p className="page-empty compact">当前时间范围还没有带标签的 Journal。</p>}
             </div>
             </div>
           </section>
@@ -3481,14 +3497,6 @@ function App() {
               <span><strong>新任务默认优先级</strong><small>只影响以后新建的任务，不修改已有任务。</small></span>
               <div className="default-priority-setting">{PRIORITIES.map(priority=><button key={priority.value} type="button" className={`default-priority-button priority-${priority.value}${defaultPriority===priority.value?' active':''}`} onClick={()=>setDefaultPriority(priority.value)}><i />{priority.label}</button>)}</div>
             </div>
-          </div>
-
-          <div className="settings-group">
-            <div className="settings-group-title"><h3>显示</h3></div>
-            <label className="setting-row">
-              <span><strong>显示已结束任务</strong><small>同时显示已完成和已放弃的任务。</small></span>
-              <input type="checkbox" checked={showEndedTasks} onChange={e=>setShowEndedTasks(e.target.checked)} />
-            </label>
           </div>
 
           <div className="settings-group">
@@ -4295,15 +4303,6 @@ function App() {
                 })()}
               </div>
 
-              <div className="field full-field actual-duration-field">
-                <span>实际用时 · 可选</span>
-                <div className="actual-duration-inputs">
-                  <label><input type="number" min="0" inputMode="numeric" value={draft.actualDurationHours} onChange={event=>setDraft(current=>({...current,actualDurationHours:event.target.value}))} placeholder="0" /><small>小时</small></label>
-                  <label><input type="number" min="0" max="59" inputMode="numeric" value={draft.actualDurationMinutes} onChange={event=>setDraft(current=>({...current,actualDurationMinutes:event.target.value}))} placeholder="0" /><small>分钟</small></label>
-                </div>
-                <small>不计时、不强制填写，只记录你对这个任务实际耗时的大致估计。</small>
-              </div>
-
               <div className="field-grid repeat-fields">
                 <label className="field">
                   <span>重复</span>
@@ -4319,6 +4318,19 @@ function App() {
                 {draft.repeatEndMode === 'date' && <label className="field"><span>结束日期</span><input type="date" min={draft.date} value={draft.repeatEndDate} onChange={event => setDraft(current => ({ ...current, repeatEndDate: event.target.value }))} /></label>}
                 {draft.repeatEndMode === 'count' && <label className="field"><span>重复次数</span><div className="repeat-count"><input type="number" min="1" max="9999" value={draft.repeatEndCount} onChange={event => setDraft(current => ({ ...current, repeatEndCount: Math.max(1, Number(event.target.value) || 1) }))} /><span>次</span></div></label>}
               </div>}
+              {editingTaskId && (() => {
+                const series = tasks.find(task => task.id === editingTaskId)
+                const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
+                if (!shown || shown.status !== 'completed') return null
+                return <div className="field full-field actual-duration-field">
+                  <span>实际用时 · 可选</span>
+                  <div className="actual-duration-inputs">
+                    <label><input type="number" min="0" inputMode="numeric" value={draft.actualDurationHours} onChange={event=>setDraft(current=>({...current,actualDurationHours:event.target.value}))} placeholder="0" /><small>小时</small></label>
+                    <label><input type="number" min="0" max="59" inputMode="numeric" value={draft.actualDurationMinutes} onChange={event=>setDraft(current=>({...current,actualDurationMinutes:event.target.value}))} placeholder="0" /><small>分钟</small></label>
+                  </div>
+                  <small>不计时、不强制填写，只记录你对这个任务实际耗时的大致估计。</small>
+                </div>
+              })()}
             </div>
 
             <div className="editor-footer">
