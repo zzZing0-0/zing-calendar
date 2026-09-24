@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.4.0'
+const APP_VERSION = '1.5.0'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1098,6 +1098,7 @@ function App() {
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
   const [autoSyncToast, setAutoSyncToast] = useState('')
+  const [programRefreshBusy, setProgramRefreshBusy] = useState(false)
   const [lastGithubSyncAt, setLastGithubSyncAt] = useState(() => localStorage.getItem('zing:lastGithubSyncAt') || '')
   const [localWriteRevision, setLocalWriteRevision] = useState(0)
   const [backupPreview, setBackupPreview] = useState<BackupPreview|null>(null)
@@ -2232,6 +2233,70 @@ function App() {
     setTags(current=>current.map(tag=>order.has(tag.id)?{...tag,sortOrder:order.get(tag.id),updatedAt:new Date().toISOString()}:tag))
   }
 
+  const refreshProgram = async () => {
+    if (programRefreshBusy) return
+    setProgramRefreshBusy(true)
+    try {
+      if (!navigator.onLine) throw new Error('offline')
+      const probe = await fetch(`/sw.js?check=${Date.now()}`, { cache: 'no-store' })
+      if (!probe.ok) throw new Error(`HTTP ${probe.status}`)
+      const swText = await probe.text()
+      const remoteVersion = swText.match(/zing-calendar-app-v([0-9.]+)/)?.[1]
+      if (remoteVersion === APP_VERSION) {
+        setAutoSyncToast(`✓ 当前已是最新版本 v${APP_VERSION}`)
+        return
+      }
+      if (!('serviceWorker' in navigator)) {
+        window.location.reload()
+        return
+      }
+      const registration = await navigator.serviceWorker.getRegistration()
+      if (!registration) {
+        await navigator.serviceWorker.register('/sw.js')
+        setAutoSyncToast('✓ 已获取最新程序，正在刷新')
+        window.setTimeout(() => window.location.reload(), 450)
+        return
+      }
+
+      let reloading = false
+      const reloadOnce = () => {
+        if (reloading) return
+        reloading = true
+        window.location.reload()
+      }
+      navigator.serviceWorker.addEventListener('controllerchange', reloadOnce, { once: true })
+      await registration.update()
+
+      const installing = registration.installing
+      if (installing) {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = window.setTimeout(() => reject(new Error('update timeout')), 12000)
+          const onState = () => {
+            if (installing.state === 'activated') {
+              window.clearTimeout(timeout)
+              resolve()
+            } else if (installing.state === 'redundant') {
+              window.clearTimeout(timeout)
+              reject(new Error('update failed'))
+            }
+          }
+          installing.addEventListener('statechange', onState)
+          onState()
+        })
+        setAutoSyncToast(`✓ 已更新程序${remoteVersion ? `到 v${remoteVersion}` : ''}`)
+        window.setTimeout(reloadOnce, 350)
+      } else {
+        // The deployment may have changed without requiring a new worker lifecycle.
+        setAutoSyncToast(remoteVersion ? `✓ 已获取 v${remoteVersion}，正在刷新` : '✓ 已获取最新程序，正在刷新')
+        window.setTimeout(reloadOnce, 350)
+      }
+    } catch {
+      setAutoSyncToast('⚠ 无法刷新程序，继续使用本地版本')
+    } finally {
+      setProgramRefreshBusy(false)
+    }
+  }
+
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
 
   const searchSnippet = (text: string) => {
@@ -3150,6 +3215,7 @@ function App() {
           <div className="calendar-status-controls">
             {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
             {endedTasksViewToggle('calendar-ended-toggle')}
+            <button className="program-refresh-button" type="button" onClick={()=>void refreshProgram()} disabled={programRefreshBusy} aria-label="检查并刷新程序" title="检查并刷新程序">{programRefreshBusy?'…':'↻'}</button>
           </div>
         </div>
 
@@ -3935,7 +4001,7 @@ function App() {
               <div className="tag-color-row">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-color${newTagColor === color ? ' active' : ''}`} style={{ background: color }} onClick={() => setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
               <div className="tag-list">{managedTags.map(tag => {
                 const dropPosition=dragOverTag?.id===tag.id ? dragOverTag.position : null
-                return <div className={`tag-row tag-manage-row${tag.archived?' archived':''}${draggingTagId===tag.id?' dragging':''}${dropPosition?` drag-over-${dropPosition}`:''}`} key={tag.id}
+                return <div className={`tag-row tag-manage-row${tag.archived?' archived':''}${draggingTagId===tag.id?' dragging':''}${dropPosition?` drag-over-${dropPosition}`:''}`} key={tag.id} data-tag-id={tag.id}
                   draggable
                   onDragStart={event=>{setDraggingTagId(tag.id);setDragOverTag(null);event.dataTransfer.effectAllowed='move'}}
                   onDragOver={event=>{
@@ -3952,7 +4018,32 @@ function App() {
                     setDraggingTagId(null);setDragOverTag(null)
                   }}
                   onDragEnd={()=>{setDraggingTagId(null);setDragOverTag(null)}}>
-                  <span className="tag-drag-handle" title="拖动排序" aria-label="拖动排序">⋮⋮</span>
+                  <span className="tag-drag-handle" title="拖动排序" aria-label="拖动排序"
+                    onPointerDown={event=>{
+                      if(event.pointerType==='mouse') return
+                      event.preventDefault()
+                      event.currentTarget.setPointerCapture(event.pointerId)
+                      setDraggingTagId(tag.id);setDragOverTag(null)
+                    }}
+                    onPointerMove={event=>{
+                      if(event.pointerType==='mouse' || draggingTagId!==tag.id) return
+                      const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('.tag-manage-row')
+                      const targetId=target?.dataset.tagId
+                      if(!target || !targetId || targetId===tag.id){setDragOverTag(null);return}
+                      const rect=target.getBoundingClientRect()
+                      setDragOverTag({id:targetId,position:event.clientY < rect.top+rect.height/2 ? 'before' : 'after'})
+                    }}
+                    onPointerUp={event=>{
+                      if(event.pointerType==='mouse' || draggingTagId!==tag.id) return
+                      const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('.tag-manage-row')
+                      const targetId=target?.dataset.tagId
+                      if(target && targetId && targetId!==tag.id){
+                        const rect=target.getBoundingClientRect()
+                        moveManagedTag(tag.id,targetId,event.clientY < rect.top+rect.height/2 ? 'before' : 'after')
+                      }
+                      setDraggingTagId(null);setDragOverTag(null)
+                    }}
+                    onPointerCancel={()=>{setDraggingTagId(null);setDragOverTag(null)}}>⋮⋮</span>
                   <div className="tag-color-control">
                     <button type="button" className="tag-current-color" style={{ background: tag.color }} onClick={() => setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={`修改 ${tag.name} 的颜色`} />
                     {openTagColorId === tag.id && <div className="tag-color-popover">
@@ -4133,6 +4224,36 @@ function App() {
                 </div>
               </label>
 
+              <div className="field full-field">
+                <span>优先级</span>
+                <div className="priority-picker">
+                  {PRIORITIES.map(priority => (
+                    <button key={priority.value} type="button" className={`priority-choice priority-${priority.value}${draft.priority === priority.value ? ' active' : ''}`} onClick={() => setDraft(current => ({ ...current, priority: priority.value }))}>
+                      <span className="priority-dot" />
+                      <strong>{priority.label}</strong>
+                      <small>{priority.hint}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+
+              <div className="field full-field attachment-field">
+                <span>图片附件</span>
+                <div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input type="file" accept="image/*" multiple onChange={event => { void addTaskImages(event.target.files); event.currentTarget.value = '' }} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('task')}>▧ 从图片库选择</button></div>
+                {draft.attachments.length > 0 && <div className="attachment-grid">{draft.attachments.map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeTaskImage(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
+                <small>自动压缩后保存 · 单张上限 1 MB</small>
+              </div>
+
+              <label className="field full-field">
+                <span>备注</span>
+                <textarea rows={4} value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} placeholder="可选" />
+              </label>
+
+              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />#{tag.name}</button>)}</div>
+                {draft.tagIds.some(isImportSourceTagId) && <div className="task-source-readonly">{draft.tagIds.filter(isImportSourceTagId).map(id => { const tag=tags.find(item=>item.id===id); return tag ? <span key={id} className="task-source-tag">#{tag.name}</span> : null })}<small>来源标签由系统管理</small></div>}
+              </div>
+
               <div className="time-row task-timing-toggle">
                 <label className="check-field">
                   <input type="checkbox" checked={draft.allDay} onChange={event => setDraft(current => ({ ...current, allDay: event.target.checked, endDate: event.target.checked ? current.endDate : '' }))} />
@@ -4174,31 +4295,6 @@ function App() {
                 })()}
               </div>
 
-              <div className="field full-field">
-                <span>优先级</span>
-                <div className="priority-picker">
-                  {PRIORITIES.map(priority => (
-                    <button key={priority.value} type="button" className={`priority-choice priority-${priority.value}${draft.priority === priority.value ? ' active' : ''}`} onClick={() => setDraft(current => ({ ...current, priority: priority.value }))}>
-                      <span className="priority-dot" />
-                      <strong>{priority.label}</strong>
-                      <small>{priority.hint}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-
-              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />#{tag.name}</button>)}</div>
-                {draft.tagIds.some(isImportSourceTagId) && <div className="task-source-readonly">{draft.tagIds.filter(isImportSourceTagId).map(id => { const tag=tags.find(item=>item.id===id); return tag ? <span key={id} className="task-source-tag">#{tag.name}</span> : null })}<small>来源标签由系统管理</small></div>}
-              </div>
-
-              <div className="field full-field attachment-field">
-                <span>图片附件</span>
-                <div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input type="file" accept="image/*" multiple onChange={event => { void addTaskImages(event.target.files); event.currentTarget.value = '' }} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('task')}>▧ 从图片库选择</button></div>
-                {draft.attachments.length > 0 && <div className="attachment-grid">{draft.attachments.map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeTaskImage(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
-                <small>自动压缩后保存 · 单张上限 1 MB</small>
-              </div>
-
               <div className="field full-field actual-duration-field">
                 <span>实际用时 · 可选</span>
                 <div className="actual-duration-inputs">
@@ -4207,11 +4303,6 @@ function App() {
                 </div>
                 <small>不计时、不强制填写，只记录你对这个任务实际耗时的大致估计。</small>
               </div>
-
-              <label className="field full-field">
-                <span>备注</span>
-                <textarea rows={4} value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} placeholder="可选" />
-              </label>
 
               <div className="field-grid repeat-fields">
                 <label className="field">

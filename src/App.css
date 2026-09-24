@@ -3731,3 +3731,19 @@ button {
     border-bottom:1px solid #edf0ed!important;
   }
 }
+
+
+/* v1.5.0 — manual program refresh + touch tag sorting */
+.program-refresh-button{
+  width:32px;height:30px;border:1px solid #e0e6e2;border-radius:10px;
+  background:#f8faf8;color:#66756d;font-size:18px;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer
+}
+.program-refresh-button:hover{background:#f0f5f1}
+.program-refresh-button:disabled{opacity:.55;cursor:wait}
+.tag-drag-handle{touch-action:none}
+@media(max-width:620px){
+  .program-refresh-button{flex:0 0 32px}
+  .tag-drag-handle{min-width:22px;min-height:34px;display:flex;align-items:center;justify-content:center}
+  .tag-manage-row.dragging{opacity:.62}
+}
