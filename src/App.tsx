@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.5.1'
+const APP_VERSION = '1.6.1'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1153,9 +1153,7 @@ function App() {
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
   const [newTagScope, setNewTagScope] = useState<TagScope>('both')
-  const [openTagColorId, setOpenTagColorId] = useState<string | null>(null)
-  const [draggingTagId, setDraggingTagId] = useState<string | null>(null)
-  const [dragOverTag, setDragOverTag] = useState<{id:string;position:'before'|'after'} | null>(null)
+  const [selectedTagManageId, setSelectedTagManageId] = useState<string | null>(null)
   const [seriesAction, setSeriesAction] = useState<'save' | 'delete' | null>(null)
   const [confirmSingleTask, setConfirmSingleTask] = useState(false)
   const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
@@ -2167,11 +2165,41 @@ function App() {
     else setJournalDraft(current => ({ ...current, tagIds: update(current.tagIds) }))
   }
 
+  const tagScopeLabel = (scope: TagScope) => scope === 'both' ? '共享标签' : scope === 'task' ? '任务标签' : '记录标签'
+
   const addTag = () => {
     const name = newTagName.trim()
-    if (!name || tags.some(tag => tag.name.toLowerCase() === name.toLowerCase())) return
-    setTags(current => [...current, { id: crypto.randomUUID(), name, color: newTagColor, scope: newTagScope, sortOrder: Math.max(-1, ...current.filter(tag => !tag.system).map(tag => tag.sortOrder ?? 0)) + 1, updatedAt: new Date().toISOString() }])
+    if (!name) return
+    const existing = tags.find(tag => tag.name.toLowerCase() === name.toLowerCase())
+    if (existing) {
+      if (!existing.system && existing.scope !== 'both' && existing.scope !== newTagScope) {
+        const upgrade = window.confirm(`#${existing.name} 已存在于「${tagScopeLabel(existing.scope)}」。\n\n是否更改为「共享标签」？`)
+        if (upgrade) {
+          setTags(current => current.map(tag => tag.id === existing.id ? { ...tag, scope: 'both', updatedAt: new Date().toISOString() } : tag))
+          setNewTagName('')
+          setNewTagScope('both')
+          setSelectedTagManageId(existing.id)
+          setAutoSyncToast(`✓ #${existing.name} 已改为共享标签`)
+        }
+        return
+      }
+      if (!existing.system && newTagScope === 'both' && existing.scope !== 'both') {
+        const upgrade = window.confirm(`#${existing.name} 已存在于「${tagScopeLabel(existing.scope)}」。\n\n是否更改为「共享标签」？`)
+        if (upgrade) {
+          setTags(current => current.map(tag => tag.id === existing.id ? { ...tag, scope: 'both', updatedAt: new Date().toISOString() } : tag))
+          setNewTagName('')
+          setSelectedTagManageId(existing.id)
+          setAutoSyncToast(`✓ #${existing.name} 已改为共享标签`)
+        }
+        return
+      }
+      setAutoSyncToast(`⚠ #${existing.name} 已存在于${existing.system ? '系统标签' : `「${tagScopeLabel(existing.scope)}」`}`)
+      return
+    }
+    const id = crypto.randomUUID()
+    setTags(current => [...current, { id, name, color: newTagColor, scope: newTagScope, sortOrder: Math.max(-1, ...current.filter(tag => !tag.system).map(tag => tag.sortOrder ?? 0)) + 1, updatedAt: new Date().toISOString() }])
     setNewTagName('')
+    setSelectedTagManageId(id)
   }
 
   const setTagArchived = (id: string, archived: boolean) => {
@@ -2219,19 +2247,6 @@ function App() {
     })
     return usage
   },[managedTags,tasks,journalEntries])
-
-  const moveManagedTag = (dragId:string,targetId:string,position:'before'|'after') => {
-    if (dragId===targetId) return
-    const ids=managedTags.map(tag=>tag.id)
-    const from=ids.indexOf(dragId)
-    if (from<0) return
-    ids.splice(from,1)
-    const targetIndex=ids.indexOf(targetId)
-    if (targetIndex<0) return
-    ids.splice(position==='after' ? targetIndex+1 : targetIndex,0,dragId)
-    const order=new Map(ids.map((id,index)=>[id,index]))
-    setTags(current=>current.map(tag=>order.has(tag.id)?{...tag,sortOrder:order.get(tag.id),updatedAt:new Date().toISOString()}:tag))
-  }
 
   const refreshProgram = async () => {
     if (programRefreshBusy) return
@@ -3507,6 +3522,13 @@ function App() {
           </div>
 
           <div className="settings-group">
+            <div className="settings-group-title"><h3>友情链接</h3></div>
+            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('https://zzzing0-0.github.io/audio-vocabulary-sprint/index.html','_blank','noopener,noreferrer')}>
+              <span><strong>Zing 背单词</strong><small>Audio Vocabulary Sprint · 背单词与学习统计</small></span><b>↗</b>
+            </button>
+          </div>
+
+          <div className="settings-group">
             <div className="settings-group-title"><h3>云同步</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setGithubSyncOpen(true)}>
               <span><strong>GitHub Sync</strong><small>{lastGithubSyncAt ? `上次同步 ${new Date(lastGithubSyncAt).toLocaleString()}` : 'GitHub 同步结构化数据；B2 同步图片与录音。'}</small></span><b>›</b>
@@ -4002,70 +4024,38 @@ function App() {
       {tagManagerOpen && (
         <div className="modal-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭标签管理" onClick={() => setTagManagerOpen(false)} />
-          <section className="task-editor tag-manager" role="dialog" aria-modal="true" aria-labelledby="tag-manager-title">
+          <section className="task-editor tag-manager compact-tag-manager" role="dialog" aria-modal="true" aria-labelledby="tag-manager-title">
             <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => setTagManagerOpen(false)}>×</button></div>
             <div className="editor-body">
-              <div className="tag-create-row"><input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="新标签名称" /><select value={newTagScope} onChange={e => setNewTagScope(e.target.value as TagScope)}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
-              <div className="tag-color-row">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-color${newTagColor === color ? ' active' : ''}`} style={{ background: color }} onClick={() => setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
-              <div className="tag-list">{managedTags.map(tag => {
-                const dropPosition=dragOverTag?.id===tag.id ? dragOverTag.position : null
-                return <div className={`tag-row tag-manage-row${tag.archived?' archived':''}${draggingTagId===tag.id?' dragging':''}${dropPosition?` drag-over-${dropPosition}`:''}`} key={tag.id} data-tag-id={tag.id}
-                  draggable
-                  onDragStart={event=>{setDraggingTagId(tag.id);setDragOverTag(null);event.dataTransfer.effectAllowed='move'}}
-                  onDragOver={event=>{
-                    event.preventDefault()
-                    if (!draggingTagId || draggingTagId===tag.id) return
-                    const rect=event.currentTarget.getBoundingClientRect()
-                    setDragOverTag({id:tag.id,position:event.clientY < rect.top+rect.height/2 ? 'before' : 'after'})
-                    event.dataTransfer.dropEffect='move'
-                  }}
-                  onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node)) setDragOverTag(current=>current?.id===tag.id?null:current)}}
-                  onDrop={event=>{
-                    event.preventDefault()
-                    if(draggingTagId && dragOverTag?.id===tag.id) moveManagedTag(draggingTagId,tag.id,dragOverTag.position)
-                    setDraggingTagId(null);setDragOverTag(null)
-                  }}
-                  onDragEnd={()=>{setDraggingTagId(null);setDragOverTag(null)}}>
-                  <span className="tag-drag-handle" title="拖动排序" aria-label="拖动排序"
-                    onPointerDown={event=>{
-                      if(event.pointerType==='mouse') return
-                      event.preventDefault()
-                      event.currentTarget.setPointerCapture(event.pointerId)
-                      setDraggingTagId(tag.id);setDragOverTag(null)
-                    }}
-                    onPointerMove={event=>{
-                      if(event.pointerType==='mouse' || draggingTagId!==tag.id) return
-                      const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('.tag-manage-row')
-                      const targetId=target?.dataset.tagId
-                      if(!target || !targetId || targetId===tag.id){setDragOverTag(null);return}
-                      const rect=target.getBoundingClientRect()
-                      setDragOverTag({id:targetId,position:event.clientY < rect.top+rect.height/2 ? 'before' : 'after'})
-                    }}
-                    onPointerUp={event=>{
-                      if(event.pointerType==='mouse' || draggingTagId!==tag.id) return
-                      const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('.tag-manage-row')
-                      const targetId=target?.dataset.tagId
-                      if(target && targetId && targetId!==tag.id){
-                        const rect=target.getBoundingClientRect()
-                        moveManagedTag(tag.id,targetId,event.clientY < rect.top+rect.height/2 ? 'before' : 'after')
-                      }
-                      setDraggingTagId(null);setDragOverTag(null)
-                    }}
-                    onPointerCancel={()=>{setDraggingTagId(null);setDragOverTag(null)}}>⋮⋮</span>
-                  <div className="tag-color-control">
-                    <button type="button" className="tag-current-color" style={{ background: tag.color }} onClick={() => setOpenTagColorId(current => current === tag.id ? null : tag.id)} aria-label={`修改 ${tag.name} 的颜色`} />
-                    {openTagColorId === tag.id && <div className="tag-color-popover">
-                      <div className="tag-popover-palette">{TAG_COLORS.map(color => <button key={color} type="button" className={`tag-row-color${tag.color === color ? ' active' : ''}`} style={{ background: color }} onClick={() => { setTags(current => current.map(item => item.id === tag.id ? { ...item, color, updatedAt: new Date().toISOString() } : item)); setOpenTagColorId(null) }} aria-label={`设为 ${color}`} />)}</div>
-                      <div className="tag-custom-color"><span>自定义</span><input type="color" value={tag.color} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, color: e.target.value, updatedAt: new Date().toISOString() } : item))} /></div>
-                    </div>}
-                  </div>
-                  <div className="tag-manage-main">
-                    <input value={tag.name} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, name: e.target.value, updatedAt: new Date().toISOString() } : item))} />
-                  </div>
-                  <select value={tag.scope} onChange={e => setTags(current => current.map(item => item.id === tag.id ? { ...item, scope: e.target.value as TagScope, updatedAt: new Date().toISOString() } : item))}><option value="both">任务 + 记录</option><option value="task">仅任务</option><option value="journal">仅记录</option></select>
-                  <div className="tag-row-actions"><button type="button" className="archive-button" onClick={() => setTagArchived(tag.id,!tag.archived)}>{tag.archived?'取消归档':'归档'}</button><button type="button" className="delete-button compact-delete" onClick={() => deleteTag(tag.id)}>删除</button></div>
+              <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
+                {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{managedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
+              </div>
+
+              <div className="compact-tag-create">
+                <div className="compact-tag-create-main"><input value={newTagName} onChange={e=>setNewTagName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addTag()}} placeholder={`新建${tagScopeLabel(newTagScope)}`} /><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
+                <div className="tag-color-row compact-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${newTagColor===color?' active':''}`} style={{background:color}} onClick={()=>setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
+              </div>
+
+              <div className="compact-tag-list">
+                {managedTags.filter(tag=>tag.scope===newTagScope).map(tag=><button key={tag.id} type="button" className={`compact-tag-chip${tag.archived?' archived':''}${selectedTagManageId===tag.id?' active':''}`} onClick={()=>setSelectedTagManageId(current=>current===tag.id?null:tag.id)}>
+                  <i style={{background:tag.color}} /><span>{tag.name}</span>{tag.archived&&<small>已归档</small>}
+                </button>)}
+                {managedTags.every(tag=>tag.scope!==newTagScope)&&<p className="page-empty compact">这里还没有{tagScopeLabel(newTagScope)}。</p>}
+              </div>
+
+              {selectedTagManageId && (() => {
+                const tag=managedTags.find(item=>item.id===selectedTagManageId)
+                if(!tag) return null
+                return <div className="compact-tag-detail">
+                  <div className="compact-tag-detail-heading"><i style={{background:tag.color}} /><strong>编辑标签</strong></div>
+                  <label className="field"><span>名称</span><input value={tag.name} onChange={e=>setTags(current=>current.map(item=>item.id===tag.id?{...item,name:e.target.value,updatedAt:new Date().toISOString()}:item))} /></label>
+                  <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${tag.color===color?' active':''}`} style={{background:color}} onClick={()=>setTags(current=>current.map(item=>item.id===tag.id?{...item,color,updatedAt:new Date().toISOString()}:item))} aria-label={`设为 ${color}`} />)}</div></div>
+                  <div className="field"><span>分类</span><div className="tag-detail-scope">
+                    {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={tag.scope===scope?'active':''} onClick={()=>{setTags(current=>current.map(item=>item.id===tag.id?{...item,scope,updatedAt:new Date().toISOString()}:item));setNewTagScope(scope)}}>{label}</button>)}
+                  </div></div>
+                  <div className="compact-tag-detail-actions"><button type="button" className="archive-button" onClick={()=>setTagArchived(tag.id,!tag.archived)}>{tag.archived?'取消归档':'归档'}</button><button type="button" className="delete-button compact-delete" onClick={()=>{deleteTag(tag.id);setSelectedTagManageId(null)}}>删除</button></div>
                 </div>
-              })}</div>
+              })()}
             </div>
           </section>
         </div>

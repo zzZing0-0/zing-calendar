@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#222b27"/>
-  <text x="32" y="43" text-anchor="middle" font-family="Georgia,serif" font-size="34" fill="#f7faf7">Z</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+<rect width="180" height="180" rx="38" fill="#f5f7f3"/>
+<g transform="translate(26 26) scale(2)" fill="none" stroke="#73a985" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="32" cy="32" r="26" stroke-width="2.8"/>
+  <circle cx="21.5" cy="27" r="2.2" fill="#73a985" stroke="none"/>
+  <path d="M38 27c2.7-1.6 5.5-1.6 8.2 0" stroke-width="2.2"/>
+  <path d="M20.5 39.5c5.7 4.4 15.5 5.1 23.5-.8" stroke-width="2.6"/>
+</g>
 </svg>
