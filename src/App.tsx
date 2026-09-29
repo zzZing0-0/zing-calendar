@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.6.2'
+const APP_VERSION = '1.6.3'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -514,6 +514,30 @@ function expandTasks(tasks: Task[], startKey: string, endKey: string) {
   return result
 }
 
+function isNextPendingRecurringOccurrence(occurrence: Task, seriesTasks: Task[]) {
+  if (occurrence.status !== 'todo' || !occurrence.seriesId || !occurrence.occurrenceDate) return true
+  const series = seriesTasks.find(task => task.id === occurrence.seriesId)
+  if (!series?.recurrence) return true
+
+  const targetKey = occurrence.occurrenceDate
+  let cursor = fromDateKey(series.date)
+  const target = fromDateKey(targetKey)
+  while (cursor <= target) {
+    const key = toDateKey(cursor)
+    if (occursOn(series, key)) {
+      const candidate = materializeOccurrence(series, key)
+      if (candidate?.status === 'todo') return key === targetKey
+    }
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return true
+}
+
+function applyRecurringDisplayMode(expanded: Task[], seriesTasks: Task[], showAllRecurringTasks: boolean) {
+  if (showAllRecurringTasks) return expanded
+  return expanded.filter(task => isNextPendingRecurringOccurrence(task, seriesTasks))
+}
+
 
 function taskSort(a: Task, b: Task) {
   const statusRank = (task: Task) => task.status === 'todo' ? 0 : task.status === 'completed' ? 1 : 2
@@ -885,7 +909,7 @@ type BackupPreview = {
   moods: DailyMood[]
   tags: Tag[]
   anniversaries: Anniversary[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean; wordCloudIgnored?:string[] }
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; wordCloudIgnored?:string[] }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
 function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
@@ -1082,6 +1106,7 @@ function App() {
   const [weekStartsMonday, setWeekStartsMonday] = useState(() => localStorage.getItem('zing:weekStart') !== 'sunday')
   const [dateFormat, setDateFormat] = useState<'dmy'|'mdy'>(() => localStorage.getItem('zing:dateFormat') === 'mdy' ? 'mdy' : 'dmy')
   const [showEndedTasks, setShowEndedTasks] = useState(() => localStorage.getItem('zing:showEndedTasks') !== 'false')
+  const [showAllRecurringTasks, setShowAllRecurringTasks] = useState(() => localStorage.getItem('zing:showAllRecurringTasks') !== 'false')
   const [storageStats, setStorageStats] = useState({ total:0, images:0, audio:0, data:0, attachmentCount:0 })
   const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
   const [imageLibraryTarget, setImageLibraryTarget] = useState<'task'|'journal'|null>(null)
@@ -1546,6 +1571,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
   useEffect(() => { localStorage.setItem('zing:dateFormat', dateFormat) }, [dateFormat])
   useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
+  useEffect(() => { localStorage.setItem('zing:showAllRecurringTasks', String(showAllRecurringTasks)) }, [showAllRecurringTasks])
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
@@ -1586,26 +1612,28 @@ function App() {
   const displayTasks = useMemo(() => {
     const start = toDateKey(days[0].date)
     const end = toDateKey(days[days.length - 1].date)
-    const expanded = expandTasks(tasks, start, end)
+    const expanded = applyRecurringDisplayMode(expandTasks(tasks, start, end), tasks, showAllRecurringTasks)
     return showEndedTasks ? expanded : expanded.filter(task => task.status === 'todo')
-  }, [tasks, days, showEndedTasks])
+  }, [tasks, days, showEndedTasks, showAllRecurringTasks])
 
   const overdueTasks = useMemo(() => {
     const todayKey=toDateKey(today)
     const yesterday=addDaysKey(todayKey,-1)
     if(!tasks.length) return [] as Task[]
     const earliest=tasks.reduce((min,task)=>task.date<min?task.date:min,tasks[0].date)
-    return expandTasks(tasks,earliest,yesterday)
+    return applyRecurringDisplayMode(expandTasks(tasks,earliest,yesterday),tasks,showAllRecurringTasks)
       .filter(task=>isTaskOverdue(task,todayKey))
       .sort((a,b)=>taskEndDate(a).localeCompare(taskEndDate(b)) || b.priority-a.priority || a.title.localeCompare(b.title,'zh-CN'))
-  },[tasks,today])
+  },[tasks,today,showAllRecurringTasks])
 
   const selectedTasks = useMemo(() => {
     if (!selectedDate) return []
     const key = toDateKey(selectedDate)
-    const pool = key >= toDateKey(days[0].date) && key <= toDateKey(days[days.length - 1].date) ? displayTasks : expandTasks(tasks, key, key)
+    const pool = key >= toDateKey(days[0].date) && key <= toDateKey(days[days.length - 1].date)
+      ? displayTasks
+      : applyRecurringDisplayMode(expandTasks(tasks, key, key), tasks, showAllRecurringTasks)
     return pool.filter(task => taskCoversDate(task, key) && (showEndedTasks || task.status === 'todo')).sort(taskSort)
-  }, [selectedDate, tasks, displayTasks, days, showEndedTasks])
+  }, [selectedDate, tasks, displayTasks, days, showEndedTasks, showAllRecurringTasks])
 
   const anniversaryOccurrencesByDate = useMemo(() => {
     const map = new Map<string, { anniversary: Anniversary; occurrence: Date }[]>()
@@ -1652,7 +1680,7 @@ function App() {
     const monthDays = buildMonth(month.getFullYear(), month.getMonth(), weekStartsMonday)
     const rangeStart = toDateKey(monthDays[0].date), rangeEnd = toDateKey(monthDays[monthDays.length-1].date)
     const monthDisplayTasks = (() => {
-      const expanded=expandTasks(tasks,rangeStart,rangeEnd)
+      const expanded=applyRecurringDisplayMode(expandTasks(tasks,rangeStart,rangeEnd),tasks,showAllRecurringTasks)
       return showEndedTasks ? expanded : expanded.filter(task=>task.status==='todo')
     })()
     const monthTasksByDate = new Map<string,Task[]>()
@@ -1698,7 +1726,7 @@ function App() {
   // A cross-month week exists exactly once; month labels are markers, not separate grids.
   const renderCalendarWeek = (weekDays: CalendarDay[]) => {
     const rangeStart=toDateKey(weekDays[0].date), rangeEnd=toDateKey(weekDays[6].date)
-    const displayTasks=(()=>{const expanded=expandTasks(tasks,rangeStart,rangeEnd);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
+    const displayTasks=(()=>{const expanded=applyRecurringDisplayMode(expandTasks(tasks,rangeStart,rangeEnd),tasks,showAllRecurringTasks);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
     const tasksByDate=new Map<string,Task[]>()
     displayTasks.filter(task=>!isMultiDayTask(task)).forEach(task=>{const current=tasksByDate.get(task.date)??[];current.push(task);current.sort(taskSort);tasksByDate.set(task.date,current)})
     const segments=buildMultiDaySegments(displayTasks,weekDays)
@@ -1831,7 +1859,7 @@ function App() {
         <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days)}</div>
       </section>
     })
-  }, [continuousMonths,tasks,showEndedTasks,anniversaries,weekStartsMonday,today,isMobileCalendar])
+  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,anniversaries,weekStartsMonday,today,isMobileCalendar])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
@@ -2983,7 +3011,7 @@ function App() {
         {path:'data/moods.json',bytes:json(dailyMoods)},
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks,wordCloudIgnored})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks,showAllRecurringTasks,wordCloudIgnored})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -3066,6 +3094,7 @@ function App() {
       if (s.weekStart) localStorage.setItem('zing:weekStart',s.weekStart)
       if (s.dateFormat) localStorage.setItem('zing:dateFormat',s.dateFormat)
       if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
+      if (typeof s.showAllRecurringTasks==='boolean') localStorage.setItem('zing:showAllRecurringTasks',String(s.showAllRecurringTasks))
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries)
@@ -3073,6 +3102,7 @@ function App() {
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
       if (s.dateFormat) setDateFormat(s.dateFormat)
       if (typeof s.showEndedTasks==='boolean') setShowEndedTasks(s.showEndedTasks)
+      if (typeof s.showAllRecurringTasks==='boolean') setShowAllRecurringTasks(s.showAllRecurringTasks)
       if (Array.isArray(s.wordCloudIgnored)) setWordCloudIgnored(s.wordCloudIgnored)
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
@@ -3508,6 +3538,10 @@ function App() {
             <div className="settings-group-title"><h3>日历</h3></div>
             <div className="setting-row"><span><strong>每周开始日</strong></span><div className="setting-segment"><button className={weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(true)}>周一</button><button className={!weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(false)}>周日</button></div></div>
             <div className="setting-row"><span><strong>日期格式</strong></span><div className="setting-segment"><button className={dateFormat==='dmy'?'active':''} onClick={()=>setDateFormat('dmy')}>22 Sep 2026</button><button className={dateFormat==='mdy'?'active':''} onClick={()=>setDateFormat('mdy')}>Sep 22, 2026</button></div></div>
+            <div className="setting-row">
+              <span><strong>重复任务显示</strong><small>“逐个显示”会保留已完成/已放弃的历史记录，未完成的重复序列只显示最早一个；完成或放弃后再显示下一个。</small></span>
+              <div className="setting-segment"><button className={showAllRecurringTasks?'active':''} onClick={()=>setShowAllRecurringTasks(true)}>显示全部</button><button className={!showAllRecurringTasks?'active':''} onClick={()=>setShowAllRecurringTasks(false)}>逐个显示</button></div>
+            </div>
             <div className="setting-row">
               <span><strong>新任务默认优先级</strong><small>只影响以后新建的任务，不修改已有任务。</small></span>
               <div className="default-priority-setting">{PRIORITIES.map(priority=><button key={priority.value} type="button" className={`default-priority-button priority-${priority.value}${defaultPriority===priority.value?' active':''}`} onClick={()=>setDefaultPriority(priority.value)}><i />{priority.label}</button>)}</div>
