@@ -617,12 +617,42 @@ function githubSyncPath(config: GitHubSyncConfig) {
   return (config.path?.trim() || 'zing/sync-bundle.json').replace(/^\/+/, '')
 }
 
-function githubHeaders(config: GitHubSyncConfig): HeadersInit {
-  return {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${config.token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
+async function githubApiFetch(config: GitHubSyncConfig, url: string, init: RequestInit = {}): Promise<Response> {
+  const target = new URL(url)
+  if (target.origin !== GITHUB_API_BASE) throw new Error('GitHub 同步目标地址无效')
+  const method = String(init.method || 'GET').toUpperCase()
+  const requestBody = typeof init.body === 'string' ? init.body : undefined
+
+  let response: Response
+  try {
+    response = await fetch('/api/github-sync', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        token: config.token,
+        method,
+        path: `${target.pathname}${target.search}`,
+        body: requestBody,
+      }),
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`GitHub 同步代理无法连接（${detail || '网络请求失败'}）`)
   }
+
+  // A 502 here means Vercel reached the proxy function but the function itself
+  // could not reach GitHub. Preserve the diagnostic message instead of collapsing
+  // it into Safari's "Load failed" / Chromium's "Failed to fetch".
+  if (response.status === 502) {
+    let detail = ''
+    try {
+      const payload = await response.clone().json() as { error?: unknown }
+      detail = String(payload.error || '')
+    } catch {}
+    throw new Error(`GitHub 同步代理连接 GitHub 失败${detail ? ` · ${detail}` : ''}`)
+  }
+  return response
 }
 
 function utf8ToBase64(value: string): string {
@@ -644,9 +674,12 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
   const contentsUrl = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`
 
   // Contents API is used only to resolve the file and its blob SHA.
-  const metaResponse = await fetch(contentsUrl, { headers: githubHeaders(config) })
+  const metaResponse = await githubApiFetch(config, contentsUrl)
   if (metaResponse.status === 404) return {}
-  if (!metaResponse.ok) throw new Error(`GitHub 同步读取失败（HTTP ${metaResponse.status}）`)
+  if (!metaResponse.ok) {
+    const detail = (await metaResponse.text()).slice(0, 180).replace(/\s+/g, ' ')
+    throw new Error(`GitHub 同步读取失败（HTTP ${metaResponse.status}${detail ? ` · ${detail}` : ''}）`)
+  }
   const file = await metaResponse.json() as GitHubContentsFile
   if (file.type !== 'file') throw new Error('GitHub 同步路径不是文件')
   if (!file.sha) throw new Error('GitHub 同步文件缺少 SHA')
@@ -661,8 +694,11 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
     // by SHA instead. The Git Blobs endpoint returns base64 JSON reliably and
     // remains on api.github.com with the same fine-grained token authentication.
     const blobUrl = `${GITHUB_API_BASE}/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/git/blobs/${encodeURIComponent(file.sha)}`
-    const blobResponse = await fetch(blobUrl, { headers: githubHeaders(config) })
-    if (!blobResponse.ok) throw new Error(`GitHub 同步 Blob 读取失败（HTTP ${blobResponse.status}）`)
+    const blobResponse = await githubApiFetch(config, blobUrl)
+    if (!blobResponse.ok) {
+      const detail = (await blobResponse.text()).slice(0, 180).replace(/\s+/g, ' ')
+      throw new Error(`GitHub 同步 Blob 读取失败（HTTP ${blobResponse.status}${detail ? ` · ${detail}` : ''}）`)
+    }
     const blob = await blobResponse.json() as { sha?: string; encoding?: string; content?: string; size?: number }
     if (blob.encoding !== 'base64' || typeof blob.content !== 'string' || !blob.content) {
       throw new Error(`GitHub 同步 Blob 格式异常（encoding=${String(blob.encoding)}；size=${String(blob.size)}）`)
@@ -698,14 +734,14 @@ async function writeGitHubBundleFile(config: GitHubSyncConfig, bundle: SyncBundl
     content: utf8ToBase64(JSON.stringify(bundle)),
   }
   if (sha) body.sha = sha
-  const response = await fetch(url, {
+  const response = await githubApiFetch(config, url, {
     method: 'PUT',
-    headers: { ...githubHeaders(config), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (response.ok) return 'ok'
   if (response.status === 409 || response.status === 422) return 'conflict'
-  throw new Error(`GitHub 同步写入失败（HTTP ${response.status}）`)
+  const detail = (await response.text()).slice(0, 180).replace(/\s+/g, ' ')
+  throw new Error(`GitHub 同步写入失败（HTTP ${response.status}${detail ? ` · ${detail}` : ''}）`)
 }
 
 
