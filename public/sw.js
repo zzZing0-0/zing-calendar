@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zing-calendar-app-v1.6.3'
+const CACHE_NAME = 'zing-calendar-app-v1.7.0'
 const APP_SHELL = '/'
 
 async function fetchAndCacheAppShell() {
