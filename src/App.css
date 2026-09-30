@@ -4027,126 +4027,6 @@ button {
 }
 
 
-/* v1.7.3 — desktop persistent header stack; all pinned surfaces are opaque */
-@media (min-width:621px){
-  :root{--zing-desktop-global-head:92px}
-
-  .topbar{
-    position:sticky;
-    top:0;
-    z-index:100;
-    box-sizing:border-box;
-    min-height:var(--zing-desktop-global-head);
-    margin-bottom:0;
-    padding:22px 0;
-    background:transparent;
-  }
-
-  .calendar-card{overflow:visible}
-
-  .calendar-sticky-header{
-    position:sticky;
-    top:var(--zing-desktop-global-head);
-    z-index:90;
-    overflow:hidden;
-    border-radius:22px 22px 0 0;
-    background:#fff;
-    box-shadow:0 1px 0 rgba(30,35,32,.08);
-  }
-  .calendar-sticky-header .calendar-toolbar{background:#fff}
-  .calendar-sticky-header .weekday-row{background:#fafbfa}
-
-  .anniversary-page{overflow:visible}
-  .anniversary-page .page-heading{
-    position:sticky;
-    top:var(--zing-desktop-global-head);
-    z-index:90;
-    margin:0 0 18px;
-    padding:12px 0 10px;
-    background:#fff;
-  }
-
-  /* Only the period selector is pinned in Statistics.
-     The “统计” page title remains normal scrolling content. */
-  .statistics-page .stats-heading{
-    position:static;
-    background:transparent;
-  }
-  .statistics-page .stats-range{
-    position:sticky;
-    top:var(--zing-desktop-global-head);
-    z-index:90;
-    background:#fff;
-    box-shadow:0 1px 0 rgba(30,35,32,.08);
-  }
-}
-
-
-/* v1.7.5 — desktop fixed chrome without a full-width background band */
-@media (min-width:621px){
-  .topbar{
-    background:transparent !important;
-  }
-  .topbar::before{
-    content:none !important;
-    display:none !important;
-  }
-  .topbar .brand,
-  .topbar .search-launcher,
-  .topbar .search-box,
-  .topbar .search-shell{
-    position:relative;
-    z-index:1;
-  }
-}
-
-/* v1.7.6 — restore modal stacking above fixed desktop chrome */
-@media (min-width:621px){
-  .modal-layer{
-    z-index:200 !important;
-  }
-  .day-detail,
-  .day-detail-panel{
-    z-index:201 !important;
-  }
-}
-
-/* v1.7.7 — all desktop page chrome stays below overlays */
-@media (min-width:621px){
-  .topbar,
-  .calendar-toolbar,
-  .calendar-header,
-  .calendar-weekdays,
-  .anniversary-header,
-  .statistics-periods,
-  .stats-periods,
-  .statistics-range{
-    z-index:60 !important;
-  }
-
-  .modal-layer{
-    z-index:300 !important;
-  }
-
-  .modal-layer .day-detail,
-  .modal-layer .day-detail-panel,
-  .day-detail-panel{
-    position:relative;
-    z-index:301 !important;
-  }
-}
-
-/* v1.7.8 — desktop Day Detail is a drawer, not .modal-layer */
-@media (min-width:621px){
-  .drawer-backdrop{
-    z-index:400 !important;
-  }
-  .day-drawer{
-    z-index:401 !important;
-  }
-}
-
-
 /* v1.7.9 — menstrual date markers must remain visible in both desktop and mobile calendars */
 .day-cell .day-number.menstrual-actual {
   color:#c45f7a !important;
@@ -4160,3 +4040,60 @@ button {
 }
 .day-cell.today .day-number.menstrual-actual { color:#c45f7a !important; }
 .day-cell.today .day-number.menstrual-predicted { color:#dda6b5 !important; }
+
+/* v1.7.14 — clean desktop sticky model.
+   Global brand/search are normal flow. Only page-local controls are sticky. */
+@media (max-width:620px){
+  .continuous-calendar .day-number[data-month-key]{
+    display:inline-block !important;
+    width:auto !important;
+    min-width:0 !important;
+    max-width:none !important;
+    height:auto !important;
+    white-space:nowrap !important;
+    word-break:keep-all !important;
+    overflow:visible !important;
+  }
+}
+
+@media (min-width:621px){
+  .topbar,
+  .calendar-topbar{
+    position:static;
+    top:auto;
+    z-index:auto;
+  }
+
+  .calendar-card{overflow:visible}
+  .calendar-sticky-header{
+    position:sticky;
+    top:0;
+    z-index:60;
+    overflow:hidden;
+    border-radius:22px 22px 0 0;
+    background:#fff;
+    box-shadow:0 1px 0 rgba(30,35,32,.08);
+  }
+  .calendar-sticky-header .calendar-toolbar{background:#fff}
+  .calendar-sticky-header .weekday-row{background:#fafbfa}
+
+  .anniversary-page{overflow:visible}
+  .anniversary-page .page-heading{
+    position:sticky;
+    top:0;
+    z-index:60;
+    background:#fff;
+  }
+
+  .statistics-page .stats-heading{position:static}
+  .statistics-page .stats-range{
+    position:sticky;
+    top:0;
+    z-index:60;
+    background:#fff;
+    box-shadow:0 1px 0 rgba(30,35,32,.08);
+  }
+
+  .drawer-backdrop{z-index:400 !important}
+  .day-drawer{z-index:401 !important}
+}
