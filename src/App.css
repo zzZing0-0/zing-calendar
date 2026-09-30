@@ -4099,3 +4099,64 @@ button {
     z-index:1;
   }
 }
+
+/* v1.7.6 — restore modal stacking above fixed desktop chrome */
+@media (min-width:621px){
+  .modal-layer{
+    z-index:200 !important;
+  }
+  .day-detail,
+  .day-detail-panel{
+    z-index:201 !important;
+  }
+}
+
+/* v1.7.7 — all desktop page chrome stays below overlays */
+@media (min-width:621px){
+  .topbar,
+  .calendar-toolbar,
+  .calendar-header,
+  .calendar-weekdays,
+  .anniversary-header,
+  .statistics-periods,
+  .stats-periods,
+  .statistics-range{
+    z-index:60 !important;
+  }
+
+  .modal-layer{
+    z-index:300 !important;
+  }
+
+  .modal-layer .day-detail,
+  .modal-layer .day-detail-panel,
+  .day-detail-panel{
+    position:relative;
+    z-index:301 !important;
+  }
+}
+
+/* v1.7.8 — desktop Day Detail is a drawer, not .modal-layer */
+@media (min-width:621px){
+  .drawer-backdrop{
+    z-index:400 !important;
+  }
+  .day-drawer{
+    z-index:401 !important;
+  }
+}
+
+
+/* v1.7.9 — menstrual date markers must remain visible in both desktop and mobile calendars */
+.day-cell .day-number.menstrual-actual {
+  color:#c45f7a !important;
+  font-weight:800 !important;
+}
+.day-cell .day-number.menstrual-predicted {
+  color:#dda6b5 !important;
+  font-weight:700 !important;
+  text-decoration:underline dotted rgba(196,95,122,.38) !important;
+  text-underline-offset:3px;
+}
+.day-cell.today .day-number.menstrual-actual { color:#c45f7a !important; }
+.day-cell.today .day-number.menstrual-predicted { color:#dda6b5 !important; }
