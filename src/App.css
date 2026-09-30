@@ -4006,47 +4006,96 @@ button {
   min-width:0;
 }
 
-/* v1.7.0 — desktop sticky page chrome, matching the mobile interaction */
-@media(min-width:621px){
-  .calendar-card{overflow:visible}
-  .calendar-sticky-header{
-    position:sticky;
-    top:0;
-    z-index:30;
-    background:rgba(255,255,255,.97);
-    border-radius:22px 22px 0 0;
-    box-shadow:0 7px 18px rgba(40,52,45,.07);
-    -webkit-backdrop-filter:saturate(1.08) blur(10px);
-    backdrop-filter:saturate(1.08) blur(10px);
-  }
-  .calendar-sticky-header .calendar-toolbar{background:transparent}
-  .calendar-sticky-header .weekday-row{background:rgba(250,251,250,.96)}
-
-  .anniversary-page .page-heading{
-    position:sticky;
-    top:0;
-    z-index:35;
-    margin:0 -22px 18px;
-    padding:14px 22px 12px;
-    background:rgba(255,255,255,.97);
-    border-bottom:1px solid rgba(30,35,32,.06);
-    -webkit-backdrop-filter:saturate(1.06) blur(10px);
-    backdrop-filter:saturate(1.06) blur(10px);
-  }
-
-  .statistics-page .stats-range{
-    position:sticky;
-    top:0;
-    z-index:35;
-    background:rgba(255,255,255,.97);
-    box-shadow:0 5px 14px rgba(40,52,45,.06);
-    -webkit-backdrop-filter:saturate(1.06) blur(10px);
-    backdrop-filter:saturate(1.06) blur(10px);
-  }
-}
-
 /* v1.7.0 — high-contrast series colors for the status comparison chart */
 .status-trend-chart .status-mood-line{stroke:#d65f62}
 .status-trend-chart .status-energy-line{stroke:#4d78c7}
 .legend-mood-line{border-color:#d65f62}
 .legend-energy-line{border-color:#4d78c7}
+
+/* v1.7.1 status QA; desktop header/search behavior unchanged */
+.status-summary-groups{display:grid;gap:12px}
+.status-summary-group{display:grid;gap:7px}
+.status-summary-label{font-size:12px;color:#59645e}
+.energy-stat-list .energy-stat-icon{display:grid;place-items:center}
+.energy-stat-list .energy-battery{transform:scale(.72);transform-origin:center}
+.status-trend-layout{display:block!important}
+.status-trend-layout .mood-chart-area{width:100%;min-width:0}
+@media(max-width:520px){
+ .mood-picker{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:4px!important}
+ .mood-choice{min-width:0!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:6px!important;padding:7px 2px 6px!important;text-align:center!important;font-size:9px!important}
+ .mood-choice .mood-face{transform:scale(.9);transform-origin:center}
+}
+
+
+/* v1.7.3 — desktop persistent header stack; all pinned surfaces are opaque */
+@media (min-width:621px){
+  :root{--zing-desktop-global-head:92px}
+
+  .topbar{
+    position:sticky;
+    top:0;
+    z-index:100;
+    box-sizing:border-box;
+    min-height:var(--zing-desktop-global-head);
+    margin-bottom:0;
+    padding:22px 0;
+    background:transparent;
+  }
+
+  .calendar-card{overflow:visible}
+
+  .calendar-sticky-header{
+    position:sticky;
+    top:var(--zing-desktop-global-head);
+    z-index:90;
+    overflow:hidden;
+    border-radius:22px 22px 0 0;
+    background:#fff;
+    box-shadow:0 1px 0 rgba(30,35,32,.08);
+  }
+  .calendar-sticky-header .calendar-toolbar{background:#fff}
+  .calendar-sticky-header .weekday-row{background:#fafbfa}
+
+  .anniversary-page{overflow:visible}
+  .anniversary-page .page-heading{
+    position:sticky;
+    top:var(--zing-desktop-global-head);
+    z-index:90;
+    margin:0 0 18px;
+    padding:12px 0 10px;
+    background:#fff;
+  }
+
+  /* Only the period selector is pinned in Statistics.
+     The “统计” page title remains normal scrolling content. */
+  .statistics-page .stats-heading{
+    position:static;
+    background:transparent;
+  }
+  .statistics-page .stats-range{
+    position:sticky;
+    top:var(--zing-desktop-global-head);
+    z-index:90;
+    background:#fff;
+    box-shadow:0 1px 0 rgba(30,35,32,.08);
+  }
+}
+
+
+/* v1.7.5 — desktop fixed chrome without a full-width background band */
+@media (min-width:621px){
+  .topbar{
+    background:transparent !important;
+  }
+  .topbar::before{
+    content:none !important;
+    display:none !important;
+  }
+  .topbar .brand,
+  .topbar .search-launcher,
+  .topbar .search-box,
+  .topbar .search-shell{
+    position:relative;
+    z-index:1;
+  }
+}

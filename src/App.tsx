@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.0'
+const APP_VERSION = '1.7.5'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2674,8 +2674,11 @@ function App() {
     const energies = dailyEnergy.filter(energy=>inRange(energy.date))
     const journalDays = new Set(journals.map(entry=>entry.date)).size
     const moodDays = new Set(moods.map(mood=>mood.date)).size
+    const energyDays = new Set(energies.map(energy=>energy.date)).size
+    const statusDays = new Set([...moods.map(mood=>mood.date), ...energies.map(energy=>energy.date)]).size
     const impactCounts = [-2,-1,0,1,2].map(value=>({value:value as JournalImpact,count:journals.filter(j=>j.impact===value).length}))
     const moodCounts = [1,2,3,4,5].map(value=>({value:value as MoodLevel,count:moods.filter(m=>m.level===value).length}))
+    const energyCounts = [1,2,3,4,5].map(value=>({value:value as EnergyLevel,count:energies.filter(e=>e.level===value).length}))
     const priorityCounts = [3,2,1,0].map(value=>({value:value as TaskPriority,count:eligibleTasks.filter(t=>t.priority===value).length}))
     const defaultTagJournals = journals.filter(entry=>(entry.tagIds??[DEFAULT_TAG_ID]).includes(DEFAULT_TAG_ID))
     const defaultTagImpactRow = {
@@ -2827,8 +2830,8 @@ function App() {
     })
 
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
-      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,
-      impactCounts,moodCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
+      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
+      impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
   },[tasks,journalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
@@ -3497,8 +3500,13 @@ function App() {
           </section>
 
           <section className="stats-section">
-            <div className="stats-section-title"><div><span className="eyebrow">STATUS</span><h3>状态</h3></div><small>{statistics.moodDays} 天</small></div>
-            {(statsRange==='year'||statsRange==='all') && <div className="mood-stat-list">{statistics.moodDays ? statistics.moodCounts.map(row=><div key={row.value}><span className="mood-stat-face"><MoodFace level={row.value} /></span><span>{moodStatLabels[row.value]}</span><strong>{row.count}</strong></div>) : <p className="page-empty compact">这个时间范围还没有 Daily Mood。</p>}</div>}
+            <div className="stats-section-title"><div><span className="eyebrow">STATUS</span><h3>状态</h3></div><small>{statistics.statusDays} 天</small></div>
+            {(statsRange==='year'||statsRange==='all') && (
+              <div className="status-summary-groups">
+                <div className="status-summary-group"><strong className="status-summary-label">心情</strong><div className="mood-stat-list">{statistics.moodCounts.map(row=><div key={`mood-${row.value}`}><span className="mood-stat-face"><MoodFace level={row.value} /></span><span>{moodStatLabels[row.value]}</span><strong>{row.count}</strong></div>)}</div></div>
+                <div className="status-summary-group"><strong className="status-summary-label">能量</strong><div className="mood-stat-list energy-stat-list">{statistics.energyCounts.map(row=><div key={`energy-${row.value}`}><span className="energy-stat-icon"><EnergyBattery level={row.value} /></span><span>{ENERGIES.find(item=>item.value===row.value)?.label}</span><strong>{row.count}</strong></div>)}</div></div>
+              </div>
+            )}
             {(statsRange==='year'||statsRange==='all') ? (
               <div className="mood-heatmap-wrap status-heatmaps">
                 {(() => {
@@ -3539,8 +3547,7 @@ function App() {
             ) : (statsRange==='week'||statsRange==='month'||statsRange==='30d') && (
               <div className="mood-trend-wrap status-trend-wrap">
                 <div className="status-trend-heading"><h4>状态变化</h4><div className="status-trend-legend"><span><i className="legend-mood-line" />心情</span><span><i className="legend-energy-line" />能量</span></div></div>
-                {(statistics.moodLinePoints.length || statistics.energyLinePoints.length) ? <div className="mood-trend-layout">
-                  <div className="mood-y-axis status-y-axis">{[5,4,3,2,1].map(level=><span key={level}><i className={`status-level-swatch mood-${level}`} /></span>)}</div>
+                {(statistics.moodLinePoints.length || statistics.energyLinePoints.length) ? <div className="mood-trend-layout status-trend-layout">
                   <div className="mood-chart-area">
                     <svg className="mood-trend-chart status-trend-chart" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="心情与能量状态变化对比">
                       {[4,12,20,28,36].map(y=><line key={y} x1="0" x2="100" y1={y} y2={y} className="mood-grid-line" />)}
