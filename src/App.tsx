@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.6.3'
+const APP_VERSION = '1.7.0'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -55,6 +55,25 @@ type JournalImpact = -2 | -1 | 0 | 1 | 2
 type DailyMood = {
   date: string
   level: MoodLevel
+  updatedAt: string
+}
+
+type EnergyLevel = 1 | 2 | 3 | 4 | 5
+type DailyEnergy = {
+  date: string
+  level: EnergyLevel
+  updatedAt: string
+}
+type MenstrualDayLog = {
+  date: string
+  notes?: string
+}
+type MenstrualPeriod = {
+  id: string
+  startDate: string
+  endDate?: string
+  dayLogs: MenstrualDayLog[]
+  createdAt: string
   updatedAt: string
 }
 
@@ -144,6 +163,13 @@ const MOODS: { value: MoodLevel; label: string }[] = [
   { value: 3, label: '一般' },
   { value: 4, label: '还可以' },
   { value: 5, label: '很高兴' },
+]
+const ENERGIES: { value: EnergyLevel; label: string }[] = [
+  { value: 1, label: '快没电了' },
+  { value: 2, label: '有点疲惫' },
+  { value: 3, label: '勉强够用' },
+  { value: 4, label: '精力充沛' },
+  { value: 5, label: '能量满满' },
 ]
 const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
@@ -329,6 +355,13 @@ function buildMonth(year: number, month: number, weekStartsMonday = true): Calen
 function currentTime() {
   const now = new Date()
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+function EnergyBattery({ level }: { level: EnergyLevel }) {
+  return <span className={`energy-battery energy-${level}`} aria-hidden="true">
+    <span className="battery-cap" />
+    <span className="battery-body">{[5,4,3,2,1].map(cell => <span key={cell} className={`battery-cell${cell <= level ? ' filled' : ''}`} />)}</span>
+  </span>
 }
 
 function emptyJournalDraft(date: Date): JournalDraft {
@@ -907,6 +940,8 @@ type BackupPreview = {
   tasks: Task[]
   journals: JournalEntry[]
   moods: DailyMood[]
+  energies: DailyEnergy[]
+  periods: MenstrualPeriod[]
   tags: Tag[]
   anniversaries: Anniversary[]
   settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; wordCloudIgnored?:string[] }
@@ -1143,6 +1178,7 @@ function App() {
   const [mobileSearchVisible, setMobileSearchVisible] = useState(false)
   const searchWrapRef = useRef<HTMLDivElement | null>(null)
   const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
+
   const [defaultPriority, setDefaultPriority] = useState<TaskPriority>(() => {
     const saved = Number(localStorage.getItem('zing:defaultPriority'))
     return ([0,1,2,3] as number[]).includes(saved) ? saved as TaskPriority : 1
@@ -1155,6 +1191,35 @@ function App() {
   const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(today, defaultPriority))
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
+  const [dailyEnergy, setDailyEnergy] = useState<DailyEnergy[]>([])
+  const [menstrualPeriods, setMenstrualPeriods] = useState<MenstrualPeriod[]>([])
+  const [energyHydrated, setEnergyHydrated] = useState(false)
+  const [periodsHydrated, setPeriodsHydrated] = useState(false)
+  const [statusCalendarMode, setStatusCalendarMode] = useState<'mood'|'energy'>('mood')
+  const energyByDate = useMemo(() => new Map(dailyEnergy.map(row => [row.date,row])), [dailyEnergy])
+  const selectedEnergy = selectedDate ? energyByDate.get(toDateKey(selectedDate)) : undefined
+  const menstrualPrediction = useMemo(() => {
+    const sorted=[...menstrualPeriods].sort((x,y)=>x.startDate.localeCompare(y.startDate))
+    const latest=sorted.at(-1); if(!latest) return null
+    const same=sorted
+    if(same.length<3) return null
+    const intervals=same.slice(1).map((row,index)=>dayDiff(same[index].startDate,row.startDate)).filter(n=>n>=15&&n<=60)
+    if(intervals.length<2) return null
+    const recent=intervals.slice(-6), avg=Math.round(recent.reduce((s,n)=>s+n,0)/recent.length)
+    const predicted=addDaysKey(latest.startDate,avg)
+    const durations=same.filter(row=>row.endDate).map(row=>dayDiff(row.startDate,row.endDate!)+1).filter(n=>n>=1&&n<=10)
+    const duration=durations.length?Math.round(durations.slice(-6).reduce((s,n)=>s+n,0)/durations.slice(-6).length):5
+    return { start:predicted, end:addDaysKey(predicted,Math.max(0,duration-1)), windowStart:addDaysKey(predicted,-1), windowEnd:addDaysKey(predicted,1), averageCycle:avg }
+  }, [menstrualPeriods])
+  const menstrualVisualForDate = (key:string) => {
+    const actual=menstrualPeriods.some(period =>
+      period.endDate ? key>=period.startDate && key<=period.endDate : key===period.startDate
+    )
+    if(actual) return 'actual'
+    if(menstrualPrediction && key>=menstrualPrediction.windowStart && key<=menstrualPrediction.windowEnd) return 'predicted'
+    return ''
+  }
+
   const [anniversaries, setAnniversaries] = useState<Anniversary[]>([])
   const [anniversariesHydrated, setAnniversariesHydrated] = useState(false)
   const [anniversaryEditorOpen, setAnniversaryEditorOpen] = useState(false)
@@ -1172,8 +1237,8 @@ function App() {
   const [journalDraft, setJournalDraft] = useState<JournalDraft>(() => emptyJournalDraft(today))
   const [tags, setTags] = useState<Tag[]>([DEFAULT_TAG])
   const [tagsHydrated, setTagsHydrated] = useState(false)
-  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], tag: [], anniversary: [] })
-  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, tag: false, anniversary: false })
+  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], period: [], tag: [], anniversary: [] })
+  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, period: false, tag: false, anniversary: false })
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
@@ -1327,6 +1392,37 @@ function App() {
     return existing ? current.map(mood => mood.date === date ? next : mood) : [...current, next]
   })
   }
+
+  const setEnergy = (level: EnergyLevel) => {
+    if (!selectedDate) return
+    const date = toDateKey(selectedDate)
+    setDailyEnergy(current => {
+      const existing = current.find(row => row.date === date)
+      if (existing?.level === level) return current.filter(row => row.date !== date)
+      const next: DailyEnergy = { date, level, updatedAt: new Date().toISOString() }
+      return existing ? current.map(row => row.date === date ? next : row) : [...current, next]
+    })
+  }
+
+  const periodForDate = (key:string) => menstrualPeriods.find(period => key >= period.startDate && key <= (period.endDate ?? toDateKey(today)))
+  const startPeriod = () => {
+    if (!selectedDate) return
+    const key=toDateKey(selectedDate), now=new Date().toISOString()
+    setMenstrualPeriods(current => [...current, { id:crypto.randomUUID(), startDate:key, dayLogs:[], createdAt:now, updatedAt:now }])
+  }
+  const updatePeriod = (periodId:string, updater:(period:MenstrualPeriod)=>MenstrualPeriod) => {
+    setMenstrualPeriods(current => current.map(period => period.id===periodId ? {...updater(period),updatedAt:new Date().toISOString()} : period))
+  }
+  const endPeriod = (periodId:string, date:string) => updatePeriod(periodId, period => ({...period,endDate:date}))
+  const deletePeriod = (periodId:string) => {
+    if (!window.confirm('删除这次月经记录？此操作不会影响其他日期。')) return
+    setMenstrualPeriods(current => current.filter(period => period.id !== periodId))
+  }
+  const updatePeriodDayLog = (periodId:string, date:string, patch:Partial<MenstrualDayLog>) => updatePeriod(periodId, period => {
+    const existing=period.dayLogs.find(log=>log.date===date) ?? {date}
+    const next={...existing,...patch}
+    return {...period,dayLogs:[...period.dayLogs.filter(log=>log.date!==date),next]}
+  })
 
   const openJournalEditor = () => {
   const date = selectedDate ?? today
@@ -1506,6 +1602,14 @@ function App() {
       console.error('Failed to load daily moods from IndexedDB', error)
       if (active) setMoodsHydrated(true)
     })
+    loadDailyEnergy<DailyEnergy>().then(rows => {
+      if (!active) return
+      setDailyEnergy(rows); setEnergyHydrated(true)
+    }).catch(error => { console.error('Failed to load daily energy',error); if(active)setEnergyHydrated(true) })
+    loadMenstrualPeriods<MenstrualPeriod>().then(rows => {
+      if (!active) return
+      setMenstrualPeriods(rows); setPeriodsHydrated(true)
+    }).catch(error => { console.error('Failed to load menstrual periods',error); if(active)setPeriodsHydrated(true) })
     return () => { active = false }
   }, [])
 
@@ -1560,6 +1664,20 @@ function App() {
       void recordSyncDiff('mood', previous, dailyMoods).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record mood sync changes', error))
     }
   }, [dailyMoods, moodsHydrated])
+
+  useEffect(() => {
+    if (!energyHydrated) return
+    saveDailyEnergy(dailyEnergy).catch(error => console.error('Failed to save daily energy',error))
+    if (!syncSnapshotReadyRef.current.energy) { syncSnapshotsRef.current.energy=dailyEnergy; syncSnapshotReadyRef.current.energy=true }
+    else { const previous=syncSnapshotsRef.current.energy; syncSnapshotsRef.current.energy=dailyEnergy; void recordSyncDiff('energy',previous,dailyEnergy).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}) }
+  }, [dailyEnergy,energyHydrated])
+
+  useEffect(() => {
+    if (!periodsHydrated) return
+    saveMenstrualPeriods(menstrualPeriods).catch(error => console.error('Failed to save menstrual periods',error))
+    if (!syncSnapshotReadyRef.current.period) { syncSnapshotsRef.current.period=menstrualPeriods; syncSnapshotReadyRef.current.period=true }
+    else { const previous=syncSnapshotsRef.current.period; syncSnapshotsRef.current.period=menstrualPeriods; void recordSyncDiff('period',previous,menstrualPeriods).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}) }
+  }, [menstrualPeriods,periodsHydrated])
 
   useEffect(() => {
     loadGitHubDeviceCredential().then(saved => {
@@ -1708,7 +1826,7 @@ function App() {
         const hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
         const anns=monthAnniversaries.get(key)??[]
         return <button key={key} type="button" className={`day-cell${inCurrentMonth?'':' outside-month'}${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
-          <span className="day-number" data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
+          <span className={`day-number${menstrualVisualForDate(key) ? ` menstrual-${menstrualVisualForDate(key)}` : ""}`} data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
           {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
           {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
           {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
@@ -1741,7 +1859,7 @@ function App() {
         const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length), hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
         const anns=anniversaryMap.get(key)??[]
         return <button key={key} type="button" className={`day-cell${isToday?' today':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
-          <span className="day-number" data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
+          <span className={`day-number${menstrualVisualForDate(key) ? ` menstrual-${menstrualVisualForDate(key)}` : ""}`} data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
           {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
           {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
           {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
@@ -2553,6 +2671,7 @@ function App() {
 
     const journals = journalEntries.filter(entry=>inRange(entry.date))
     const moods = dailyMoods.filter(mood=>inRange(mood.date))
+    const energies = dailyEnergy.filter(energy=>inRange(energy.date))
     const journalDays = new Set(journals.map(entry=>entry.date)).size
     const moodDays = new Set(moods.map(mood=>mood.date)).size
     const impactCounts = [-2,-1,0,1,2].map(value=>({value:value as JournalImpact,count:journals.filter(j=>j.impact===value).length}))
@@ -2676,21 +2795,24 @@ function App() {
     })
     const words=[...wordCounts.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0],'zh-CN')).slice(0,36).map(([word,count])=>({word,count}))
 
-    const moodLinePoints = [...moods].sort((a,b)=>a.date.localeCompare(b.date)).map(mood=> {
-      const span = Math.max(1, dayDiff(rangeStart==='0000-01-01' ? mood.date : rangeStart, todayKey))
-      const offset = rangeStart==='0000-01-01' ? 0 : Math.max(0, dayDiff(rangeStart, mood.date))
-      return { ...mood, x: rangeStart==='0000-01-01' ? 50 : 6+(offset/span)*92, y: 36 - ((mood.level-1)/4)*32 }
-    })
+    const pointForStatus = <T extends {date:string;level:number}>(row:T) => {
+      const span = Math.max(1, dayDiff(rangeStart==='0000-01-01' ? row.date : rangeStart, todayKey))
+      const offset = rangeStart==='0000-01-01' ? 0 : Math.max(0, dayDiff(rangeStart, row.date))
+      return { ...row, x: rangeStart==='0000-01-01' ? 50 : 6+(offset/span)*92, y: 36 - ((row.level-1)/4)*32 }
+    }
+    const moodLinePoints = [...moods].sort((a,b)=>a.date.localeCompare(b.date)).map(pointForStatus)
+    const energyLinePoints = [...energies].sort((a,b)=>a.date.localeCompare(b.date)).map(pointForStatus)
     const yearStartDate = new Date(today.getFullYear(),0,1)
     const heatmapLeading = weekStartsMonday ? (yearStartDate.getDay()+6)%7 : yearStartDate.getDay()
     const moodByDate = new Map(dailyMoods.map(item=>[item.date,item.level]))
+    const energyByStatDate = new Map(dailyEnergy.map(item=>[item.date,item.level]))
     const yearHeatmap = Array.from({length:365 + (new Date(today.getFullYear(),1,29).getMonth()===1 ? 1 : 0)},(_,index)=>{
       const date=new Date(today.getFullYear(),0,index+1)
       const key=toDateKey(date)
-      return {key,level:moodByDate.get(key),future:key>todayKey}
+      return {key,level:moodByDate.get(key),energyLevel:energyByStatDate.get(key),future:key>todayKey}
     })
-    const allMoodYears = dailyMoods.length
-      ? Array.from(new Set(dailyMoods.map(item=>Number(item.date.slice(0,4))))).sort((a,b)=>a-b)
+    const allMoodYears = dailyMoods.length || dailyEnergy.length
+      ? Array.from(new Set([...dailyMoods,...dailyEnergy].map(item=>Number(item.date.slice(0,4))))).sort((a,b)=>a-b)
       : [today.getFullYear()]
     const allHeatmapYears = allMoodYears.map(year=>{
       const first=new Date(year,0,1)
@@ -2699,15 +2821,15 @@ function App() {
       const days=Array.from({length:365+(leap?1:0)},(_,index)=>{
         const date=new Date(year,0,index+1)
         const key=toDateKey(date)
-        return {key,level:moodByDate.get(key),future:key>todayKey}
+        return {key,level:moodByDate.get(key),energyLevel:energyByStatDate.get(key),future:key>todayKey}
       })
       return {year,leading,days}
     })
 
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
       postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,
-      impactCounts,moodCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
-  },[tasks,journalEntries,dailyMoods,managedTags,statsRange,weekStartsMonday,wordCloudIgnored])
+      impactCounts,moodCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
+  },[tasks,journalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
@@ -2957,8 +3079,8 @@ function App() {
     if (resettingData) return
     setResettingData(true); setBackupMessage('正在清空数据…')
     try {
-      await replaceZingData({tasks:[],journals:[],moods:[],tags:[DEFAULT_TAG],anniversaries:[],attachments:[]})
-      setTasks([]); setJournalEntries([]); setDailyMoods([]); setTags([DEFAULT_TAG]); setAnniversaries([])
+      await replaceZingData({tasks:[],journals:[],moods:[],energies:[],periods:[],tags:[DEFAULT_TAG],anniversaries:[],attachments:[]})
+      setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setMenstrualPeriods([]); setTags([DEFAULT_TAG]); setAnniversaries([])
       setSelectedDate(today); setSearchQuery('')
       setResetDataConfirm(false)
       setStorageStats({total:0,images:0,audio:0,data:0,attachmentCount:0})
@@ -3009,6 +3131,8 @@ function App() {
         {path:'data/tasks.json',bytes:json(tasks)},
         {path:'data/journals.json',bytes:json(journalEntries)},
         {path:'data/moods.json',bytes:json(dailyMoods)},
+        {path:'data/energy.json',bytes:json(dailyEnergy)},
+        {path:'data/periods.json',bytes:json(menstrualPeriods)},
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks,showAllRecurringTasks,wordCloudIgnored})},
@@ -3024,7 +3148,7 @@ function App() {
         attachmentRows.push({storageKey:attachment.storageKey,path,filename:attachment.filename,mimeType:attachment.mimeType,size:blob.size,type:attachment.type,duration:attachment.duration,createdAt:attachment.createdAt})
       }
       const manifest={format:'zing-calendar-backup',schemaVersion:1,appVersion:'0.6.22',exportedAt,
-        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,tags:tags.length,anniversaries:anniversaries.length,attachments:attachmentRows.length},
+        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,energies:dailyEnergy.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,attachments:attachmentRows.length},
         attachments:attachmentRows}
       entries.unshift({path:'manifest.json',bytes:json(manifest)})
       setBackupMessage('正在生成 ZIP…')
@@ -3049,10 +3173,12 @@ function App() {
       const tasks=decodeBackupJson<Task[]>(entries,'data/tasks.json')
       const journals=decodeBackupJson<JournalEntry[]>(entries,'data/journals.json')
       const moods=decodeBackupJson<DailyMood[]>(entries,'data/moods.json')
+      const energies=entries.has('data/energy.json')?decodeBackupJson<DailyEnergy[]>(entries,'data/energy.json'):[]
+      const periods=entries.has('data/periods.json')?decodeBackupJson<MenstrualPeriod[]>(entries,'data/periods.json'):[]
       const restoredTags=decodeBackupJson<Tag[]>(entries,'data/tags.json')
       const restoredAnniversaries=decodeBackupJson<Anniversary[]>(entries,'data/anniversaries.json')
       const settings=decodeBackupJson<BackupPreview['settings']>(entries,'data/settings.json')
-      if (![tasks,journals,moods,restoredTags,restoredAnniversaries].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
+      if (![tasks,journals,moods,energies,periods,restoredTags,restoredAnniversaries].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
       const rows=Array.isArray(manifest.attachments)?manifest.attachments:[]
       const attachments=rows.map((row:any)=>{
         if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
@@ -3065,7 +3191,7 @@ function App() {
           (expected.moods??moods.length)!==moods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
           (expected.anniversaries??restoredAnniversaries.length)!==restoredAnniversaries.length ||
           (expected.attachments??attachments.length)!==attachments.length) throw new Error('备份数量校验失败')
-      setBackupPreview({file,manifest,tasks,journals,moods,tags:restoredTags,anniversaries:restoredAnniversaries,settings,attachments})
+      setBackupPreview({file,manifest,tasks,journals,moods,energies,periods,tags:restoredTags,anniversaries:restoredAnniversaries,settings,attachments})
       setBackupMessage('')
     } catch(error) {
       console.error('Failed to inspect backup',error)
@@ -3081,7 +3207,7 @@ function App() {
     try {
       // The archive is fully parsed and validated before any local write begins.
       await replaceZingData({
-        tasks:backupPreview.tasks,journals:backupPreview.journals,moods:backupPreview.moods,
+        tasks:backupPreview.tasks,journals:backupPreview.journals,moods:backupPreview.moods,energies:backupPreview.energies,periods:backupPreview.periods,
         tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,
         attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
           const copy = new Uint8Array(item.bytes.byteLength)
@@ -3096,7 +3222,7 @@ function App() {
       if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
       if (typeof s.showAllRecurringTasks==='boolean') localStorage.setItem('zing:showAllRecurringTasks',String(s.showAllRecurringTasks))
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
-      setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods)
+      setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setMenstrualPeriods(backupPreview.periods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries)
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
@@ -3113,7 +3239,7 @@ function App() {
   }
 
 
-  const syncRows = (before:any[], after:any[], type:'task'|'journal'|'mood'|'tag'|'anniversary', label:string) => {
+  const syncRows = (before:any[], after:any[], type:'task'|'journal'|'mood'|'energy'|'period'|'tag'|'anniversary', label:string) => {
     const id = (row:any) => type === 'mood' ? String(row.date) : String(row.id)
     const b = new Map(before.map(row=>[id(row),row]))
     const n = new Map(after.map(row=>[id(row),row]))
@@ -3141,7 +3267,7 @@ function App() {
     setGithubSyncMessageKind('working')
     setGithubSyncMessage('正在连接 GitHub…')
     try {
-      const beforeTasks = tasks, beforeJournals = journalEntries, beforeMoods = dailyMoods, beforeTags = tags, beforeAnniversaries = anniversaries
+      const beforeTasks = tasks, beforeJournals = journalEntries, beforeMoods = dailyMoods, beforeEnergy=dailyEnergy, beforePeriods=menstrualPeriods, beforeTags = tags, beforeAnniversaries = anniversaries
       const result = await syncWithGitHub({
         owner: githubSyncOwner.trim(),
         repo: githubSyncRepo.trim(),
@@ -3159,8 +3285,8 @@ function App() {
         : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
-      const [nextTasks,nextJournals,nextMoods,nextTags,nextAnniversaries] = await Promise.all([
-        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
+      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextPeriods,nextTags,nextAnniversaries] = await Promise.all([
+        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
       ])
       const normalizedNextTags = normalizeTags(nextTags)
       const hydratedTags = ensureRequiredSystemTags(normalizedNextTags)
@@ -3176,6 +3302,8 @@ function App() {
           syncRows(beforeTasks,nextTasks,'task','任务'),
           syncRows(beforeJournals,nextJournals,'journal','日记'),
           syncRows(beforeMoods,nextMoods,'mood','心情'),
+          syncRows(beforeEnergy,nextEnergy,'energy','能量'),
+          syncRows(beforePeriods,nextPeriods,'period','月经'),
           syncRows(beforeAnniversaries,nextAnniversaries,'anniversary','纪念日'),
           syncRows(beforeTags,hydratedTags,'tag','标签'),
         ],
@@ -3190,11 +3318,13 @@ function App() {
         task: nextTasks,
         journal: nextJournals,
         mood: nextMoods,
+        energy: nextEnergy,
+        period: nextPeriods,
         tag: hydratedTags,
         anniversary: nextAnniversaries,
       }
-      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, tag:true, anniversary:true }
-      setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods)
+      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, period:true, tag:true, anniversary:true }
+      setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setMenstrualPeriods(nextPeriods)
       setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
     } catch (error) {
@@ -3367,23 +3497,31 @@ function App() {
           </section>
 
           <section className="stats-section">
-            <div className="stats-section-title"><div><span className="eyebrow">MOOD</span><h3>心情</h3></div><small>{statistics.moodDays} 天</small></div>
+            <div className="stats-section-title"><div><span className="eyebrow">STATUS</span><h3>状态</h3></div><small>{statistics.moodDays} 天</small></div>
             {(statsRange==='year'||statsRange==='all') && <div className="mood-stat-list">{statistics.moodDays ? statistics.moodCounts.map(row=><div key={row.value}><span className="mood-stat-face"><MoodFace level={row.value} /></span><span>{moodStatLabels[row.value]}</span><strong>{row.count}</strong></div>) : <p className="page-empty compact">这个时间范围还没有 Daily Mood。</p>}</div>}
             {(statsRange==='year'||statsRange==='all') ? (
-              <div className="mood-heatmap-wrap">
-                <h4>{statsRange==='all'?'全部心情热力图':'全年心情热力图'}</h4>
-                {statsRange==='all' ? (()=> {
+              <div className="mood-heatmap-wrap status-heatmaps">
+                {(() => {
                   const years=statistics.allHeatmapYears
                   const selected=years.find(group=>group.year===moodHeatmapYear) ?? years[years.length-1]
-                  if(!selected) return <p className="page-empty compact">还没有心情记录。</p>
+                  if(!selected) return <p className="page-empty compact">还没有状态记录。</p>
                   const index=Math.max(0,years.findIndex(group=>group.year===selected.year))
+                  const heatmap=(kind:'mood'|'energy') => <div className="status-heatmap-block">
+                    <strong>{kind==='mood'?'心情':'能量'}</strong>
+                    <div className="mood-year-heatmap status-year-heatmap">
+                      {Array.from({length:selected.leading}).map((_,i)=><i key={`${kind}-blank-${selected.year}-${i}`} className="heatmap-blank" />)}
+                      {selected.days.map(day=>{
+                        const level=kind==='mood'?day.level:day.energyLevel
+                        const label=kind==='mood'?(level?moodStatLabels[level]:'未记录'):(level?ENERGIES.find(item=>item.value===level)?.label:'未记录')
+                        return <i key={`${kind}-${day.key}`} title={`${day.key} · ${label}`} className={`${level?`mood-${level}`:''}${day.future?' future':''}`} />
+                      })}
+                    </div>
+                  </div>
                   return <div className="mood-single-year-wrap">
-                    <div className="mood-heatmap-year">
+                    <div className="mood-heatmap-year status-heatmap-year">
                       <span>{selected.year}</span>
-                      <div className="mood-year-heatmap">
-                        {Array.from({length:selected.leading}).map((_,i)=><i key={`blank-${selected.year}-${i}`} className="heatmap-blank" />)}
-                        {selected.days.map(day=><i key={day.key} title={`${day.key}${day.level?` · ${moodStatLabels[day.level]}`:' · 未记录'}`} className={`${day.level?`mood-${day.level}`:''}${day.future?' future':''}`} />)}
-                      </div>
+                      {heatmap('mood')}
+                      {heatmap('energy')}
                     </div>
                     {years.length>1&&<div className="mood-year-navigator" onWheel={event=>{
                       if(Math.abs(event.deltaY)+Math.abs(event.deltaX)<8) return
@@ -3396,30 +3534,25 @@ function App() {
                       <button type="button" disabled={index>=years.length-1} onClick={()=>index<years.length-1&&setMoodHeatmapYear(years[index+1].year)} aria-label="下一年">›</button>
                     </div>}
                   </div>
-                })() : (
-                  <div className="mood-year-heatmap">
-                    {Array.from({length:statistics.heatmapLeading}).map((_,i)=><i key={`blank-${i}`} className="heatmap-blank" />)}
-                    {statistics.yearHeatmap.map(day=><i key={day.key} title={`${day.key}${day.level?` · ${moodStatLabels[day.level]}`:' · 未记录'}`} className={`${day.level?`mood-${day.level}`:''}${day.future?' future':''}`} />)}
-                  </div>
-                )}
+                })()}
               </div>
             ) : (statsRange==='week'||statsRange==='month'||statsRange==='30d') && (
-              <div className="mood-trend-wrap">
-                <h4>心情变化</h4>
-                {statistics.moodLinePoints.length ? <div className="mood-trend-layout">
-                  <div className="mood-y-axis">{[5,4,3,2,1].map(level=>{const count=statistics.moodCounts.find(row=>row.value===level)?.count??0;return <span key={level}><MoodFace level={level as MoodLevel} /><small>({count})</small></span>})}</div>
+              <div className="mood-trend-wrap status-trend-wrap">
+                <div className="status-trend-heading"><h4>状态变化</h4><div className="status-trend-legend"><span><i className="legend-mood-line" />心情</span><span><i className="legend-energy-line" />能量</span></div></div>
+                {(statistics.moodLinePoints.length || statistics.energyLinePoints.length) ? <div className="mood-trend-layout">
+                  <div className="mood-y-axis status-y-axis">{[5,4,3,2,1].map(level=><span key={level}><i className={`status-level-swatch mood-${level}`} /></span>)}</div>
                   <div className="mood-chart-area">
-                    <svg className="mood-trend-chart" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="心情随时间变化曲线">
+                    <svg className="mood-trend-chart status-trend-chart" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="心情与能量状态变化对比">
                       {[4,12,20,28,36].map(y=><line key={y} x1="0" x2="100" y1={y} y2={y} className="mood-grid-line" />)}
-                      {statistics.moodLinePoints.length>1 && <polyline points={statistics.moodLinePoints.map(p=>`${p.x},${p.y}`).join(' ')} className="mood-trend-line" />}
-                      {statistics.moodLinePoints.map(p=><circle key={p.date} cx={p.x} cy={p.y} r="1.4" className={`mood-trend-point mood-${p.level}`}><title>{p.date} · {moodStatLabels[p.level]}</title></circle>)}
+                      {statistics.moodLinePoints.length>1 && <polyline points={statistics.moodLinePoints.map(p=>`${p.x},${p.y}`).join(' ')} className="status-mood-line" />}
+                      {statistics.energyLinePoints.length>1 && <polyline points={statistics.energyLinePoints.map(p=>`${p.x},${p.y}`).join(' ')} className="status-energy-line" />}
                     </svg>
                     <div className="mood-x-axis">
                       <span className="mood-x-start">{statistics.rangeStart.slice(5).replace('-','/')}</span>
                       <span className="mood-x-end">{statistics.todayKey.slice(5).replace('-','/')}</span>
                     </div>
                   </div>
-                </div> : <p className="page-empty compact">这个时间范围还没有心情记录。</p>}
+                </div> : <p className="page-empty compact">这个时间范围还没有心情或能量记录。</p>}
               </div>
             )}
           </section>
@@ -3894,7 +4027,7 @@ function App() {
             <section className="detail-section mood-section">
               <div className="section-heading"><h3>今日心情</h3></div>
               <div className="mood-picker" aria-label="今日心情">
-                {MOODS.map(mood => (
+                {MOODS.slice().reverse().map(mood => (
                   <button key={mood.value} type="button" className={`mood-choice mood-${mood.value}${selectedMood?.level === mood.value ? ' active' : ''}`} onClick={() => setMood(mood.value)}>
                     <MoodFace level={mood.value} />
                     <span>{mood.label}</span>
@@ -3903,13 +4036,26 @@ function App() {
               </div>
             </section>
 
+            <section className="detail-section energy-section">
+              <div className="section-heading"><h3>身体能量</h3></div>
+              <div className="energy-picker" aria-label="今日身体能量">
+                {ENERGIES.slice().reverse().map(item => (
+                  <button key={item.value} type="button" className={`energy-choice energy-${item.value}${selectedEnergy?.level===item.value?' active':''}`} onClick={()=>setEnergy(item.value)}>
+                    <EnergyBattery level={item.value}/><span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+
+
                         </>}
 
             <section className="detail-section mood-calendar-section">
               <div className="mini-calendar-header">
                 <div>
-                  <span className="eyebrow">MOOD CALENDAR</span>
-                  <h3>心情月历</h3>
+                  <span className="eyebrow">STATUS CALENDAR</span>
+                  <div className="status-calendar-title"><h3>{statusCalendarMode==='mood'?'心情月历':'能量月历'}</h3><div className="status-mode-toggle"><button className={statusCalendarMode==='mood'?'active':''} onClick={()=>setStatusCalendarMode('mood')}>心情</button><button className={statusCalendarMode==='energy'?'active':''} onClick={()=>setStatusCalendarMode('energy')}>能量</button></div></div>
                 </div>
                 <div className="mini-month-navigation">
                   <button type="button" aria-label="上个月" onClick={() => setMoodMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>‹</button>
@@ -3922,11 +4068,15 @@ function App() {
                 {moodDays.map(({ date, inCurrentMonth }, index) => {
                   const key = toDateKey(date)
                   const mood = moodsByDate.get(key)
+                  const energy = energyByDate.get(key)
+                  const status = statusCalendarMode==='mood' ? mood : energy
                   const column = index % 7
-                  const prev = index > 0 ? moodsByDate.get(toDateKey(moodDays[index - 1].date)) : undefined
-                  const next = index < moodDays.length - 1 ? moodsByDate.get(toDateKey(moodDays[index + 1].date)) : undefined
-                  const joinLeft = Boolean(mood && column > 0 && prev?.level === mood.level && moodDays[index - 1].inCurrentMonth)
-                  const joinRight = Boolean(mood && column < 6 && next?.level === mood.level && moodDays[index + 1].inCurrentMonth)
+                  const prevKey=index>0?toDateKey(moodDays[index-1].date):''
+                  const nextKey=index<moodDays.length-1?toDateKey(moodDays[index+1].date):''
+                  const prev = statusCalendarMode==='mood' ? moodsByDate.get(prevKey) : energyByDate.get(prevKey)
+                  const next = statusCalendarMode==='mood' ? moodsByDate.get(nextKey) : energyByDate.get(nextKey)
+                  const joinLeft = Boolean(status && column > 0 && prev?.level === status.level && moodDays[index - 1].inCurrentMonth)
+                  const joinRight = Boolean(status && column < 6 && next?.level === status.level && moodDays[index + 1].inCurrentMonth)
                   return (
                     <button
                       key={key}
@@ -3941,9 +4091,9 @@ function App() {
                         setMoodMonth(nextMonth)
                         setVisibleMonth(nextMonth)
                       }}
-                      aria-label={`${formatDate(date)}${mood ? `，${MOODS.find(item => item.value === mood.level)?.label}` : '，尚未记录心情'}`}
+                      aria-label={`${formatDate(date)}${status ? `，${statusCalendarMode==='mood' ? MOODS.find(item=>item.value===status.level)?.label : ENERGIES.find(item=>item.value===status.level)?.label}` : `，尚未记录${statusCalendarMode==='mood'?'心情':'能量'}`}`}
                     >
-                      {mood && inCurrentMonth && <span className={`mood-run mood-${mood.level}${joinLeft ? ' join-left' : ''}${joinRight ? ' join-right' : ''}`} />}
+                      {status && inCurrentMonth && <span className={`mood-run mood-${status.level}${joinLeft ? ' join-left' : ''}${joinRight ? ' join-right' : ''}`} />}
                       <span className="mini-day-number">{date.getDate()}</span>
                       {inCurrentMonth && journalDates.has(key) && <span className="mini-journal-dot" aria-label="当天有记录" />}
                     </button>
@@ -3951,6 +4101,8 @@ function App() {
                 })}
               </div>
             </section>
+
+
 
             {!selectedIsFuture && <>
             <section className="detail-section journal-section">
@@ -3982,7 +4134,40 @@ function App() {
               <button className="add-button" type="button" onClick={openJournalEditor}>＋ 添加记录</button>
             </section>
 
+            <section className="detail-section menstrual-section">
+              <div className="section-heading">
+                <h3>{selectedIsFuture ? '预计经期' : '月经记录'}</h3>
+                {menstrualPrediction && <small>预计下次约 {menstrualPrediction.start.slice(5).replace('-','/')} · ±1天</small>}
+              </div>
+              {selectedDate && (() => {
+                const key=toDateKey(selectedDate)
+                if (selectedIsFuture) {
+                  if (!menstrualPrediction || key < menstrualPrediction.windowStart || key > menstrualPrediction.windowEnd) return null
+                  return <div className="menstrual-prediction-card">预计日期，仅作任务安排参考；实际开始后再记录。</div>
+                }
+                const period=periodForDate(key)
+                if(!period) return <button className="secondary-button" type="button" onClick={startPeriod}>＋ 月经开始</button>
+                const log=period.dayLogs.find(row=>row.date===key)
+                return <div className="menstrual-editor">
+                  <div className="menstrual-summary"><strong>🩸 第 {dayDiff(period.startDate,key)+1} 天</strong><span>{period.startDate}{period.endDate?` → ${period.endDate}`:' · 进行中'}</span></div>
+                  {!period.endDate && dayDiff(period.startDate,key)+1 > 7 && <div className="menstrual-duration-warning">本次记录已超过 7 天，请确认是否忘记标记结束；如果仍在持续，可以继续记录。</div>}
+                  <label className="menstrual-note"><span>备注</span><input value={log?.notes??''} placeholder="可选，例如腹痛、量多、状态变化…" onChange={e=>updatePeriodDayLog(period.id,key,{notes:e.target.value})}/></label>
+                  {!period.endDate && key>=period.startDate && <button className="secondary-button" type="button" onClick={()=>endPeriod(period.id,key)}>月经在今天结束</button>}
+                  <button className="menstrual-delete-button" type="button" onClick={()=>deletePeriod(period.id)}>删除这次月经记录</button>
+                </div>
+              })()}
+            </section>
+
+
             </>}
+
+            {selectedIsFuture && selectedDate && menstrualPrediction && toDateKey(selectedDate)>=menstrualPrediction.windowStart && toDateKey(selectedDate)<=menstrualPrediction.windowEnd && (
+              <section className="detail-section menstrual-section">
+                <div className="section-heading"><h3>预计经期</h3><small>预计约 {menstrualPrediction.start.slice(5).replace('-','/')} · ±1天</small></div>
+                <div className="menstrual-prediction-card">预计日期，仅作任务安排参考；实际开始后再记录。</div>
+              </section>
+            )}
+
 
                       </aside>
         </>

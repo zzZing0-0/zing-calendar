@@ -1,8 +1,10 @@
 const DB_NAME = 'zing-calendar'
-const DB_VERSION = 6
+const DB_VERSION = 7
 const TASK_STORE = 'tasks'
 const JOURNAL_STORE = 'journalEntries'
 const MOOD_STORE = 'dailyMoods'
+const ENERGY_STORE = 'dailyEnergy'
+const PERIOD_STORE = 'menstrualPeriods'
 const TAG_STORE = 'tags'
 const ATTACHMENT_STORE = 'attachments'
 const ANNIVERSARY_STORE = 'anniversaries'
@@ -19,6 +21,8 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(TASK_STORE)) db.createObjectStore(TASK_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(JOURNAL_STORE)) db.createObjectStore(JOURNAL_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(MOOD_STORE)) db.createObjectStore(MOOD_STORE, { keyPath: 'date' })
+      if (!db.objectStoreNames.contains(ENERGY_STORE)) db.createObjectStore(ENERGY_STORE, { keyPath: 'date' })
+      if (!db.objectStoreNames.contains(PERIOD_STORE)) db.createObjectStore(PERIOD_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(TAG_STORE)) db.createObjectStore(TAG_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(ATTACHMENT_STORE)) db.createObjectStore(ATTACHMENT_STORE)
       if (!db.objectStoreNames.contains(ANNIVERSARY_STORE)) db.createObjectStore(ANNIVERSARY_STORE, { keyPath: 'id' })
@@ -75,6 +79,10 @@ export const loadJournalEntries = <T,>() => loadAll<T>(JOURNAL_STORE)
 export const saveJournalEntries = <T,>(rows: T[]) => replaceAll(JOURNAL_STORE, rows)
 export const loadDailyMoods = <T,>() => loadAll<T>(MOOD_STORE)
 export const saveDailyMoods = <T,>(rows: T[]) => replaceAll(MOOD_STORE, rows)
+export const loadDailyEnergy = <T,>() => loadAll<T>(ENERGY_STORE)
+export const saveDailyEnergy = <T,>(rows: T[]) => replaceAll(ENERGY_STORE, rows)
+export const loadMenstrualPeriods = <T,>() => loadAll<T>(PERIOD_STORE)
+export const saveMenstrualPeriods = <T,>(rows: T[]) => replaceAll(PERIOD_STORE, rows)
 
 export const loadTags = <T,>() => loadAll<T>(TAG_STORE)
 export const saveTags = <T,>(rows: T[]) => replaceAll(TAG_STORE, rows)
@@ -104,7 +112,7 @@ export async function getStorageStats(): Promise<ZingStorageStats> {
     let images=0, audio=0
     blobs.forEach(blob => { if (blob.type.startsWith('image/')) images += blob.size; else if (blob.type.startsWith('audio/')) audio += blob.size })
     let data=0
-    for (const storeName of [TASK_STORE,JOURNAL_STORE,MOOD_STORE,TAG_STORE,ANNIVERSARY_STORE]) {
+    for (const storeName of [TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE]) {
       const rows = await loadAll<any>(storeName)
       data += new Blob([JSON.stringify(rows)]).size
     }
@@ -143,7 +151,7 @@ export async function cleanupOrphanAttachmentBlobs(referencedKeys: string[]): Pr
 // working exactly as before. Later sync releases can use this metadata without
 // changing the user's task/journal data model or exposing credentials client-side.
 
-export type SyncEntityType = 'task' | 'journal' | 'mood' | 'tag' | 'anniversary'
+export type SyncEntityType = 'task' | 'journal' | 'mood' | 'energy' | 'period' | 'tag' | 'anniversary'
 export type SyncOperation = 'upsert' | 'delete'
 
 export type SyncChange = {
@@ -336,12 +344,14 @@ function entityStoreName(entityType: SyncEntityType): string {
   if (entityType === 'task') return TASK_STORE
   if (entityType === 'journal') return JOURNAL_STORE
   if (entityType === 'mood') return MOOD_STORE
+  if (entityType === 'energy') return ENERGY_STORE
+  if (entityType === 'period') return PERIOD_STORE
   if (entityType === 'tag') return TAG_STORE
   return ANNIVERSARY_STORE
 }
 
 function entityIdOf(entityType: SyncEntityType, row: any): string {
-  return entityType === 'mood' ? String(row.date) : String(row.id)
+  return entityType === 'mood' || entityType === 'energy' ? String(row.date) : String(row.id)
 }
 
 function entityUpdatedAt(row: any): string {
@@ -352,7 +362,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
   const tombstones = await loadSyncTombstones()
   if (!tombstones.length) return 0
   const liveTimes = new Map<string, number>()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'tag', 'anniversary']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'period', 'tag', 'anniversary']
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
     rows.forEach(row => liveTimes.set(`${entityType}:${entityIdOf(entityType, row)}`, Date.parse(entityUpdatedAt(row)) || 0))
@@ -367,7 +377,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
 export async function createSyncBundle(): Promise<SyncBundle> {
   const deviceId = getOrCreateDeviceId()
   await pruneStaleSyncTombstones()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'tag', 'anniversary']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'period', 'tag', 'anniversary']
   const records: SyncEntityRecord[] = []
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
@@ -915,16 +925,16 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
 
 
 export async function replaceZingData(payload: {
-  tasks:any[]; journals:any[]; moods:any[]; tags:any[]; anniversaries:any[];
+  tasks:any[]; journals:any[]; moods:any[]; energies:any[]; periods:any[]; tags:any[]; anniversaries:any[];
   attachments:{key:string;blob:Blob}[]
 }): Promise<void> {
   const db=await openDatabase()
-  const stores=[TASK_STORE,JOURNAL_STORE,MOOD_STORE,TAG_STORE,ANNIVERSARY_STORE,ATTACHMENT_STORE]
+  const stores=[TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,ATTACHMENT_STORE]
   try {
     await new Promise<void>((resolve,reject)=>{
       const tx=db.transaction(stores,'readwrite')
       const replace=(name:string,rows:any[])=>{ const store=tx.objectStore(name); store.clear(); rows.forEach(row=>store.put(row)) }
-      replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(MOOD_STORE,payload.moods)
+      replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(MOOD_STORE,payload.moods); replace(ENERGY_STORE,payload.energies); replace(PERIOD_STORE,payload.periods)
       replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries)
       const attachments=tx.objectStore(ATTACHMENT_STORE); attachments.clear()
       payload.attachments.forEach(item=>attachments.put(item.blob,item.key))

@@ -3782,3 +3782,271 @@ button {
   .compact-tag-list{gap:7px}
   .compact-tag-chip{font-size:11px;padding:7px 10px 7px 8px}
 }
+
+
+/* v1.7.0 status + menstrual tracking */
+.day-number.menstrual-actual { color:#c45f7a; font-weight:800; }
+.day-number.menstrual-predicted { color:#dda6b5; font-weight:700; text-decoration: underline dotted rgba(196,95,122,.38); text-underline-offset:3px; }
+.status-calendar-title { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.status-calendar-title h3 { margin:0; }
+.status-mode-toggle { display:inline-flex; padding:2px; border:1px solid #e1e6e2; border-radius:999px; background:#f7f9f7; }
+.status-mode-toggle button { border:0; background:transparent; border-radius:999px; padding:4px 9px; color:#7a837e; cursor:pointer; font-size:11px; }
+.status-mode-toggle button.active { background:#fff; color:#34483e; box-shadow:0 1px 4px rgba(45,61,53,.1); font-weight:700; }
+
+.energy-picker { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; }
+.energy-choice { min-width:0; border:1px solid #e1e6e2; border-radius:12px; background:#fff; padding:9px 4px 7px; display:flex; flex-direction:column; align-items:center; gap:6px; color:#66706a; cursor:pointer; font-size:10px; }
+.energy-choice.active { border-color:#82998c; box-shadow:0 0 0 2px rgba(112,143,127,.12); color:#334039; font-weight:700; }
+.energy-battery { --energy-color:#92938c; display:inline-flex; flex-direction:column; align-items:center; width:24px; height:43px; }
+.energy-battery.energy-1,.energy-choice.energy-1 .energy-battery { --energy-color:#c97880; }
+.energy-battery.energy-2,.energy-choice.energy-2 .energy-battery { --energy-color:#d99a55; }
+.energy-battery.energy-3,.energy-choice.energy-3 .energy-battery { --energy-color:#92938c; }
+.energy-battery.energy-4,.energy-choice.energy-4 .energy-battery { --energy-color:#73a985; }
+.energy-battery.energy-5,.energy-choice.energy-5 .energy-battery { --energy-color:#3f8658; }
+.battery-cap { width:9px; height:3px; border-radius:2px 2px 0 0; background:var(--energy-color); opacity:.8; }
+.battery-body { width:22px; height:38px; border:1.5px solid var(--energy-color); border-radius:5px; padding:2px; display:flex; flex-direction:column; gap:2px; }
+.battery-cell { flex:1; border-radius:1.5px; background:rgba(120,130,124,.10); }
+.battery-cell.filled { background:var(--energy-color); }
+
+.menstrual-editor { display:grid; gap:11px; }
+.menstrual-summary { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:9px 11px; background:#fff7f9; border-radius:10px; color:#8f5264; }
+.menstrual-summary span { font-size:11px; color:#a77b88; }
+.menstrual-row { display:grid; gap:6px; }
+.menstrual-row>span,.menstrual-note>span { font-size:11px; color:#7c8580; font-weight:700; }
+.segmented-control.compact { flex-wrap:wrap; justify-content:flex-start; }
+.symptom-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.symptom-chips button { border:1px solid #e3e6e4; background:#fff; border-radius:999px; padding:5px 9px; color:#68716c; cursor:pointer; }
+.symptom-chips button.active { border-color:#d69aaa; background:#fff4f7; color:#9e566a; font-weight:700; }
+.menstrual-note { display:grid; gap:5px; }
+.menstrual-note input,.menstrual-note select { width:100%; box-sizing:border-box; border:1px solid #e1e5e2; border-radius:9px; padding:8px 9px; background:#fff; color:#4f5953; }
+.menstrual-section .section-heading small { color:#c07a8e; }
+
+@media (max-width:620px) {
+  .energy-picker { grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }
+  .energy-choice { padding:7px 2px 6px; font-size:9px; }
+  .energy-battery { transform:scale(.9); transform-origin:center; }
+}
+
+.menstrual-duration-warning {
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #fff8ed;
+  color: #9a6a2f;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.menstrual-delete-button {
+  justify-self:start;
+  border:0;
+  background:transparent;
+  color:#b16b7d;
+  padding:5px 0;
+  cursor:pointer;
+  font-size:11px;
+}
+.menstrual-delete-button:hover { text-decoration:underline; }
+
+.menstrual-prediction-card {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7f9;
+  color: #9d6c79;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* v1.7.0 combined status statistics */
+.status-trend-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.status-trend-heading h4 { margin:0; }
+.status-trend-legend { display:flex; gap:14px; font-size:11px; color:#78817c; }
+.status-trend-legend span { display:flex; align-items:center; gap:5px; }
+.legend-mood-shape { width:14px; height:10px; border-radius:50%; background:#527f69; display:inline-block; }
+.legend-energy-shape { width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:12px solid #7a7891; display:inline-block; }
+.status-y-axis span { gap:7px; }
+.status-level-swatch { width:18px; height:18px; border-radius:4px; display:inline-block; flex:0 0 auto; }
+.status-y-axis small { font-size:10px; color:#a0a6a2; }
+.status-mood-line { fill:none; stroke:#527f69; stroke-width:.45; vector-effect:non-scaling-stroke; opacity:.68; }
+.status-energy-line { fill:none; stroke:#7a7891; stroke-width:.45; vector-effect:non-scaling-stroke; opacity:.68; }
+.status-mood-point { fill:#527f69; vector-effect:non-scaling-stroke; }
+.status-energy-point { fill:#7a7891; vector-effect:non-scaling-stroke; }
+.status-heatmap-year { display:grid; gap:14px; }
+.status-heatmap-block { display:grid; gap:7px; }
+.status-heatmap-block>strong { font-size:12px; color:#59645e; font-weight:700; }
+
+/* v1.7.0 status chart refinement */
+.status-trend-chart .status-mood-line {
+  stroke:#3f8060;
+  stroke-width:1.35;
+  opacity:.92;
+  vector-effect:non-scaling-stroke;
+}
+.status-trend-chart .status-energy-line {
+  stroke:#7169a0;
+  stroke-width:1.35;
+  opacity:.92;
+  vector-effect:non-scaling-stroke;
+}
+.status-trend-chart .status-mood-point {
+  fill:#fff;
+  stroke:#3f8060;
+  stroke-width:1.25;
+  vector-effect:non-scaling-stroke;
+}
+.status-trend-chart .status-energy-point {
+  fill:#7169a0;
+  stroke:#fff;
+  stroke-width:.55;
+  vector-effect:non-scaling-stroke;
+}
+.legend-mood-shape {
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#fff;
+  border:2px solid #3f8060;
+  box-sizing:border-box;
+}
+.legend-energy-shape {
+  width:0;
+  height:0;
+  border-left:5px solid transparent;
+  border-right:5px solid transparent;
+  border-bottom:9px solid #7169a0;
+}
+.status-y-axis span {
+  justify-content:center;
+}
+.status-level-swatch {
+  width:15px;
+  height:15px;
+  border-radius:3px;
+}
+.status-heatmaps,
+.status-heatmap-year,
+.status-heatmap-block {
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+.status-year-heatmap {
+  width:100% !important;
+  min-width:0;
+  display:grid !important;
+  grid-template-rows:repeat(7, 11px) !important;
+  grid-auto-flow:column !important;
+  grid-auto-columns:11px !important;
+  gap:4px !important;
+  overflow-x:auto;
+  padding-bottom:4px;
+  box-sizing:border-box;
+}
+.status-year-heatmap i {
+  width:11px !important;
+  height:11px !important;
+  min-width:11px;
+  box-sizing:border-box;
+}
+@media (max-width:620px) {
+  .status-year-heatmap {
+    grid-template-rows:repeat(7, 9px) !important;
+    grid-auto-columns:9px !important;
+    gap:3px !important;
+  }
+  .status-year-heatmap i {
+    width:9px !important;
+    height:9px !important;
+    min-width:9px;
+  }
+}
+
+/* v1.7.0 — clean comparative status chart */
+.status-trend-chart .status-mood-line,
+.status-trend-chart .status-energy-line {
+  fill:none;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  opacity:1;
+  vector-effect:non-scaling-stroke;
+}
+.status-trend-chart .status-mood-line { stroke:#3f8060; }
+.status-trend-chart .status-energy-line { stroke:#6f67a6; }
+
+.legend-mood-line,
+.legend-energy-line {
+  display:inline-block;
+  width:22px;
+  height:0;
+  border:0;
+  border-top:2px solid;
+}
+.legend-mood-line { border-color:#3f8060; }
+.legend-energy-line { border-color:#6f67a6; }
+
+/* Both annual heatmaps occupy the same full row.
+   .mood-heatmap-year historically uses a 48px + content two-column grid;
+   the paired status layout must override that inherited structure. */
+.mood-heatmap-year.status-heatmap-year {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:18px;
+  width:100%;
+  min-width:0;
+}
+.mood-heatmap-year.status-heatmap-year > span {
+  grid-column:1;
+  padding-top:0;
+}
+.mood-heatmap-year.status-heatmap-year > .status-heatmap-block {
+  grid-column:1;
+  width:100%;
+  min-width:0;
+}
+.status-heatmap-block .status-year-heatmap {
+  width:100% !important;
+  min-width:0;
+}
+
+/* v1.7.0 — desktop sticky page chrome, matching the mobile interaction */
+@media(min-width:621px){
+  .calendar-card{overflow:visible}
+  .calendar-sticky-header{
+    position:sticky;
+    top:0;
+    z-index:30;
+    background:rgba(255,255,255,.97);
+    border-radius:22px 22px 0 0;
+    box-shadow:0 7px 18px rgba(40,52,45,.07);
+    -webkit-backdrop-filter:saturate(1.08) blur(10px);
+    backdrop-filter:saturate(1.08) blur(10px);
+  }
+  .calendar-sticky-header .calendar-toolbar{background:transparent}
+  .calendar-sticky-header .weekday-row{background:rgba(250,251,250,.96)}
+
+  .anniversary-page .page-heading{
+    position:sticky;
+    top:0;
+    z-index:35;
+    margin:0 -22px 18px;
+    padding:14px 22px 12px;
+    background:rgba(255,255,255,.97);
+    border-bottom:1px solid rgba(30,35,32,.06);
+    -webkit-backdrop-filter:saturate(1.06) blur(10px);
+    backdrop-filter:saturate(1.06) blur(10px);
+  }
+
+  .statistics-page .stats-range{
+    position:sticky;
+    top:0;
+    z-index:35;
+    background:rgba(255,255,255,.97);
+    box-shadow:0 5px 14px rgba(40,52,45,.06);
+    -webkit-backdrop-filter:saturate(1.06) blur(10px);
+    backdrop-filter:saturate(1.06) blur(10px);
+  }
+}
+
+/* v1.7.0 — high-contrast series colors for the status comparison chart */
+.status-trend-chart .status-mood-line{stroke:#d65f62}
+.status-trend-chart .status-energy-line{stroke:#4d78c7}
+.legend-mood-line{border-color:#d65f62}
+.legend-energy-line{border-color:#4d78c7}
