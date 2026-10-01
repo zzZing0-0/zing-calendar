@@ -808,29 +808,32 @@ async function signedB2Url(storageKey: string, method: 'GET'|'HEAD'|'PUT'): Prom
   return payload.url
 }
 
-async function b2AttachmentExists(storageKey: string): Promise<boolean> {
-  const url = await signedB2Url(storageKey, 'HEAD')
-  const response = await fetch(url, { method: 'HEAD', cache: 'no-store' })
-  if (response.status === 404) return false
-  if (!response.ok) throw new Error(`B2 附件检查失败（HTTP ${response.status} · ${storageKey}）`)
-  return true
-}
-
 async function readB2Attachment(meta: SyncAttachmentMeta): Promise<Blob | undefined> {
-  const url = await signedB2Url(meta.storageKey, 'GET')
-  const response = await fetch(url, { cache: 'no-store' })
+  let url: string
+  try { url = await signedB2Url(meta.storageKey, 'GET') }
+  catch (error) { throw new Error(`B2 GET 签名失败 · ${meta.storageKey} · ${error instanceof Error ? error.message : String(error)}`) }
+  let response: Response
+  try { response = await fetch(url, { method: 'GET', cache: 'no-store' }) }
+  catch (error) { throw new Error(`B2 GET 网络失败 · ${meta.storageKey} · ${error instanceof Error ? error.message : String(error)}`) }
   if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`B2 附件读取失败（HTTP ${response.status} · ${meta.storageKey}）`)
   return await response.blob()
 }
 
 async function writeB2Attachment(meta: SyncAttachmentMeta, blob: Blob): Promise<void> {
-  const url = await signedB2Url(meta.storageKey, 'PUT')
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': blob.type || meta.mimeType || 'application/octet-stream' },
-    body: blob,
-  })
+  let url: string
+  try { url = await signedB2Url(meta.storageKey, 'PUT') }
+  catch (error) { throw new Error(`B2 PUT 签名失败 · ${meta.storageKey} · ${error instanceof Error ? error.message : String(error)}`) }
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': blob.type || meta.mimeType || 'application/octet-stream' },
+      body: blob,
+    })
+  } catch (error) {
+    throw new Error(`B2 PUT 网络失败 · ${meta.storageKey} · ${error instanceof Error ? error.message : String(error)}`)
+  }
   if (!response.ok) throw new Error(`B2 附件上传失败（HTTP ${response.status} · ${meta.storageKey}）`)
 }
 
@@ -838,25 +841,22 @@ async function syncB2Attachments(bundle: SyncBundle): Promise<{ uploaded: number
   const result = { uploaded: 0, downloaded: 0, missing: 0 }
   const metas = attachmentMetasFromBundle(bundle)
   for (const meta of metas) {
-    let local = await getAttachmentBlob(meta.storageKey)
-    const inB2 = await b2AttachmentExists(meta.storageKey)
-    if (inB2) {
+    const local = await getAttachmentBlob(meta.storageKey)
+    // Avoid HEAD entirely. Safari/Chromium were both failing on the extra presigned
+    // HEAD/CORS round trip. A single GET tells us both existence and supplies the blob
+    // when this device does not have it.
+    const remote = await readB2Attachment(meta)
+    if (remote) {
       if (!local) {
-        const remote = await readB2Attachment(meta)
-        if (remote) {
-          await putAttachmentBlob(meta.storageKey, remote)
-          result.downloaded += 1
-        } else result.missing += 1
+        await putAttachmentBlob(meta.storageKey, remote)
+        result.downloaded += 1
       }
       continue
     }
-
     if (local) {
       await writeB2Attachment(meta, local)
       result.uploaded += 1
-    } else {
-      result.missing += 1
-    }
+    } else result.missing += 1
   }
   return result
 }
@@ -891,6 +891,17 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
       if (a && !b) localOnly += 1
       else if (!a && b) remoteOnly += 1
       else if (a && b && JSON.stringify(a.payload) !== JSON.stringify(b.payload)) different += 1
+    })
+    // Deletions are data changes too. Include tombstones in the manual preview instead
+    // of silently applying them after a preview that claimed there was no difference.
+    const localDeletes = new Map(local.tombstones.filter(t => t.entityType === entityType).map(t => [t.key, t]))
+    const remoteDeletes = new Map(remote.bundle!.tombstones.filter(t => t.entityType === entityType).map(t => [t.key, t]))
+    const deleteKeys = new Set([...localDeletes.keys(), ...remoteDeletes.keys()])
+    deleteKeys.forEach(key => {
+      const a = localDeletes.get(key), b = remoteDeletes.get(key)
+      if (a && !b) localOnly += 1
+      else if (!a && b) remoteOnly += 1
+      else if (a && b && a.deletedAt !== b.deletedAt) different += 1
     })
     return { entityType, localOnly, remoteOnly, different }
   })
