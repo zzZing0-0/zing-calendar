@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.18'
+const APP_VERSION = '1.7.19'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2395,66 +2395,30 @@ function App() {
     return usage
   },[managedTags,tasks,journalEntries])
 
+  useEffect(() => {
+    if (sessionStorage.getItem('zing-program-refresh-pending') !== '1') return
+    sessionStorage.removeItem('zing-program-refresh-pending')
+    setAutoSyncToast(`✓ 已更新至 v${APP_VERSION}`)
+  }, [])
+
   const refreshProgram = async () => {
     if (programRefreshBusy) return
     setProgramRefreshBusy(true)
     try {
       if (!navigator.onLine) throw new Error('offline')
-      const probe = await fetch(`/sw.js?check=${Date.now()}`, { cache: 'no-store' })
-      if (!probe.ok) throw new Error(`HTTP ${probe.status}`)
-      const swText = await probe.text()
-      const remoteVersion = swText.match(/zing-calendar-app-v([0-9.]+)/)?.[1]
-      if (remoteVersion === APP_VERSION) {
-        setAutoSyncToast(`✓ 当前已是最新版本 v${APP_VERSION}`)
-        return
+      // Do not parse a version from sw.js. The service-worker cache generation and
+      // the application version are different concepts; parsing the former caused
+      // the UI to keep reporting the old v1.7.10.
+      await fetch(`/sw.js?check=${Date.now()}`, { cache: 'no-store' })
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration()
+        if (registration) await registration.update()
       }
-      if (!('serviceWorker' in navigator)) {
-        window.location.reload()
-        return
-      }
-      const registration = await navigator.serviceWorker.getRegistration()
-      if (!registration) {
-        await navigator.serviceWorker.register('/sw.js')
-        setAutoSyncToast('✓ 已获取最新程序，正在刷新')
-        window.setTimeout(() => window.location.reload(), 450)
-        return
-      }
-
-      let reloading = false
-      const reloadOnce = () => {
-        if (reloading) return
-        reloading = true
-        window.location.reload()
-      }
-      navigator.serviceWorker.addEventListener('controllerchange', reloadOnce, { once: true })
-      await registration.update()
-
-      const installing = registration.installing
-      if (installing) {
-        await new Promise<void>((resolve, reject) => {
-          const timeout = window.setTimeout(() => reject(new Error('update timeout')), 12000)
-          const onState = () => {
-            if (installing.state === 'activated') {
-              window.clearTimeout(timeout)
-              resolve()
-            } else if (installing.state === 'redundant') {
-              window.clearTimeout(timeout)
-              reject(new Error('update failed'))
-            }
-          }
-          installing.addEventListener('statechange', onState)
-          onState()
-        })
-        setAutoSyncToast(`✓ 已更新程序${remoteVersion ? `到 v${remoteVersion}` : ''}`)
-        window.setTimeout(reloadOnce, 350)
-      } else {
-        // The deployment may have changed without requiring a new worker lifecycle.
-        setAutoSyncToast(remoteVersion ? `✓ 已获取 v${remoteVersion}，正在刷新` : '✓ 已获取最新程序，正在刷新')
-        window.setTimeout(reloadOnce, 350)
-      }
+      // Report success only after the newly loaded application is actually running.
+      sessionStorage.setItem('zing-program-refresh-pending', '1')
+      window.location.reload()
     } catch {
       setAutoSyncToast('⚠ 无法刷新程序，继续使用本地版本')
-    } finally {
       setProgramRefreshBusy(false)
     }
   }
