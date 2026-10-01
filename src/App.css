@@ -4098,23 +4098,23 @@ button {
   .day-drawer{z-index:401 !important}
 }
 
-/* v1.7.20 — Today: a plain rectangular outline around the Gregorian label only.
-   box-sizing + inline-flex keep the marker inside the existing number footprint;
-   no cell/lunar/task layout is changed. */
+/* v1.7.21 — Today: rectangular outline only, without changing the Gregorian
+   label's box metrics or baseline. This keeps today's numeral aligned exactly
+   with every other solar-calendar date. */
 .day-cell.today .day-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  border: 2px solid #c94f55 !important;
+  display: block;
+  box-sizing: content-box;
+  border: 0 !important;
   border-radius: 0 !important;
-  padding: 0 3px;
-  min-width: 24px;
+  outline: 2px solid #c94f55;
+  outline-offset: 3px;
+  padding: 0 !important;
+  min-width: 0 !important;
   width: auto !important;
-  height: 28px;
+  height: auto !important;
+  line-height: 1 !important;
   background: transparent !important;
 }
 .day-cell.today .day-number[data-month-key] {
   white-space: nowrap;
-  min-width: max-content;
 }

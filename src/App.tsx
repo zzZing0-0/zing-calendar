@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.20'
+const APP_VERSION = '1.7.21'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1318,7 +1318,22 @@ function App() {
 
   useLayoutEffect(() => {
     if (!isMobileCalendar || mainView !== 'calendar') return
-    const targetKey = pendingCalendarScrollRef.current ?? `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`
+    const pending = pendingCalendarScrollRef.current
+    const targetKey = pending ?? `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`
+    if (targetKey.startsWith('date:')) {
+      const dateKey = targetKey.slice(5)
+      const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${dateKey}"]`)
+      const sticky = document.querySelector<HTMLElement>('.calendar-sticky-header')
+      if (!target || !sticky) return
+      const rect = target.getBoundingClientRect()
+      const stickyBottom = sticky.getBoundingClientRect().bottom
+      const bottomNavTop = document.querySelector<HTMLElement>('.bottom-nav')?.getBoundingClientRect().top ?? window.innerHeight
+      const usableCenter = stickyBottom + Math.max(0, bottomNavTop - stickyBottom) / 2
+      const delta = rect.top + rect.height / 2 - usableCenter
+      if (Math.abs(delta) > 1) window.scrollBy({top:delta, behavior:'auto'})
+      pendingCalendarScrollRef.current = null
+      return
+    }
     const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`[data-month-key="${targetKey}"]`)
     if (!target) return
     target.scrollIntoView({block:'start', behavior:'auto'})
@@ -1893,7 +1908,7 @@ function App() {
     const now = new Date()
     const month = new Date(now.getFullYear(), now.getMonth(), 1)
     if (isMobileCalendar) {
-      pendingCalendarScrollRef.current=`${month.getFullYear()}-${month.getMonth()}`
+      pendingCalendarScrollRef.current=`date:${toDateKey(now)}`
       setVisibleMonth(month); setMobileActiveMonth(month)
       setSelectedDate(null)
       return
