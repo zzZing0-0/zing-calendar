@@ -4097,3 +4097,24 @@ button {
   .drawer-backdrop{z-index:400 !important}
   .day-drawer{z-index:401 !important}
 }
+
+/* v1.7.20 — Today: a plain rectangular outline around the Gregorian label only.
+   box-sizing + inline-flex keep the marker inside the existing number footprint;
+   no cell/lunar/task layout is changed. */
+.day-cell.today .day-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 2px solid #c94f55 !important;
+  border-radius: 0 !important;
+  padding: 0 3px;
+  min-width: 24px;
+  width: auto !important;
+  height: 28px;
+  background: transparent !important;
+}
+.day-cell.today .day-number[data-month-key] {
+  white-space: nowrap;
+  min-width: max-content;
+}

@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.19'
+const APP_VERSION = '1.7.20'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1828,7 +1828,6 @@ function App() {
         const anns=monthAnniversaries.get(key)??[]
         return <button key={key} type="button" className={`day-cell${inCurrentMonth?'':' outside-month'}${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
           <span className={`day-number${menstrualVisualForDate(key) ? ` menstrual-${menstrualVisualForDate(key)}` : ""}`} data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
-          {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
           {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
           {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
           {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
@@ -1861,7 +1860,6 @@ function App() {
         const anns=anniversaryMap.get(key)??[]
         return <button key={key} type="button" className={`day-cell${isToday?' today':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
           <span className={`day-number${menstrualVisualForDate(key) ? ` menstrual-${menstrualVisualForDate(key)}` : ""}`} data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()===1?`${date.getMonth()+1}月`:date.getDate()}</span>
-          {isToday&&<svg className="today-hand-ring" viewBox="0 0 64 48" aria-hidden="true"><path className="today-ring-stroke today-ring-top" d="M46 7 C33 3 17 6 9 15 C3 22 4 31 11 37"/><path className="today-ring-stroke today-ring-bottom" d="M11 37 C21 46 40 44 51 35"/><path className="today-ring-stroke today-ring-end" d="M51 35 C58 29 59 21 53 14"/></svg>}
           {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
           {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
           {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
