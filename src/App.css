@@ -3108,7 +3108,7 @@ button {
 .github-sync-status.success{background:#edf5ef;color:#376247}
 .github-sync-status.error{background:#f8eeee;color:#8a4d4d}
 
-.github-sync-summary-layer{z-index:110}
+.github-sync-summary-layer{z-index:110 !important}
 .github-sync-summary-modal{max-width:620px}
 .sync-summary-time{margin:0 0 14px;color:var(--muted,#777);font-size:13px}
 .sync-summary-grid{display:grid;gap:8px}
