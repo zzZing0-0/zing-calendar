@@ -490,7 +490,7 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
 
 export async function applySyncMerge(plan: SyncMergePlan): Promise<void> {
   const db = await openDatabase()
-  const stores = [TASK_STORE, JOURNAL_STORE, MOOD_STORE, TAG_STORE, ANNIVERSARY_STORE, SYNC_TOMBSTONE_STORE]
+  const stores = [TASK_STORE, JOURNAL_STORE, MOOD_STORE, ENERGY_STORE, PERIOD_STORE, TAG_STORE, ANNIVERSARY_STORE, SYNC_TOMBSTONE_STORE]
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(stores, 'readwrite')
