@@ -861,12 +861,49 @@ async function syncB2Attachments(bundle: SyncBundle): Promise<{ uploaded: number
   return result
 }
 
+
+export type GitHubSyncPreview = {
+  initializedRemote: boolean
+  rows: { entityType: SyncEntityType; localOnly: number; remoteOnly: number; different: number }[]
+}
+
+export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHubSyncPreview> {
+  if (!config.owner.trim() || !config.repo.trim()) throw new Error('GitHub 数据仓库信息不完整')
+  if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
+  const remote = await readGitHubBundleFile(config)
+  const local = await createSyncBundle()
+  if (!remote.bundle) {
+    const counts = new Map<SyncEntityType, number>()
+    local.records.forEach(record => counts.set(record.entityType, (counts.get(record.entityType) || 0) + 1))
+    return { initializedRemote: true, rows: [...counts.entries()].map(([entityType, localOnly]) => ({ entityType, localOnly, remoteOnly: 0, different: 0 })) }
+  }
+  const types: SyncEntityType[] = ['task','journal','mood','energy','period','tag','anniversary']
+  const localMap = new Map(local.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
+  const remoteMap = new Map(remote.bundle.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
+  const rows = types.map(entityType => {
+    let localOnly = 0, remoteOnly = 0, different = 0
+    const keys = new Set([
+      ...local.records.filter(r => r.entityType === entityType).map(r => `${entityType}:${r.entityId}`),
+      ...remote.bundle!.records.filter(r => r.entityType === entityType).map(r => `${entityType}:${r.entityId}`),
+    ])
+    keys.forEach(key => {
+      const a = localMap.get(key), b = remoteMap.get(key)
+      if (a && !b) localOnly += 1
+      else if (!a && b) remoteOnly += 1
+      else if (a && b && JSON.stringify(a.payload) !== JSON.stringify(b.payload)) different += 1
+    })
+    return { entityType, localOnly, remoteOnly, different }
+  })
+  return { initializedRemote: false, rows }
+}
+
 export type GitHubSyncResult = {
   initializedRemote: boolean
   pulled: { upserts: number; deletes: number }
   pushedRecords: number
   pushedTombstones: number
   attachments: { uploaded: number; downloaded: number; missing: number; total: number }
+  attachmentWarning?: string
   finishedAt: string
 }
 
@@ -902,7 +939,13 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
     if (writeResult === 'ok') {
       // Binary files are immutable by storageKey and live in private Backblaze B2.
       // GitHub is the structured-data ledger only; attachment binaries are no longer read from GitHub.
-      const attachmentTransfer = await syncB2Attachments(mergedLocal)
+      let attachmentTransfer = { uploaded: 0, downloaded: 0, missing: 0 }
+      let attachmentWarning: string | undefined
+      try {
+        attachmentTransfer = await syncB2Attachments(mergedLocal)
+      } catch (error) {
+        attachmentWarning = error instanceof Error ? error.message : String(error)
+      }
       const finishedAt = new Date().toISOString()
       const state = await loadSyncState()
       await saveSyncState({ ...state, lastSuccessfulSyncAt: finishedAt })
@@ -915,6 +958,7 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
           ...attachmentTransfer,
           total: attachmentMetasFromBundle(mergedLocal).length,
         },
+        attachmentWarning,
         finishedAt,
       }
     }

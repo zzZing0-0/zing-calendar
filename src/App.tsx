@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.15'
+const APP_VERSION = '1.7.16'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1154,6 +1154,7 @@ function App() {
   const [githubSyncToken, setGithubSyncToken] = useState('')
   const [githubTokenSaved, setGithubTokenSaved] = useState(false)
   const [githubSyncSummary, setGithubSyncSummary] = useState<{rows:{label:string;added:number;updated:number;deleted:number;total:number}[]; pushedRecords:number; pushedTombstones:number; attachments:{uploaded:number;downloaded:number;missing:number;total:number}; finishedAt:string}|null>(null)
+  const [githubSyncPreview, setGithubSyncPreview] = useState<{initializedRemote:boolean; rows:{entityType:string;localOnly:number;remoteOnly:number;different:number}[]}|null>(null)
   const [githubSyncBusy, setGithubSyncBusy] = useState(false)
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
@@ -3243,7 +3244,7 @@ function App() {
 
 
   const syncRows = (before:any[], after:any[], type:'task'|'journal'|'mood'|'energy'|'period'|'tag'|'anniversary', label:string) => {
-    const id = (row:any) => type === 'mood' ? String(row.date) : String(row.id)
+    const id = (row:any) => (type === 'mood' || type === 'energy') ? String(row.date) : String(row.id)
     const b = new Map(before.map(row=>[id(row),row]))
     const n = new Map(after.map(row=>[id(row),row]))
     let added=0, updated=0, deleted=0
@@ -3255,7 +3256,7 @@ function App() {
     return {label,added,updated,deleted,total:after.length}
   }
 
-  const runGithubSync = async (automatic = false) => {
+  const executeGithubSync = async (automatic = false) => {
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
       setGithubSyncMessageKind('error')
       setGithubSyncMessage('请先填写 GitHub 用户名、数据仓库和分支。')
@@ -3283,9 +3284,11 @@ function App() {
       setLastGithubSyncAt(stamp)
       localStorage.setItem('zing:lastGithubSyncAt', stamp)
       setGithubSyncMessageKind('success')
-      setGithubSyncMessage(result.initializedRemote
-        ? `✓ 首次同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件`
-        : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
+      setGithubSyncMessage(result.attachmentWarning
+        ? `✓ GitHub 数据同步完成 · ⚠ 附件同步失败：${result.attachmentWarning}`
+        : result.initializedRemote
+          ? `✓ 首次同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件`
+          : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
       const [nextTasks,nextJournals,nextMoods,nextEnergy,nextPeriods,nextTags,nextAnniversaries] = await Promise.all([
@@ -3336,6 +3339,24 @@ function App() {
     } finally {
       setGithubSyncBusy(false)
     }
+  }
+
+  const runGithubSync = async (automatic = false) => {
+    if (automatic) return executeGithubSync(true)
+    if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
+      setGithubSyncMessageKind('error'); setGithubSyncMessage('请先填写 GitHub 用户名、数据仓库和分支。'); return
+    }
+    if (!githubSyncToken.trim()) {
+      setGithubSyncMessageKind('error'); setGithubSyncMessage('请输入本设备的 GitHub Token。Token 不会保存到 Zing 数据或备份中。'); return
+    }
+    setGithubSyncBusy(true); setGithubSyncMessageKind('working'); setGithubSyncMessage('正在比较本机与服务器…')
+    try {
+      const preview = await previewGitHubSync({owner:githubSyncOwner.trim(),repo:githubSyncRepo.trim(),branch:githubSyncBranch.trim(),token:githubSyncToken.trim()})
+      setGithubSyncPreview(preview)
+      setGithubSyncMessageKind('idle'); setGithubSyncMessage('')
+    } catch (error) {
+      setGithubSyncMessageKind('error'); setGithubSyncMessage(`同步检查失败 · ${error instanceof Error ? error.message : '未知错误'}`)
+    } finally { setGithubSyncBusy(false) }
   }
 
   useEffect(() => {
@@ -3766,6 +3787,29 @@ function App() {
               {githubSyncMessage && <div className={`github-sync-status ${githubSyncMessageKind}`} role="status" aria-live="polite">{githubSyncMessage}</div>}
               <button className="github-sync-now" type="button" disabled={githubSyncBusy} onClick={()=>void runGithubSync()}>{githubSyncBusy?'正在同步…':'立即同步'}</button>
               {lastGithubSyncAt && <small className="github-sync-last">上次成功：{new Date(lastGithubSyncAt).toLocaleString()}</small>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {githubSyncPreview && (
+        <div className="modal-layer github-sync-summary-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="取消同步" onClick={()=>setGithubSyncPreview(null)} />
+          <section className="task-editor github-sync-summary-modal" role="dialog" aria-modal="true" aria-label="确认同步">
+            <div className="editor-header">
+              <div><span className="eyebrow">SYNC PREVIEW</span><h2>确认同步</h2></div>
+              <button className="close-button" type="button" onClick={()=>setGithubSyncPreview(null)}>×</button>
+            </div>
+            <div className="editor-body">
+              <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下是本机与服务器当前差异。确认后才会合并并写回。'}</p>
+              <div className="sync-summary-grid">
+                {githubSyncPreview.rows.filter(row=>row.localOnly||row.remoteOnly||row.different).map(row=>{const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日'};return <div className="sync-summary-row" key={row.entityType}><b>{labels[row.entityType]||row.entityType}</b><span>仅本机 {row.localOnly}</span><span>仅服务器 {row.remoteOnly}</span><span>两端不同 {row.different}</span></div>})}
+                {!githubSyncPreview.rows.some(row=>row.localOnly||row.remoteOnly||row.different) && <div className="sync-summary-row"><b>没有数据差异</b></div>}
+              </div>
+              <div className="editor-actions">
+                <button type="button" className="secondary-button" onClick={()=>setGithubSyncPreview(null)}>取消</button>
+                <button type="button" className="github-sync-now" onClick={()=>{setGithubSyncPreview(null);void executeGithubSync(false)}}>确认同步</button>
+              </div>
             </div>
           </section>
         </div>
