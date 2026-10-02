@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.27'
+const APP_VERSION = '1.8.0'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -15,7 +15,7 @@ type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: numbe
 type PostponeEvent = { from: string; to: string; at: string }
 type Attachment = { id: string; type: 'image' | 'audio'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string; duration?: number }
 type TimerSession = { startedAt: string; endedAt: string; durationSeconds: number }
-type RecurrenceException = { deleted?: boolean; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; activeTimerStartedAt?: string; timerSessions?: TimerSession[]; timerSecondsRemainder?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
+type RecurrenceException = { deleted?: boolean; trashedAt?: string; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; activeTimerStartedAt?: string; timerSessions?: TimerSession[]; timerSecondsRemainder?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 type CalendarDay = {
   date: Date
@@ -51,6 +51,8 @@ type Task = {
   recurrenceExceptions?: Record<string, RecurrenceException>
   seriesId?: string
   occurrenceDate?: string
+  trashedAt?: string
+  trashFuture?: { from: string; trashedAt: string }
 }
 
 type MoodLevel = 1 | 2 | 3 | 4 | 5
@@ -344,6 +346,7 @@ function focusSecondsByDate(tasks: Task[], nowMs: number) {
   }
 
   tasks.forEach(task => {
+    if (task.trashedAt) return
     const isRecurring = Boolean(task.recurrence)
     if (!isRecurring) {
       // actualDurationMinutes is the user's final, editable truth. Timer sessions are
@@ -355,7 +358,8 @@ function focusSecondsByDate(tasks: Task[], nowMs: number) {
     }
 
     Object.entries(task.recurrenceExceptions ?? {}).forEach(([occurrenceDate, exception]) => {
-      if (exception.deleted) return
+      if (task.trashFuture && occurrenceDate >= task.trashFuture.from) return
+      if (exception.deleted || exception.trashedAt) return
       addSeconds(occurrenceDate, Math.max(0, Number(exception.actualDurationMinutes ?? 0)) * 60)
       addActiveInterval(exception.activeTimerStartedAt)
     })
@@ -565,8 +569,9 @@ function normalizeSingleOccurrenceSeries(task: Task): Task {
 }
 
 function materializeOccurrence(series: Task, occurrenceDate: string): Task | null {
+  if (series.trashedAt || (series.trashFuture && occurrenceDate >= series.trashFuture.from)) return null
   const exception = series.recurrenceExceptions?.[occurrenceDate]
-  if (exception?.deleted) return null
+  if (exception?.deleted || exception?.trashedAt) return null
   const duration = dayDiff(series.date, taskEndDate(series))
   const base: Task = {
     ...series,
@@ -582,6 +587,7 @@ function materializeOccurrence(series: Task, occurrenceDate: string): Task | nul
 function expandTasks(tasks: Task[], startKey: string, endKey: string) {
   const result: Task[] = []
   tasks.forEach(task => {
+    if (task.trashedAt) return
     if (!task.recurrence) {
       if (task.date <= endKey && taskEndDate(task) >= startKey) result.push(task)
       return
@@ -1181,6 +1187,7 @@ function App() {
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
   const [overdueInboxOpen, setOverdueInboxOpen] = useState(false)
+  const [trashOpen, setTrashOpen] = useState(false)
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
@@ -1797,36 +1804,50 @@ function App() {
     [visibleMonth, weekStartsMonday],
   )
 
+  const activeTasks = useMemo(() => tasks.filter(task => !task.trashedAt), [tasks])
+  type TaskTrashItem = { key:string; kind:'series'|'occurrence'|'future'; task:Task; occurrenceDate?:string; trashedAt:string }
+  const taskTrashItems = useMemo<TaskTrashItem[]>(() => {
+    const items:TaskTrashItem[]=[]
+    tasks.forEach(task => {
+      if (task.trashedAt) { items.push({key:`series:${task.id}`,kind:'series',task,trashedAt:task.trashedAt}); return }
+      if (task.trashFuture) items.push({key:`future:${task.id}:${task.trashFuture.from}`,kind:'future',task,occurrenceDate:task.trashFuture.from,trashedAt:task.trashFuture.trashedAt});
+      (Object.entries(task.recurrenceExceptions ?? {}) as [string, RecurrenceException][]).forEach(([date, exception]) => {
+        if (exception.trashedAt) items.push({key:`occurrence:${task.id}:${date}`,kind:'occurrence',task,occurrenceDate:date,trashedAt:exception.trashedAt})
+      })
+    })
+    return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
+  },[tasks])
+
   const displayTasks = useMemo(() => {
     const start = toDateKey(days[0].date)
     const end = toDateKey(days[days.length - 1].date)
-    const expanded = applyRecurringDisplayMode(expandTasks(tasks, start, end), tasks, showAllRecurringTasks)
+    const expanded = applyRecurringDisplayMode(expandTasks(activeTasks, start, end), activeTasks, showAllRecurringTasks)
     return showEndedTasks ? expanded : expanded.filter(task => task.status === 'todo')
-  }, [tasks, days, showEndedTasks, showAllRecurringTasks])
+  }, [activeTasks, days, showEndedTasks, showAllRecurringTasks])
 
   const overdueTasks = useMemo(() => {
     const todayKey=toDateKey(today)
     const yesterday=addDaysKey(todayKey,-1)
     if(!tasks.length) return [] as Task[]
     const earliest=tasks.reduce((min,task)=>task.date<min?task.date:min,tasks[0].date)
-    return applyRecurringDisplayMode(expandTasks(tasks,earliest,yesterday),tasks,showAllRecurringTasks)
+    return applyRecurringDisplayMode(expandTasks(activeTasks,earliest,yesterday),activeTasks,showAllRecurringTasks)
       .filter(task=>isTaskOverdue(task,todayKey))
       .sort((a,b)=>taskEndDate(a).localeCompare(taskEndDate(b)) || b.priority-a.priority || a.title.localeCompare(b.title,'zh-CN'))
-  },[tasks,today,showAllRecurringTasks])
+  },[activeTasks,today,showAllRecurringTasks])
 
   const selectedTasks = useMemo(() => {
     if (!selectedDate) return []
     const key = toDateKey(selectedDate)
     const pool = key >= toDateKey(days[0].date) && key <= toDateKey(days[days.length - 1].date)
       ? displayTasks
-      : applyRecurringDisplayMode(expandTasks(tasks, key, key), tasks, showAllRecurringTasks)
+      : applyRecurringDisplayMode(expandTasks(activeTasks, key, key), activeTasks, showAllRecurringTasks)
     return pool.filter(task => taskCoversDate(task, key) && (showEndedTasks || task.status === 'todo')).sort(taskSort)
   }, [selectedDate, tasks, displayTasks, days, showEndedTasks, showAllRecurringTasks])
 
   const selectedFocusSeconds = useMemo(() => {
     if (!selectedDate) return 0
-    return focusSecondsByDate(tasks, timerNow).get(toDateKey(selectedDate)) ?? 0
-  }, [selectedDate, tasks, timerNow])
+    return focusSecondsByDate(activeTasks, timerNow).get(toDateKey(selectedDate)) ?? 0
+  }, [selectedDate, activeTasks, timerNow])
 
   const anniversaryOccurrencesByDate = useMemo(() => {
     const map = new Map<string, { anniversary: Anniversary; occurrence: Date }[]>()
@@ -1873,7 +1894,7 @@ function App() {
     const monthDays = buildMonth(month.getFullYear(), month.getMonth(), weekStartsMonday)
     const rangeStart = toDateKey(monthDays[0].date), rangeEnd = toDateKey(monthDays[monthDays.length-1].date)
     const monthDisplayTasks = (() => {
-      const expanded=applyRecurringDisplayMode(expandTasks(tasks,rangeStart,rangeEnd),tasks,showAllRecurringTasks)
+      const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks)
       return showEndedTasks ? expanded : expanded.filter(task=>task.status==='todo')
     })()
     const monthTasksByDate = new Map<string,Task[]>()
@@ -1918,7 +1939,7 @@ function App() {
   // A cross-month week exists exactly once; month labels are markers, not separate grids.
   const renderCalendarWeek = (weekDays: CalendarDay[]) => {
     const rangeStart=toDateKey(weekDays[0].date), rangeEnd=toDateKey(weekDays[6].date)
-    const displayTasks=(()=>{const expanded=applyRecurringDisplayMode(expandTasks(tasks,rangeStart,rangeEnd),tasks,showAllRecurringTasks);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
+    const displayTasks=(()=>{const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
     const tasksByDate=new Map<string,Task[]>()
     displayTasks.filter(task=>!isMultiDayTask(task)).forEach(task=>{const current=tasksByDate.get(task.date)??[];current.push(task);current.sort(taskSort);tasksByDate.set(task.date,current)})
     const segments=buildMultiDaySegments(displayTasks,weekDays)
@@ -2078,7 +2099,7 @@ function App() {
   }
 
   const activeTimerTask = useMemo(() => {
-    for (const task of tasks) {
+    for (const task of activeTasks) {
       if (task.activeTimerStartedAt) return task
       if (!task.recurrenceExceptions) continue
       for (const [occurrenceDate, exception] of Object.entries(task.recurrenceExceptions) as [string, RecurrenceException][]) {
@@ -2088,7 +2109,7 @@ function App() {
       }
     }
     return null
-  }, [tasks])
+  }, [activeTasks])
 
   useEffect(() => {
     if (!activeTimerTask) return
@@ -2438,28 +2459,38 @@ function App() {
     if (occurrenceDate && scope === 'occurrence') {
       setTasks(current => current.map(series => series.id === seriesId ? {
         ...series,
-        recurrenceExceptions: { ...series.recurrenceExceptions, [occurrenceDate]: { ...series.recurrenceExceptions?.[occurrenceDate], deleted: true, updatedAt: now } },
+        recurrenceExceptions: { ...series.recurrenceExceptions, [occurrenceDate]: { ...series.recurrenceExceptions?.[occurrenceDate], deleted: false, trashedAt: now, updatedAt: now } },
         updatedAt: now,
       } : series))
       return
     }
     if (occurrenceDate && scope === 'future') {
-      const previousDate = addDaysKey(occurrenceDate, -1)
-      setTasks(current => current.map(series => series.id === seriesId ? normalizeSingleOccurrenceSeries({
-        ...series,
-        recurrence: series.recurrence ? { ...series.recurrence, end: { type: 'date', date: previousDate } } : undefined,
-        recurrenceExceptions: Object.fromEntries(Object.entries(series.recurrenceExceptions ?? {}).filter(([key]) => key < occurrenceDate)),
-        updatedAt: now,
-      }) : series))
+      setTasks(current => current.map(series => series.id === seriesId ? { ...series, trashFuture:{from:occurrenceDate,trashedAt:now}, updatedAt:now } : series))
       return
     }
-    setTasks(current => {
-      const next = current.filter(item => item.id !== seriesId)
-      // Remove only the task→attachment relations here. Never delete the binary as a side effect
-      // of deleting a task: the same storageKey may be shared by another task/journal or arrive
-      // through a concurrent merge. Explicit orphan cleanup is the single reclamation path.
-      return next
-    })
+    setTasks(current => current.map(series => series.id === seriesId ? { ...series, trashedAt:now, updatedAt:now } : series))
+  }
+
+  const restoreTrashItem = (item: TaskTrashItem) => {
+    const now=new Date().toISOString()
+    setTasks(current=>current.map(task=>{
+      if(task.id!==item.task.id) return task
+      if(item.kind==='series') return {...task,trashedAt:undefined,updatedAt:now}
+      if(item.kind==='future') return {...task,trashFuture:undefined,updatedAt:now}
+      const date=item.occurrenceDate!
+      return {...task,recurrenceExceptions:{...task.recurrenceExceptions,[date]:{...task.recurrenceExceptions?.[date],trashedAt:undefined,updatedAt:now}},updatedAt:now}
+    }))
+  }
+
+  const permanentlyDeleteTrashItem = (item: TaskTrashItem) => {
+    const now=new Date().toISOString()
+    if(item.kind==='series') { setTasks(current=>current.filter(task=>task.id!==item.task.id)); return }
+    if(item.kind==='occurrence') {
+      const date=item.occurrenceDate!
+      setTasks(current=>current.map(task=>task.id===item.task.id?{...task,recurrenceExceptions:{...task.recurrenceExceptions,[date]:{...task.recurrenceExceptions?.[date],trashedAt:undefined,deleted:true,updatedAt:now}},updatedAt:now}:task)); return
+    }
+    const date=item.occurrenceDate!, previousDate=addDaysKey(date,-1)
+    setTasks(current=>current.map(task=>task.id===item.task.id?normalizeSingleOccurrenceSeries({...task,trashFuture:undefined,recurrence:task.recurrence?{...task.recurrence,end:{type:'date',date:previousDate}}:undefined,recurrenceExceptions:Object.fromEntries(Object.entries(task.recurrenceExceptions??{}).filter(([key])=>key<date)),updatedAt:now}):task))
   }
 
   const stopRepeating = (series: Task, occurrenceDate: string) => {
@@ -2554,7 +2585,7 @@ function App() {
   const tagUsage = useMemo(() => {
     const usage = new Map<string,{tasks:number;journals:number;days:number}>()
     managedTags.forEach(tag => {
-      const taskRows = tasks.filter(task => (task.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
+      const taskRows = activeTasks.filter(task => (task.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
       const journalRows = journalEntries.filter(entry => (entry.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
       const days = new Set<string>()
       taskRows.forEach(task => {
@@ -2566,7 +2597,7 @@ function App() {
       usage.set(tag.id,{tasks:taskRows.length,journals:journalRows.length,days:days.size})
     })
     return usage
-  },[managedTags,tasks,journalEntries])
+  },[managedTags,activeTasks,journalEntries])
 
   useEffect(() => {
     if (sessionStorage.getItem('zing-program-refresh-pending') !== '1') return
@@ -2645,7 +2676,7 @@ function App() {
         })
     }
     const results: SearchResult[] = []
-    if (searchFilter === 'all' || searchFilter === 'task') tasks.forEach(task => {
+    if (searchFilter === 'all' || searchFilter === 'task') activeTasks.forEach(task => {
       const hay = `${task.title} ${task.notes ?? ''}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) results.push({ kind:'task', id:task.id, title:task.title, date:task.date, snippet:searchSnippet(task.notes ?? ''), item:task })
     })
@@ -2664,7 +2695,7 @@ function App() {
       }
     })
     return results.sort((a,b) => b.date.localeCompare(a.date))
-  }, [normalizedSearch, tagSearchMode, tagSearchTerm, searchFilter, tasks, journalEntries, anniversaries, managedTags, tagUsage])
+  }, [normalizedSearch, tagSearchMode, tagSearchTerm, searchFilter, activeTasks, journalEntries, anniversaries, managedTags, tagUsage])
 
   const searchDateLabel = (result: SearchResult) => {
     if (result.kind === 'tag') return ''
@@ -2754,8 +2785,8 @@ function App() {
     }
 
     // Expand recurring tasks only across the selected historical window, then use original planned date as cohort.
-    const earliestTaskDate = tasks.length ? tasks.reduce((min,task)=>task.date<min?task.date:min,tasks[0].date) : todayKey
-    const statsTasks = expandTasks(tasks, rangeStart==='0000-01-01' ? earliestTaskDate : rangeStart, todayKey)
+    const earliestTaskDate = activeTasks.length ? activeTasks.reduce((min,task)=>task.date<min?task.date:min,activeTasks[0].date) : todayKey
+    const statsTasks = expandTasks(activeTasks, rangeStart==='0000-01-01' ? earliestTaskDate : rangeStart, todayKey)
       .filter(task => inRange(taskOrigin(task)))
     const eligibleTasks = statsTasks.filter(task => task.status!=='todo' || taskEndDate(task) <= todayKey)
     const completed = eligibleTasks.filter(task=>task.status==='completed').length
@@ -2774,15 +2805,15 @@ function App() {
     // Completion trend is an event timeline: range membership and grouping both use the actual completedAt date.
     // Do not pre-filter by the task's planned/original date, otherwise the same calendar day can show different
     // completion counts when switching between week/month/30-day ranges.
-    tasks.forEach(task => {
+    activeTasks.forEach(task => {
       if (!task.recurrence) {
         if (!task.completedAt) return
         const key = toDateKey(new Date(task.completedAt))
         if (inRange(key)) completedByDay.set(key, (completedByDay.get(key) ?? 0) + 1)
         return
       }
-      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => {
-        if (exception.deleted || exception.status !== 'completed' || !exception.completedAt) return
+      (Object.entries(task.recurrenceExceptions ?? {}) as [string,RecurrenceException][]).forEach(([occurrenceDate,exception]) => {
+        if ((task.trashFuture && occurrenceDate >= task.trashFuture.from) || exception.deleted || exception.trashedAt || exception.status !== 'completed' || !exception.completedAt) return
         const key = toDateKey(new Date(exception.completedAt))
         if (inRange(key)) completedByDay.set(key, (completedByDay.get(key) ?? 0) + 1)
       })
@@ -2816,7 +2847,7 @@ function App() {
         label: statsRange==='year' ? `${Number(key.slice(5,7))}月` : `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}`
       }))
     })()
-    const focusByDay = focusSecondsByDate(tasks, timerNow)
+    const focusByDay = focusSecondsByDate(activeTasks, timerNow)
     const rawFocusTrend = [...focusByDay.entries()].filter(([date])=>inRange(date)).sort((a,b)=>a[0].localeCompare(b[0]))
     const focusSeconds = rawFocusTrend.reduce((sum,[,seconds])=>sum+seconds,0)
     const focusTrend = (() => {
@@ -2902,7 +2933,7 @@ function App() {
     const tagTimelineAll = statsRange === 'all'
     const timelineStart = tagTimelineAll ? earliestTaskDate : rangeStart
     const timelineEnd = todayKey
-    const timelineTasks = expandTasks(tasks, timelineStart, timelineEnd).filter(task=>taskOrigin(task)<=todayKey)
+    const timelineTasks = expandTasks(activeTasks, timelineStart, timelineEnd).filter(task=>taskOrigin(task)<=todayKey)
     const tagTaskTimelines = managedTags.map(tag=>{
       const archiveEnd = tag.archived && tag.archivedAt && tag.archivedAt < todayKey ? tag.archivedAt : todayKey
       const endKey = tagTimelineAll ? archiveEnd : (archiveEnd < todayKey ? archiveEnd : todayKey)
@@ -3014,7 +3045,7 @@ function App() {
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
       postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
       impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
-  },[tasks,journalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
+  },[activeTasks,journalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
@@ -3570,6 +3601,7 @@ function App() {
             <button className="today-button" type="button" onClick={goToday}>Today</button>
           </div>
           <div className="calendar-status-controls">
+            {taskTrashItems.length>0 && <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={`打开回收站，共 ${taskTrashItems.length} 条`}><span>♻</span> 回收站 {taskTrashItems.length}</button>}
             {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
             {endedTasksViewToggle('calendar-ended-toggle')}
             <button className="program-refresh-button" type="button" onClick={()=>void refreshProgram()} disabled={programRefreshBusy} aria-label="检查并刷新程序" title="检查并刷新程序">{programRefreshBusy?'…':'↻'}</button>
@@ -4131,7 +4163,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => setMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => setMainView('anniversaries')}><span>🎂</span>纪念日</button>
@@ -4384,6 +4416,26 @@ function App() {
 
                       </aside>
         </>
+      )}
+
+      {trashOpen && (
+        <div className="modal-layer overdue-inbox-layer trash-inbox-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭回收站" onClick={()=>setTrashOpen(false)} />
+          <section className="task-editor overdue-inbox-panel trash-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="trash-inbox-title">
+            <div className="editor-header">
+              <div><span className="eyebrow">RECYCLE BIN</span><h2 id="trash-inbox-title">回收站 · {taskTrashItems.length}</h2></div>
+              <button className="close-button" type="button" onClick={()=>setTrashOpen(false)} aria-label="关闭">×</button>
+            </div>
+            <div className="editor-body overdue-inbox-body">
+              {taskTrashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <div className="overdue-inbox-list">
+                {taskTrashItems.map(item=><article key={item.key} className="trash-inbox-item">
+                  <div className="trash-inbox-main"><strong>{item.task.title}</strong><small>{item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date.replaceAll('-','/')} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+                  <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
+                </article>)}
+              </div>}
+            </div>
+          </section>
+        </div>
       )}
 
       {overdueInboxOpen && (

@@ -4236,3 +4236,16 @@ button {
 /* v1.7.26 — keep equal mood/energy paths visually distinguishable */
 .status-trend-chart .status-energy-line{stroke-dasharray:5 3}
 .legend-energy-line{border-top-style:dashed}
+
+/* v1.8.0 — task recycle bin */
+.trash-inbox-trigger{border:1px solid rgba(112,102,142,.28);background:rgba(112,102,142,.07);color:#675d82;border-radius:11px;min-height:42px;padding:7px 11px;font-size:13px;font-weight:700;line-height:1;cursor:pointer;white-space:nowrap}
+.trash-inbox-trigger span{font-size:13px}
+.trash-inbox-panel{width:min(640px,calc(100vw - 28px));max-height:min(760px,calc(100vh - 36px))}
+.trash-inbox-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid rgba(103,93,130,.13);background:#fff;border-radius:13px;padding:11px 12px}
+.trash-inbox-main{min-width:0;display:flex;flex-direction:column;gap:3px}
+.trash-inbox-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trash-inbox-main small,.trash-inbox-main time{font-size:12px;color:var(--muted)}
+.trash-inbox-actions{display:flex;gap:7px}
+.trash-inbox-actions button{border:1px solid rgba(103,93,130,.2);background:rgba(103,93,130,.06);color:#675d82;border-radius:10px;padding:8px 11px;cursor:pointer;white-space:nowrap}
+.trash-inbox-actions button.danger{border-color:rgba(190,86,80,.2);background:rgba(190,86,80,.06);color:#a34e49}
+@media(max-width:640px){.trash-inbox-trigger{min-height:30px;padding:5px 9px;font-size:11px}.trash-inbox-item{grid-template-columns:1fr}.trash-inbox-actions{justify-content:flex-end}}
