@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.3'
+const APP_VERSION = '1.9.4'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -189,13 +189,15 @@ const IMPORT_SOURCE_TAG_PREFIX = 'system-import-source:'
 const EXTERNAL_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida`
 const DIDA_APP_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida-list`
 const GENERIC_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}generic`
+const FOREST_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}forest`
 const EXTERNAL_SOURCE_TAG: Tag = { id: EXTERNAL_SOURCE_TAG_ID, name: '从外部导入', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'external', updatedAt: LEGACY_TAG_MIGRATION_AT }
 const DIDA_APP_SOURCE_TAG: Tag = { id: DIDA_APP_SOURCE_TAG_ID, name: '滴答清单', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'dida', updatedAt: LEGACY_TAG_MIGRATION_AT }
 const GENERIC_SOURCE_TAG: Tag = { id: GENERIC_SOURCE_TAG_ID, name: '通用', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'generic', updatedAt: LEGACY_TAG_MIGRATION_AT }
+const FOREST_SOURCE_TAG: Tag = { id: FOREST_SOURCE_TAG_ID, name: 'Forest', color: '#789da3', scope: 'both', system: true, systemKind: 'import-source', sourceKey: 'forest', updatedAt: LEGACY_TAG_MIGRATION_AT }
 function isImportSourceTagId(id:string) { return id.startsWith(IMPORT_SOURCE_TAG_PREFIX) }
 function isImportSourceTag(tag:Tag) { return tag.systemKind === 'import-source' || isImportSourceTagId(tag.id) }
 function normalizeTags(rows: Tag[]): Tag[] { return rows.map(tag => tag.updatedAt ? tag : { ...tag, updatedAt: LEGACY_TAG_MIGRATION_AT }) }
-const REQUIRED_SYSTEM_TAGS: Tag[] = [DEFAULT_TAG, EXTERNAL_SOURCE_TAG, DIDA_APP_SOURCE_TAG, GENERIC_SOURCE_TAG]
+const REQUIRED_SYSTEM_TAGS: Tag[] = [DEFAULT_TAG, EXTERNAL_SOURCE_TAG, DIDA_APP_SOURCE_TAG, GENERIC_SOURCE_TAG, FOREST_SOURCE_TAG]
 function ensureRequiredSystemTags(rows: Tag[]): Tag[] {
   const normalized = normalizeTags(rows)
   const existing = new Set(normalized.map(tag => tag.id))
@@ -1076,7 +1078,7 @@ function downloadTextFile(filename:string,text:string,mimeType:string) {
 }
 
 
-type ExternalImportStage = 'sources' | 'generic-file' | 'generic-preview' | 'dida-file' | 'dida-preview'
+type ExternalImportStage = 'sources' | 'generic-file' | 'generic-preview' | 'dida-file' | 'dida-preview' | 'forest-file' | 'forest-preview'
 type DidaImportPreview = {
   fileName:string
   total:number
@@ -1086,6 +1088,31 @@ type DidaImportPreview = {
   skippedNoDate:number
   strippedAttachmentCount:number
   ignoredChecklistCount:number
+}
+type ForestImportPreview = {
+  fileName:string
+  total:number
+  sessions:FocusSession[]
+  tags:Tag[]
+  duplicateCount:number
+  failedCount:number
+  invalidCount:number
+  createdTagCount:number
+  reusedTagCount:number
+}
+function stableImportHash(value:string) {
+  let a=2166136261, b=0x9e3779b9
+  for(let i=0;i<value.length;i++){
+    const code=value.charCodeAt(i)
+    a=Math.imul(a^code,16777619)>>>0
+    b=Math.imul(b^code,2246822519)>>>0
+  }
+  return `${a.toString(36)}${b.toString(36)}`
+}
+function forestDate(value:string) {
+  const normalized=value.trim().replace(/([+-]\d{2})(\d{2})$/, '$1:$2')
+  const date=new Date(normalized)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 function parseCsvRows(text:string): string[][] {
   const rows:string[][]=[]; let row:string[]=[], field='', quoted=false
@@ -1261,6 +1288,7 @@ function App() {
   const [externalImportOpen, setExternalImportOpen] = useState(false)
   const [externalImportStage, setExternalImportStage] = useState<ExternalImportStage>('sources')
   const [didaImportPreview, setDidaImportPreview] = useState<DidaImportPreview|null>(null)
+  const [forestImportPreview, setForestImportPreview] = useState<ForestImportPreview|null>(null)
   const [externalImportBusy, setExternalImportBusy] = useState(false)
   const [externalImportMessage, setExternalImportMessage] = useState('')
   const externalImportInputRef = useRef<HTMLInputElement|null>(null)
@@ -3320,11 +3348,11 @@ function App() {
   }
 
   const openExternalImport = () => {
-    setExternalImportOpen(true); setExternalImportStage('sources'); setDidaImportPreview(null); setExternalImportMessage('')
+    setExternalImportOpen(true); setExternalImportStage('sources'); setDidaImportPreview(null); setForestImportPreview(null); setExternalImportMessage('')
   }
   const closeExternalImport = () => {
     if(externalImportBusy) return
-    setExternalImportOpen(false); setExternalImportStage('sources'); setDidaImportPreview(null); setExternalImportMessage('')
+    setExternalImportOpen(false); setExternalImportStage('sources'); setDidaImportPreview(null); setForestImportPreview(null); setExternalImportMessage('')
     if(externalImportInputRef.current) externalImportInputRef.current.value=''
   }
   const inspectGenericCsv = async (file:File) => {
@@ -3471,6 +3499,66 @@ function App() {
       setExternalImportBusy(false)
       if(externalImportInputRef.current) externalImportInputRef.current.value=''
     }
+  }
+  const inspectForestCsv = async (file:File) => {
+    setExternalImportBusy(true); setExternalImportMessage('正在解析 Forest…')
+    try {
+      const text=await file.text(), rows=parseCsvRows(text)
+      const headerIndex=rows.findIndex(row=>row.includes('Start Time')&&row.includes('End Time')&&row.includes('Tag')&&row.includes('Is Success'))
+      if(headerIndex<0) throw new Error('没有找到 Forest CSV 表头')
+      const header=rows[headerIndex], sourceRows=rows.slice(headerIndex+1).filter(row=>row.some(cell=>cell.trim()))
+      const startCol=header.indexOf('Start Time'), endCol=header.indexOf('End Time'), tagCol=header.indexOf('Tag'), successCol=header.indexOf('Is Success')
+      const existingIds=new Set(focusSessions.map(session=>session.id))
+      const tagByName=new Map<string,Tag>(tags.filter(tag=>!isImportSourceTag(tag)).map(tag=>[tag.name.trim().toLowerCase(),tag] as [string,Tag]))
+      const importedTags:Tag[]=[]; const reusedNames=new Set<string>()
+      let duplicateCount=0, failedCount=0, invalidCount=0
+      const sessions:FocusSession[]=[]
+      sourceRows.forEach(row=>{
+        const success=(row[successCol]??'').trim().toLowerCase()
+        if(success!=='true'){ failedCount++; return }
+        const startRaw=(row[startCol]??'').trim(), endRaw=(row[endCol]??'').trim(), forestTag=(row[tagCol]??'').trim()
+        const start=forestDate(startRaw), end=forestDate(endRaw)
+        if(!start||!end||end.getTime()<start.getTime()){ invalidCount++; return }
+        const normalizedForestTag=forestTag&&forestTag!=='未设置'?forestTag:'默认'
+        const identity=`${startRaw}|${endRaw}|${forestTag}`
+        const id=`import:forest:${stableImportHash(identity)}`
+        if(existingIds.has(id)){ duplicateCount++; return }
+        existingIds.add(id)
+        let ordinaryTag=tagByName.get(normalizedForestTag.toLowerCase())
+        if(!ordinaryTag){
+          ordinaryTag={id:`import:forest:tag:${stableImportHash(normalizedForestTag.toLowerCase())}`,name:normalizedForestTag,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'both',updatedAt:new Date().toISOString()}
+          tagByName.set(normalizedForestTag.toLowerCase(),ordinaryTag); importedTags.push(ordinaryTag)
+        } else if(ordinaryTag.id!==DEFAULT_TAG_ID) reusedNames.add(ordinaryTag.id)
+        const startedAt=start.toISOString(), endedAt=end.toISOString()
+        sessions.push({id,tagIds:[...new Set([ordinaryTag.id,EXTERNAL_SOURCE_TAG_ID,FOREST_SOURCE_TAG_ID])],mode:'stopwatch',startedAt,endedAt,durationSeconds:Math.max(0,Math.round((end.getTime()-start.getTime())/1000)),createdAt:startedAt,updatedAt:new Date().toISOString()})
+      })
+      const requiredSystemTags=[EXTERNAL_SOURCE_TAG,FOREST_SOURCE_TAG].filter(required=>!tags.some(tag=>tag.id===required.id))
+      setForestImportPreview({fileName:file.name,total:sourceRows.length,sessions,tags:[...requiredSystemTags,...importedTags],duplicateCount,failedCount,invalidCount,createdTagCount:importedTags.length,reusedTagCount:reusedNames.size})
+      setExternalImportStage('forest-preview'); setExternalImportMessage('')
+    } catch(error) {
+      console.error('Failed to inspect Forest CSV',error)
+      setForestImportPreview(null); setExternalImportMessage(error instanceof Error?`无法读取：${error.message}`:'无法读取这个文件')
+    } finally {
+      setExternalImportBusy(false)
+      if(externalImportInputRef.current) externalImportInputRef.current.value=''
+    }
+  }
+  const importForestCsv = async () => {
+    if(!forestImportPreview || externalImportBusy) return
+    setExternalImportBusy(true); setExternalImportMessage('正在导入 Forest 专注记录…')
+    try {
+      const mergedSessions=[...focusSessions,...forestImportPreview.sessions]
+      const existingTagIds=new Set(tags.map(tag=>tag.id))
+      const mergedTags=[...tags,...forestImportPreview.tags.filter(tag=>!existingTagIds.has(tag.id))]
+      await Promise.all([saveFocusSessions(mergedSessions),saveTags(mergedTags)])
+      setFocusSessions(mergedSessions); setTags(mergedTags)
+      const imported=forestImportPreview.sessions.length
+      setForestImportPreview(null); setExternalImportMessage(`已导入 ${imported} 条 Forest 专注记录`)
+      setExternalImportStage('sources')
+    } catch(error) {
+      console.error('Failed to import Forest CSV',error)
+      setExternalImportMessage(error instanceof Error?`导入失败：${error.message}`:'导入失败')
+    } finally { setExternalImportBusy(false) }
   }
   const importDidaCsv = async () => {
     if(!didaImportPreview || externalImportBusy) return
@@ -4292,7 +4380,10 @@ function App() {
                   <span className="import-source-icon">CSV</span><span><strong>通用导入 CSV</strong><small>自动识别常见任务字段；兼容滴答清单等 CSV 导出</small></span><b>›</b>
                 </button>
                 <button className="import-source-card" type="button" onClick={()=>{setExternalImportStage('dida-file');setExternalImportMessage('')}}>
-                  <span className="import-source-icon">滴</span><span><strong>滴答清单</strong><small>保留原有滴答 CSV 导入入口</small></span><b>›</b>
+                  <span className="import-source-icon">滴</span><span><strong>滴答清单</strong><small>导入历史任务</small></span><b>›</b>
+                </button>
+                <button className="import-source-card" type="button" onClick={()=>{setExternalImportStage('forest-file');setExternalImportMessage('')}}>
+                  <span className="import-source-icon">F</span><span><strong>Forest</strong><small>导入历史专注时间与标签</small></span><b>›</b>
                 </button>
                 <div className="import-source-placeholder"><strong>其他来源</strong><small>以后可以继续添加 Todoist、Microsoft To Do 或其他格式，不需要改动这个入口。</small></div>
               </>}
@@ -4321,6 +4412,36 @@ function App() {
                 <div className="backup-restore-actions">
                   <button type="button" onClick={closeExternalImport} disabled={externalImportBusy}>取消</button>
                   <button className="primary" type="button" onClick={()=>void importDidaCsv()} disabled={externalImportBusy||!didaImportPreview.tasks.length}>{externalImportBusy?'正在导入…':`导入 ${didaImportPreview.tasks.length} 条`}</button>
+                </div>
+              </>}
+              {externalImportStage==='forest-file' && <>
+                <button className="import-back-link" type="button" onClick={()=>setExternalImportStage('sources')}>‹ 返回来源</button>
+                <div className="import-file-panel">
+                  <strong>Forest CSV</strong>
+                  <p>导入 Forest 历史专注。保留开始时间、结束时间和标签；「未设置」归入默认标签，不存在的标签会自动创建为共享标签。</p>
+                  <button className="save-button" type="button" disabled={externalImportBusy} onClick={()=>externalImportInputRef.current?.click()}>{externalImportBusy?'正在解析…':'选择 Forest CSV'}</button>
+                  <input ref={externalImportInputRef} className="backup-file-input" type="file" accept=".csv,text/csv" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectForestCsv(file)}} />
+                </div>
+              </>}
+              {externalImportStage==='forest-preview' && forestImportPreview && <>
+                <button className="import-back-link" type="button" onClick={()=>{setExternalImportStage('forest-file');setForestImportPreview(null)}}>‹ 重新选择</button>
+                <div className="import-preview-header"><strong>{forestImportPreview.fileName}</strong><small>解析完成，确认后才会写入 Zing 专注记录。</small></div>
+                <div className="import-preview-grid">
+                  <span>识别记录<b>{forestImportPreview.total}</b></span>
+                  <span>将导入<b>{forestImportPreview.sessions.length}</b></span>
+                  <span>重复跳过<b>{forestImportPreview.duplicateCount}</b></span>
+                  <span>失败跳过<b>{forestImportPreview.failedCount}</b></span>
+                  <span>无效时间<b>{forestImportPreview.invalidCount}</b></span>
+                  <span>新建标签<b>{forestImportPreview.createdTagCount}</b></span>
+                  <span>复用标签<b>{forestImportPreview.reusedTagCount}</b></span>
+                </div>
+                <div className="import-rule-note">
+                  <strong>Forest 映射</strong>
+                  <p>仅导入 Is Success=True 的记录；False 直接跳过。Start Time / End Time 转为实际专注时间，Forest Tag 保留；「未设置」使用默认标签。不存在的普通标签自动创建为共享标签。每条记录附加系统来源标签「从外部导入」和「Forest」。Tree Type 与 Note 不迁移。同一条 Forest 记录重复导入会自动跳过。</p>
+                </div>
+                <div className="backup-restore-actions">
+                  <button type="button" onClick={closeExternalImport} disabled={externalImportBusy}>取消</button>
+                  <button className="primary" type="button" onClick={()=>void importForestCsv()} disabled={externalImportBusy||!forestImportPreview.sessions.length}>{externalImportBusy?'正在导入…':`导入 ${forestImportPreview.sessions.length} 条`}</button>
                 </div>
               </>}
               {externalImportStage==='dida-file' && <>
@@ -4665,7 +4786,7 @@ function App() {
               {focusHistoryRecords.length===0?<p className="page-empty compact">这一天还没有专注记录。</p>:<div className="focus-history-list">{focusHistoryRecords.map(record=>{
                 const editing=record.kind==='direct'&&record.session&&focusEditId===record.session.id
                 return <div className="focus-history-item" key={record.id}>
-                  <div className="focus-history-main"><strong>{record.title}</strong><div className="focus-history-tags">{record.tagIds.map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}<small>{formatFocusDuration(record.seconds)}</small></div></div>
+                  <div className="focus-history-main"><strong>{record.title}</strong><div className="focus-history-tags">{record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}<small>{formatFocusDuration(record.seconds)}</small></div></div>
                   {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} /> 分钟</label><div className="focus-history-edit-tags">{managedTags.filter(tag=>!tag.archived).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds(cur=>checked?cur.filter(id=>id!==tag.id):[...cur,tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
                     <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);setSelectedDate(null);setViewingTask(record.task)}}}>更改</button>
                     <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session)setFocusSessions(cur=>cur.filter(item=>item.id!==record.session!.id));else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
