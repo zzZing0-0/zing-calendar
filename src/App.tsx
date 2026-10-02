@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.10'
+const APP_VERSION = '1.9.11'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -330,7 +330,7 @@ function fromDateKey(value: string) {
   return new Date(year, month - 1, day)
 }
 
-function taskFocusSecondsByDate(tasks: Task[], nowMs: number) {
+function taskFocusSecondsByDate(tasks: Task[], nowMs: number, includeTagIds: (tagIds?: string[]) => boolean = () => true) {
   const totals = new Map<string, number>()
   const addSeconds = (dateKey: string, seconds: number) => {
     if (!dateKey || !Number.isFinite(seconds) || seconds <= 0) return
@@ -354,6 +354,7 @@ function taskFocusSecondsByDate(tasks: Task[], nowMs: number) {
     if (task.trashedAt) return
     const isRecurring = Boolean(task.recurrence)
     if (!isRecurring) {
+      if (!includeTagIds(task.tagIds)) return
       // actualDurationMinutes is the user's final, editable truth. Timer sessions are
       // intentionally not re-counted here, so a manual correction (30 -> 5 min)
       // immediately changes focus statistics to 5 minutes.
@@ -365,6 +366,7 @@ function taskFocusSecondsByDate(tasks: Task[], nowMs: number) {
     Object.entries(task.recurrenceExceptions ?? {}).forEach(([occurrenceDate, exception]) => {
       if (task.trashFuture && occurrenceDate >= task.trashFuture.from) return
       if (exception.deleted || exception.trashedAt) return
+      if (!includeTagIds(exception.tagIds ?? task.tagIds)) return
       addSeconds(occurrenceDate, Math.max(0, Number(exception.actualDurationMinutes ?? 0)) * 60)
       addActiveInterval(exception.activeTimerStartedAt)
     })
@@ -373,10 +375,11 @@ function taskFocusSecondsByDate(tasks: Task[], nowMs: number) {
 }
 
 
-function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number) {
+function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number, includeTagIds: (tagIds?: string[]) => boolean = () => true) {
   const totals = new Map<string, number>()
   const add = (key:string, seconds:number) => totals.set(key,(totals.get(key)??0)+Math.max(0,seconds))
   sessions.forEach(session => {
+    if (!includeTagIds(session.tagIds)) return
     const start = new Date(session.startedAt).getTime()
     if (!Number.isFinite(start)) return
     const plannedEnd = session.mode==='countdown' && session.plannedSeconds ? start + session.plannedSeconds*1000 : Infinity
@@ -393,9 +396,9 @@ function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number) {
   return totals
 }
 
-function combinedFocusSecondsByDate(tasks:Task[], sessions:FocusSession[], nowMs:number){
-  const totals=taskFocusSecondsByDate(tasks,nowMs)
-  directFocusSecondsByDate(sessions,nowMs).forEach((seconds,key)=>totals.set(key,(totals.get(key)??0)+seconds))
+function combinedFocusSecondsByDate(tasks:Task[], sessions:FocusSession[], nowMs:number, includeTagIds: (tagIds?: string[]) => boolean = () => true){
+  const totals=taskFocusSecondsByDate(tasks,nowMs,includeTagIds)
+  directFocusSecondsByDate(sessions,nowMs,includeTagIds).forEach((seconds,key)=>totals.set(key,(totals.get(key)??0)+seconds))
   return totals
 }
 function formatFocusDuration(seconds: number) {
@@ -1036,7 +1039,7 @@ type BackupPreview = {
   tags: Tag[]
   anniversaries: Anniversary[]
   focusSessions: FocusSession[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; wordCloudIgnored?:string[] }
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[] }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
 function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
@@ -1250,6 +1253,7 @@ function App() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('month')
+  const [excludeDefaultFocusStats, setExcludeDefaultFocusStats] = useState(() => localStorage.getItem('zing:excludeDefaultFocusStats') === 'true')
   const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
@@ -1849,6 +1853,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:dateFormat', dateFormat) }, [dateFormat])
   useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
   useEffect(() => { localStorage.setItem('zing:showAllRecurringTasks', String(showAllRecurringTasks)) }, [showAllRecurringTasks])
+  useEffect(() => { localStorage.setItem('zing:excludeDefaultFocusStats', String(excludeDefaultFocusStats)) }, [excludeDefaultFocusStats])
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
@@ -3100,13 +3105,19 @@ function App() {
         label: statsRange==='year' ? `${Number(key.slice(5,7))}月` : `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}`
       }))
     })()
-    const focusByDay = combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow)
+    const focusTagForStats = (ids?:string[]) => {
+      const ordinaryId=(ids??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
+      return tags.find(tag=>tag.id===(ordinaryId??DEFAULT_TAG_ID)) ?? DEFAULT_TAG
+    }
+    const includeFocusTagIds = (ids?:string[]) => !excludeDefaultFocusStats || focusTagForStats(ids).id !== DEFAULT_TAG_ID
+    const focusByDay = combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow, includeFocusTagIds)
     const focusTagMap = new Map<string,{tag:Tag,seconds:number,sessions:number}>()
     const focusTagForIds = (ids?:string[]) => {
       const ordinaryId=(ids??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
       return tags.find(tag=>tag.id===(ordinaryId??DEFAULT_TAG_ID)) ?? DEFAULT_TAG
     }
     const addFocusTagValue = (tag:Tag, seconds:number, sessions:number) => {
+      if(excludeDefaultFocusStats && tag.id===DEFAULT_TAG_ID) return
       if(seconds<=0&&sessions<=0) return
       const row=focusTagMap.get(tag.id)??{tag,seconds:0,sessions:0}
       row.seconds+=seconds; row.sessions+=sessions; focusTagMap.set(tag.id,row)
@@ -3336,7 +3347,7 @@ function App() {
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
       postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,focusTagRows,focusColorRows,focusPieGradient,focusPieLabels,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
       impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
-  },[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,focusSessions,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
+  },[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,focusSessions,statsRange,weekStartsMonday,wordCloudIgnored,timerNow,excludeDefaultFocusStats])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
@@ -3709,7 +3720,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,wordCloudIgnored})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -3797,6 +3808,7 @@ function App() {
       if (s.dateFormat) localStorage.setItem('zing:dateFormat',s.dateFormat)
       if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
       if (typeof s.showAllRecurringTasks==='boolean') localStorage.setItem('zing:showAllRecurringTasks',String(s.showAllRecurringTasks))
+      if (typeof s.excludeDefaultFocusStats==='boolean') localStorage.setItem('zing:excludeDefaultFocusStats',String(s.excludeDefaultFocusStats))
       if (typeof s.defaultPriority==='number' && s.defaultPriority>=0 && s.defaultPriority<=3) localStorage.setItem('zing:defaultPriority',String(s.defaultPriority))
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       // Restore is device-local by design. Reset sync snapshots first so replacing local
@@ -3811,6 +3823,7 @@ function App() {
       if (typeof s.defaultPriority==='number' && s.defaultPriority>=0 && s.defaultPriority<=3) setDefaultPriority(s.defaultPriority as TaskPriority)
       if (typeof s.showEndedTasks==='boolean') setShowEndedTasks(s.showEndedTasks)
       if (typeof s.showAllRecurringTasks==='boolean') setShowAllRecurringTasks(s.showAllRecurringTasks)
+      if (typeof s.excludeDefaultFocusStats==='boolean') setExcludeDefaultFocusStats(s.excludeDefaultFocusStats)
       if (Array.isArray(s.wordCloudIgnored)) setWordCloudIgnored(s.wordCloudIgnored)
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
@@ -4064,7 +4077,7 @@ function App() {
           <section className="stats-section focus-section">
             <div className="stats-section-title"><div><span className="eyebrow">FOCUS</span><h3>专注</h3></div><small>{formatFocusDuration(statistics.focusSeconds)}</small></div>
             <div className="stats-subblock focus-stats-block">
-              <div className="focus-stats-heading"><h4>专注时间</h4><strong>{formatFocusDuration(statistics.focusSeconds)}</strong></div>
+              <div className="focus-stats-heading"><h4>专注时间</h4><div className="focus-stats-heading-actions"><label className="ended-view-toggle focus-default-toggle"><input type="checkbox" checked={excludeDefaultFocusStats} onChange={event=>setExcludeDefaultFocusStats(event.target.checked)} /><i /><span>排除默认标签</span></label><strong>{formatFocusDuration(statistics.focusSeconds)}</strong></div></div>
               {statistics.focusTrend.length ? <div className="completion-chart-wrap">
                 <div className="completion-trend focus-trend">
                   {statistics.focusTrend.map((item,index)=>{
