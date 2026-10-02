@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.13'
+const APP_VERSION = '1.9.14'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1028,6 +1028,19 @@ function attachmentExtension(attachment: Attachment) {
 }
 
 
+type SyncedUserSettings = {
+  id: 'settings'
+  updatedAt: string
+  greeting: string
+  weekStart: 'monday'|'sunday'
+  dateFormat: 'dmy'|'mdy'
+  defaultPriority: TaskPriority
+  showEndedTasks: boolean
+  showAllRecurringTasks: boolean
+  excludeDefaultFocusStats: boolean
+  wordCloudIgnored: string[]
+}
+
 type BackupPreview = {
   file: File
   manifest: any
@@ -1375,8 +1388,10 @@ function App() {
   const [journalDraft, setJournalDraft] = useState<JournalDraft>(() => emptyJournalDraft(today))
   const [tags, setTags] = useState<Tag[]>([DEFAULT_TAG])
   const [tagsHydrated, setTagsHydrated] = useState(false)
-  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], period: [], tag: [], anniversary: [], focus: [] })
-  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, period: false, tag: false, anniversary: false, focus: false })
+  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], period: [], tag: [], anniversary: [], focus: [], settings: [] })
+  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, period: false, tag: false, anniversary: false, focus: false, settings: false })
+  const settingsSyncReadyRef = useRef(false)
+  const suppressNextSettingsSyncRef = useRef(false)
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
@@ -1857,6 +1872,32 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:excludeDefaultFocusStats', String(excludeDefaultFocusStats)) }, [excludeDefaultFocusStats])
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
+  useEffect(() => {
+    const next: SyncedUserSettings = {
+      id:'settings', updatedAt:new Date().toISOString(), greeting:greeting || 'Hello, Zing',
+      weekStart:weekStartsMonday?'monday':'sunday', dateFormat, defaultPriority, showEndedTasks,
+      showAllRecurringTasks, excludeDefaultFocusStats, wordCloudIgnored,
+    }
+    if (!settingsSyncReadyRef.current) {
+      settingsSyncReadyRef.current = true
+      void loadUserSettings<SyncedUserSettings>().then(async rows => {
+        if (rows.length) { syncSnapshotsRef.current.settings = rows; syncSnapshotReadyRef.current.settings = true; return }
+        await saveUserSettings([next])
+        syncSnapshotsRef.current.settings = [next]
+        syncSnapshotReadyRef.current.settings = true
+        setLocalWriteRevision(value => value + 1)
+      }).catch(error => console.error('Failed to initialize settings sync', error))
+      return
+    }
+    if (suppressNextSettingsSyncRef.current) { suppressNextSettingsSyncRef.current = false; return }
+    if (!syncSnapshotReadyRef.current.settings) return
+    const previous = syncSnapshotsRef.current.settings
+    const comparable = { ...next, updatedAt: previous[0]?.updatedAt ?? next.updatedAt }
+    const beforeComparable = previous[0] ? { ...previous[0], updatedAt: comparable.updatedAt } : null
+    if (beforeComparable && JSON.stringify(beforeComparable) === JSON.stringify(comparable)) return
+    syncSnapshotsRef.current.settings = [next]
+    void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -3661,7 +3702,7 @@ function App() {
       // Clear user data and create sync tombstones in one IndexedDB transaction.
       // This makes “清空所有数据” a real cross-device deletion on the next GitHub sync.
       await clearZingUserDataWithSync(REQUIRED_SYSTEM_TAGS)
-      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], mood:[], energy:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[] }
+      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], mood:[], energy:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
       syncSnapshotsRef.current = cleared
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
@@ -3847,10 +3888,11 @@ function App() {
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       // Restore is device-local by design. Reset sync snapshots first so replacing local
       // state does not manufacture tombstones/upserts that overwrite newer cloud data.
-      syncSnapshotsRef.current = { task:backupPreview.tasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions }
+      syncSnapshotsRef.current = { task:backupPreview.tasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:syncSnapshotsRef.current.settings }
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setMenstrualPeriods(backupPreview.periods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
+      suppressNextSettingsSyncRef.current = true
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
       if (s.dateFormat) setDateFormat(s.dateFormat)
@@ -3902,8 +3944,8 @@ function App() {
           : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
-      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions] = await Promise.all([
-        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>()
+      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings] = await Promise.all([
+        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>()
       ])
       const normalizedNextTags = normalizeTags(nextTags)
       const hydratedTags = ensureRequiredSystemTags(normalizedNextTags)
@@ -3925,12 +3967,26 @@ function App() {
         tag: hydratedTags,
         anniversary: nextAnniversaries,
         focus: nextFocusSessions,
+        settings: nextSettings,
       }
-      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, period:true, tag:true, anniversary:true, focus:true }
+      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, period:true, tag:true, anniversary:true, focus:true, settings:true }
       setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setMenstrualPeriods(nextPeriods)
       setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
       setFocusSessions(nextFocusSessions)
+      const syncedSettings = nextSettings[0]
+      if (syncedSettings) {
+        suppressNextSettingsSyncRef.current = true
+        localStorage.setItem('zing:greeting',syncedSettings.greeting || 'Hello, Zing')
+        localStorage.setItem('zing:weekStart',syncedSettings.weekStart)
+        localStorage.setItem('zing:dateFormat',syncedSettings.dateFormat)
+        localStorage.setItem('zing:defaultPriority',String(syncedSettings.defaultPriority))
+        localStorage.setItem('zing:showEndedTasks',String(syncedSettings.showEndedTasks))
+        localStorage.setItem('zing:showAllRecurringTasks',String(syncedSettings.showAllRecurringTasks))
+        localStorage.setItem('zing:excludeDefaultFocusStats',String(syncedSettings.excludeDefaultFocusStats))
+        localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(syncedSettings.wordCloudIgnored ?? []))
+        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? [])
+      }
     } catch (error) {
       setGithubSyncMessageKind('error')
       setGithubSyncMessage(`同步失败 · ${error instanceof Error ? error.message : '未知错误'}`)
@@ -4443,7 +4499,7 @@ function App() {
             <div className="editor-body">
               <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
               {(() => {
-                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日',focus:'专注',trash:'回收站'}
+                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日',focus:'专注',settings:'设置',trash:'回收站'}
                 const changedRows=githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount)
                 return changedRows.length ? <>
                   <div className="sync-summary-grid">
