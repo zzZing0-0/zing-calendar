@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.25'
+const APP_VERSION = '1.7.26'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2746,7 +2746,7 @@ function App() {
     const startYear = `${today.getFullYear()}-01-01`
     const rangeStart = statsRange==='week' ? startOfWeek : statsRange==='month' ? startOfMonth : statsRange==='30d' ? start30 : statsRange==='year' ? startYear : '0000-01-01'
     const inRange = (key?:string) => Boolean(key && key >= rangeStart && key <= todayKey)
-    const taskOrigin = (task:Task) => task.originalDate ?? task.occurrenceDate ?? task.date
+    const taskOrigin = (task:Task) => task.occurrenceDate ?? task.originalDate ?? task.date
     const taskOriginalEnd = (task:Task) => {
       const origin = taskOrigin(task)
       const duration = Math.max(0, dayDiff(task.date, taskEndDate(task)))
@@ -4221,7 +4221,7 @@ function App() {
               )}
 
               <button className="add-button" type="button" onClick={openTaskEditor}>＋ 添加任务</button>
-              <p className="day-focus-time">{selectedDate && sameDay(selectedDate,today) ? '今日专注' : '当日专注'} · {formatFocusDuration(selectedFocusSeconds)}</p>
+              {selectedDate && toDateKey(selectedDate) <= toDateKey(today) && <p className="day-focus-time">{sameDay(selectedDate,today) ? '今日专注' : '当日专注'} · {formatFocusDuration(selectedFocusSeconds)}</p>}
             </section>
 
             {!selectedIsFuture && <>

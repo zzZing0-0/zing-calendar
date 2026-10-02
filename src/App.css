@@ -4231,4 +4231,8 @@ button {
 .focus-stats-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .focus-stats-heading h4{margin:0}
 .focus-stats-heading strong{color:#53665b;font-size:12px;font-weight:700}
-.focus-trend i{background:rgba(70,105,80,.62)}
+.focus-trend i{background:rgba(205,88,88,.68)}
+
+/* v1.7.26 — keep equal mood/energy paths visually distinguishable */
+.status-trend-chart .status-energy-line{stroke-dasharray:5 3}
+.legend-energy-line{border-top-style:dashed}
