@@ -4259,3 +4259,23 @@ button {
 .trash-header-actions{display:flex;align-items:center;gap:8px}
 .trash-clear-button{border:1px solid rgba(164,72,72,.28);background:transparent;color:#a44848;border-radius:9px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}
 .trash-clear-button:hover{background:rgba(164,72,72,.07)}
+
+/* v1.8.2 recycle-bin polish */
+.trash-inbox-trigger{display:inline-flex;align-items:center;gap:5px}
+.trash-trigger-icon{width:14px;height:14px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.trash-filter-row{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto;scrollbar-width:none}
+.trash-filter-row::-webkit-scrollbar{display:none}
+.trash-filter-row button{border:1px solid rgba(103,93,130,.16);background:#fff;color:var(--muted);border-radius:999px;padding:6px 11px;font:inherit;font-size:12px;line-height:1;white-space:nowrap;cursor:pointer}
+.trash-filter-row button.active{border-color:rgba(103,93,130,.34);background:rgba(103,93,130,.09);color:#675d82;font-weight:700}
+@media(max-width:640px){
+  .trash-trigger-icon{width:12px;height:12px}
+  .trash-inbox-panel{max-height:min(720px,calc(100vh - 28px))}
+  .trash-filter-row{margin-bottom:8px}
+  .trash-inbox-list{gap:7px}
+  .trash-inbox-item{display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:11px}
+  .trash-inbox-main{flex:1;min-width:0}
+  .trash-inbox-main small,.trash-inbox-main time{display:none}
+  .trash-inbox-main strong{font-size:14px;line-height:1.25}
+  .trash-inbox-actions{flex:0 0 auto;gap:5px;justify-content:flex-end}
+  .trash-inbox-actions button{padding:6px 8px;border-radius:8px;font-size:12px;line-height:1.15}
+}

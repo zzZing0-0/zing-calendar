@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.8.1'
+const APP_VERSION = '1.8.2'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1190,6 +1190,7 @@ function App() {
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
   const [overdueInboxOpen, setOverdueInboxOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
+  const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'anniversary'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
@@ -1820,6 +1821,7 @@ function App() {
     anniversaries.forEach(anniversary => { if (anniversary.trashedAt) items.push({key:`anniversary:${anniversary.id}`,entity:'anniversary',anniversary,trashedAt:anniversary.trashedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
   },[tasks,journalEntries,anniversaries])
+  const visibleTrashItems = useMemo(() => trashFilter === 'all' ? trashItems : trashItems.filter(item => item.entity === trashFilter), [trashItems, trashFilter])
 
   const displayTasks = useMemo(() => {
     const start = toDateKey(days[0].date)
@@ -2477,8 +2479,8 @@ function App() {
   }
 
   const restoreTrashItem = (item: TrashItem) => {
-    if(item.entity==='journal') { const now=new Date().toISOString(); setJournalEntries(current=>current.map(entry=>entry.id===item.journal.id?{...entry,trashedAt:undefined,updatedAt:now}:entry)); return }
-    if(item.entity==='anniversary') { const now=new Date().toISOString(); setAnniversaries(current=>current.map(a=>a.id===item.anniversary.id?{...a,trashedAt:undefined,updatedAt:now}:a)); return }
+    if(item.entity==='journal') { const now=new Date().toISOString(); setJournalEntries(current=>current.map(entry=>entry.id===item.journal.id?{...entry,trashedAt:undefined,updatedAt:now}:entry)); setAutoSyncToast('✓ 已恢复记录'); return }
+    if(item.entity==='anniversary') { const now=new Date().toISOString(); setAnniversaries(current=>current.map(a=>a.id===item.anniversary.id?{...a,trashedAt:undefined,updatedAt:now}:a)); setAutoSyncToast('✓ 已恢复纪念日'); return }
     const now=new Date().toISOString()
     setTasks(current=>current.map(task=>{
       if(task.id!==item.task.id) return task
@@ -2487,6 +2489,7 @@ function App() {
       const date=item.occurrenceDate!
       return {...task,recurrenceExceptions:{...task.recurrenceExceptions,[date]:{...task.recurrenceExceptions?.[date],trashedAt:undefined,updatedAt:now}},updatedAt:now}
     }))
+    setAutoSyncToast('✓ 已恢复任务')
   }
 
   const permanentlyDeleteTrashItem = (item: TrashItem) => {
@@ -3632,7 +3635,7 @@ function App() {
             <button className="today-button" type="button" onClick={goToday}>Today</button>
           </div>
           <div className="calendar-status-controls">
-            {trashItems.length>0 && <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={`打开回收站，共 ${trashItems.length} 条`}><span>♻</span> 回收站 {trashItems.length}</button>}
+            {trashItems.length>0 && <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={`打开回收站，共 ${trashItems.length} 条`}><svg className="trash-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg><span>回收站 {trashItems.length}</span></button>}
             {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
             {endedTasksViewToggle('calendar-ended-toggle')}
             <button className="program-refresh-button" type="button" onClick={()=>void refreshProgram()} disabled={programRefreshBusy} aria-label="检查并刷新程序" title="检查并刷新程序">{programRefreshBusy?'…':'↻'}</button>
@@ -4458,12 +4461,17 @@ function App() {
               <div className="trash-header-actions">{trashItems.length>0 && <button className="trash-clear-button" type="button" onClick={()=>{if(window.confirm(`确定永久删除回收站中的 ${trashItems.length} 项吗？此操作无法恢复。`)) clearTrash()}}>清空</button>}<button className="close-button" type="button" onClick={()=>setTrashOpen(false)} aria-label="关闭">×</button></div>
             </div>
             <div className="editor-body overdue-inbox-body">
-              {trashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <div className="overdue-inbox-list">
-                {trashItems.map(item=><article key={item.key} className="trash-inbox-item">
-                  <div className="trash-inbox-main"><strong>{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.anniversary.title}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date.replaceAll('-','/')} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
-                  <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
-                </article>)}
-              </div>}
+              {trashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <>
+                <div className="trash-filter-row" role="group" aria-label="回收站类型筛选">
+                  {([['all','全部'],['task','任务'],['journal','记录'],['anniversary','纪念日']] as const).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
+                </div>
+                {visibleTrashItems.length===0 ? <p className="page-empty compact">这一类还没有内容。</p> : <div className="overdue-inbox-list trash-inbox-list">
+                  {visibleTrashItems.map(item=><article key={item.key} className="trash-inbox-item">
+                    <div className="trash-inbox-main"><strong>{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.anniversary.title}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date.replaceAll('-','/')} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+                    <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
+                  </article>)}
+                </div>}
+              </>}
             </div>
           </section>
         </div>
