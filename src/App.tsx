@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.24'
+const APP_VERSION = '1.7.25'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -321,6 +321,56 @@ function toDateKey(date: Date) {
 function fromDateKey(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return new Date(year, month - 1, day)
+}
+
+function focusSecondsByDate(tasks: Task[], nowMs: number) {
+  const totals = new Map<string, number>()
+  const addSeconds = (dateKey: string, seconds: number) => {
+    if (!dateKey || !Number.isFinite(seconds) || seconds <= 0) return
+    totals.set(dateKey, (totals.get(dateKey) ?? 0) + seconds)
+  }
+  const addActiveInterval = (startedAt?: string) => {
+    if (!startedAt) return
+    const startMs = new Date(startedAt).getTime()
+    if (!Number.isFinite(startMs) || nowMs <= startMs) return
+    let cursor = startMs
+    while (cursor < nowMs) {
+      const cursorDate = new Date(cursor)
+      const nextMidnight = new Date(cursorDate.getFullYear(), cursorDate.getMonth(), cursorDate.getDate() + 1).getTime()
+      const segmentEnd = Math.min(nowMs, nextMidnight)
+      addSeconds(toDateKey(cursorDate), Math.max(0, Math.round((segmentEnd - cursor) / 1000)))
+      cursor = segmentEnd
+    }
+  }
+
+  tasks.forEach(task => {
+    const isRecurring = Boolean(task.recurrence)
+    if (!isRecurring) {
+      // actualDurationMinutes is the user's final, editable truth. Timer sessions are
+      // intentionally not re-counted here, so a manual correction (30 -> 5 min)
+      // immediately changes focus statistics to 5 minutes.
+      addSeconds(task.date, Math.max(0, Number(task.actualDurationMinutes ?? 0)) * 60)
+      addActiveInterval(task.activeTimerStartedAt)
+      return
+    }
+
+    Object.entries(task.recurrenceExceptions ?? {}).forEach(([occurrenceDate, exception]) => {
+      if (exception.deleted) return
+      addSeconds(occurrenceDate, Math.max(0, Number(exception.actualDurationMinutes ?? 0)) * 60)
+      addActiveInterval(exception.activeTimerStartedAt)
+    })
+  })
+  return totals
+}
+
+function formatFocusDuration(seconds: number) {
+  const totalMinutes = Math.floor(Math.max(0, seconds) / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours && minutes) return `${hours}小时${minutes}分钟`
+  if (hours) return `${hours}小时`
+  if (minutes) return `${minutes}分钟`
+  return seconds > 0 ? '不足1分钟' : '0分钟'
 }
 
 function formatDate(date: Date) {
@@ -1773,6 +1823,11 @@ function App() {
     return pool.filter(task => taskCoversDate(task, key) && (showEndedTasks || task.status === 'todo')).sort(taskSort)
   }, [selectedDate, tasks, displayTasks, days, showEndedTasks, showAllRecurringTasks])
 
+  const selectedFocusSeconds = useMemo(() => {
+    if (!selectedDate) return 0
+    return focusSecondsByDate(tasks, timerNow).get(toDateKey(selectedDate)) ?? 0
+  }, [selectedDate, tasks, timerNow])
+
   const anniversaryOccurrencesByDate = useMemo(() => {
     const map = new Map<string, { anniversary: Anniversary; occurrence: Date }[]>()
     const years = Array.from(new Set(days.map(day => day.date.getFullYear())))
@@ -2749,6 +2804,38 @@ function App() {
         label: statsRange==='year' ? `${Number(key.slice(5,7))}月` : `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}`
       }))
     })()
+    const focusByDay = focusSecondsByDate(tasks, timerNow)
+    const rawFocusTrend = [...focusByDay.entries()].filter(([date])=>inRange(date)).sort((a,b)=>a[0].localeCompare(b[0]))
+    const focusSeconds = rawFocusTrend.reduce((sum,[,seconds])=>sum+seconds,0)
+    const focusTrend = (() => {
+      if (statsRange==='all') {
+        if (!rawFocusTrend.length) return []
+        const first=rawFocusTrend[0][0], last=todayKey
+        const totalDays=Math.max(1,dayDiff(first,last)+1)
+        const bucketCount=Math.max(10,Math.min(20,Math.ceil(totalDays/75)))
+        const bucketDays=Math.max(1,Math.ceil(totalDays/bucketCount))
+        const buckets=Array.from({length:bucketCount},(_,index)=>{
+          const start=addDaysKey(first,index*bucketDays)
+          const end=index===bucketCount-1 ? last : addDaysKey(first,Math.min(totalDays-1,(index+1)*bucketDays-1))
+          return {key:`${start}:${end}`,start,end,seconds:0,label:`${Number(start.slice(5,7))}/${Number(start.slice(8,10))}`}
+        }).filter(bucket=>bucket.start<=last)
+        rawFocusTrend.forEach(([date,seconds])=>{
+          const index=Math.min(buckets.length-1,Math.max(0,Math.floor(dayDiff(first,date)/bucketDays)))
+          if(buckets[index]) buckets[index].seconds+=seconds
+        })
+        return buckets
+      }
+      const grouped=new Map<string,number>()
+      rawFocusTrend.forEach(([date,seconds])=>{
+        const key = statsRange==='year' ? date.slice(0,7) : date
+        grouped.set(key,(grouped.get(key)??0)+seconds)
+      })
+      return [...grouped.entries()].map(([key,seconds])=>({
+        key,seconds,
+        label: statsRange==='year' ? `${Number(key.slice(5,7))}月` : `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}`
+      }))
+    })()
+
     const mostPostponedTask = [...eligibleTasks].sort((a,b)=>(b.postponeHistory?.length??0)-(a.postponeHistory?.length??0))[0]
     const longestPostponedTask = [...eligibleTasks].sort((a,b)=>postponeDays(b)-postponeDays(a))[0]
 
@@ -2913,9 +3000,9 @@ function App() {
     })
 
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
-      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
+      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
       impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
-  },[tasks,journalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored])
+  },[tasks,journalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
@@ -3550,6 +3637,23 @@ function App() {
                 </div>
               </div> : <p className="page-empty compact">这个时间范围还没有完成记录。</p>}
             </div>
+            <div className="stats-subblock focus-stats-block">
+              <div className="focus-stats-heading"><h4>专注时间</h4><strong>{formatFocusDuration(statistics.focusSeconds)}</strong></div>
+              {statistics.focusTrend.length ? <div className="completion-chart-wrap">
+                <div className="completion-trend focus-trend">
+                  {statistics.focusTrend.map((item,index)=>{
+                    const max=Math.max(...statistics.focusTrend.map(x=>x.seconds),1)
+                    const labelEvery=Math.max(1,Math.ceil(statistics.focusTrend.length/8))
+                    const showLabel=index===0||index===statistics.focusTrend.length-1||index%labelEvery===0
+                    return <div key={item.key} title={`${item.key} · 专注 ${formatFocusDuration(item.seconds)}`}>
+                      <span className="completion-count">{item.seconds >= 60 ? `${Math.floor(item.seconds/60)}m` : item.seconds > 0 ? '<1m' : '0'}</span>
+                      <i style={{height:`${Math.max(8,item.seconds/max*100)}%`}} />
+                      <span className="completion-date">{showLabel?item.label:''}</span>
+                    </div>
+                  })}
+                </div>
+              </div> : <p className="page-empty compact">这个时间范围还没有专注记录。</p>}
+            </div>
           </section>
 
           <section className="stats-section">
@@ -4117,6 +4221,7 @@ function App() {
               )}
 
               <button className="add-button" type="button" onClick={openTaskEditor}>＋ 添加任务</button>
+              <p className="day-focus-time">{selectedDate && sameDay(selectedDate,today) ? '今日专注' : '当日专注'} · {formatFocusDuration(selectedFocusSeconds)}</p>
             </section>
 
             {!selectedIsFuture && <>

@@ -4224,3 +4224,11 @@ button {
   }
   .sync-preview-count-row b { margin-bottom: 2px; }
 }
+
+
+/* v1.7.25 — focus time in day detail and statistics */
+.day-focus-time{margin:9px 2px 0;text-align:center;color:#87918b;font-size:11px;line-height:1.45}
+.focus-stats-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.focus-stats-heading h4{margin:0}
+.focus-stats-heading strong{color:#53665b;font-size:12px;font-weight:700}
+.focus-trend i{background:rgba(70,105,80,.62)}
