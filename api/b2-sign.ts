@@ -27,14 +27,19 @@ function presign({ method, key, expires = 300 }: { method: 'GET' | 'HEAD' | 'PUT
   const secretKey = required('B2_APPLICATION_KEY')
   const bucket = required('B2_BUCKET_NAME')
   const endpoint = required('B2_ENDPOINT').replace(/^https?:\/\//, '').replace(/\/$/, '')
-  const region = endpoint.match(/^s3\.([^.]+)\.backblazeb2\.com$/)?.[1]
-  if (!region) throw new Error('B2_ENDPOINT must look like s3.us-west-004.backblazeb2.com')
+  const endpointRegion = endpoint.match(/^s3\.([^.]+)\.backblazeb2\.com$/)?.[1]
+  if (!endpointRegion) throw new Error('B2_ENDPOINT must look like s3.us-west-004.backblazeb2.com')
+
+  // Backblaze's documented AWS CLI presigned-URL example signs against us-east-1
+  // even when the B2 S3 endpoint itself is in a region such as us-west-004.
+  // Keep endpoint routing and SigV4 signing scope separate.
+  const signingRegion = 'us-east-1'
 
   const now = new Date()
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
   const dateStamp = amzDate.slice(0, 8)
   const service = 's3'
-  const scope = `${dateStamp}/${region}/${service}/aws4_request`
+  const scope = `${dateStamp}/${signingRegion}/${service}/aws4_request`
   const host = endpoint
   const canonicalUri = `/${awsEncode(bucket)}/${awsEncode(key)}`
   const query: Record<string, string> = {
@@ -52,7 +57,7 @@ function presign({ method, key, expires = 300 }: { method: 'GET' | 'HEAD' | 'PUT
   const canonicalRequest = `${method}\n${canonicalUri}\n${canonicalQuery}\n${canonicalHeaders}\nhost\nUNSIGNED-PAYLOAD`
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${sha256(canonicalRequest)}`
   const kDate = hmac(Buffer.from(`AWS4${secretKey}`, 'utf8'), dateStamp)
-  const kRegion = hmac(kDate, region)
+  const kRegion = hmac(kDate, signingRegion)
   const kService = hmac(kRegion, service)
   const kSigning = hmac(kService, 'aws4_request')
   const signature = hmac(kSigning, stringToSign, 'hex')
