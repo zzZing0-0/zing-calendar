@@ -1106,6 +1106,49 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
 }
 
 
+export async function clearZingUserDataWithSync(systemTags:any[]): Promise<void> {
+  const db=await openDatabase()
+  const entityStores: { entityType:SyncEntityType; storeName:string; id:(row:any)=>string; keep?:(row:any)=>boolean }[] = [
+    {entityType:'task',storeName:TASK_STORE,id:row=>String(row.id)},
+    {entityType:'journal',storeName:JOURNAL_STORE,id:row=>String(row.id)},
+    {entityType:'mood',storeName:MOOD_STORE,id:row=>String(row.date)},
+    {entityType:'energy',storeName:ENERGY_STORE,id:row=>String(row.date)},
+    {entityType:'period',storeName:PERIOD_STORE,id:row=>String(row.id)},
+    {entityType:'tag',storeName:TAG_STORE,id:row=>String(row.id),keep:row=>systemTags.some(tag=>tag.id===row.id)},
+    {entityType:'anniversary',storeName:ANNIVERSARY_STORE,id:row=>String(row.id)},
+    {entityType:'focus',storeName:FOCUS_STORE,id:row=>String(row.id)},
+  ]
+  const stores=[...entityStores.map(item=>item.storeName),ATTACHMENT_STORE,SYNC_TOMBSTONE_STORE,SYNC_CHANGE_STORE]
+  const deviceId=getOrCreateDeviceId(), now=new Date().toISOString()
+  try {
+    await new Promise<void>((resolve,reject)=>{
+      const tx=db.transaction(stores,'readwrite')
+      let pending=entityStores.length
+      const finishOne=()=>{ pending-=1; if (pending!==0) return
+        const tagStore=tx.objectStore(TAG_STORE); tagStore.clear(); systemTags.forEach(tag=>tagStore.put(tag))
+        for (const item of entityStores) if (item.storeName!==TAG_STORE) tx.objectStore(item.storeName).clear()
+        tx.objectStore(ATTACHMENT_STORE).clear()
+      }
+      entityStores.forEach(item=>{
+        const req=tx.objectStore(item.storeName).getAll()
+        req.onsuccess=()=>{
+          for (const row of (req.result ?? [])) {
+            if (item.keep?.(row)) continue
+            const entityId=item.id(row), key=`${item.entityType}:${entityId}`
+            tx.objectStore(SYNC_TOMBSTONE_STORE).put({key,entityType:item.entityType,entityId,deletedAt:now,deviceId} satisfies SyncTombstone)
+            tx.objectStore(SYNC_CHANGE_STORE).add({entityType:item.entityType,entityId,operation:'delete',changedAt:now,deviceId} satisfies Omit<SyncChange,'sequence'>)
+          }
+          finishOne()
+        }
+        req.onerror=()=>reject(req.error)
+      })
+      tx.oncomplete=()=>resolve()
+      tx.onerror=()=>reject(tx.error ?? new Error('清空事务失败'))
+      tx.onabort=()=>reject(tx.error ?? new Error('清空事务已回滚'))
+    })
+  } finally { db.close() }
+}
+
 export async function replaceZingData(payload: {
   tasks:any[]; journals:any[]; moods:any[]; energies:any[]; periods:any[]; tags:any[]; anniversaries:any[]; focusSessions:any[];
   attachments:{key:string;blob:Blob}[]

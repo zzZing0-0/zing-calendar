@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.2'
+const APP_VERSION = '1.9.3'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1034,7 +1034,7 @@ type BackupPreview = {
   tags: Tag[]
   anniversaries: Anniversary[]
   focusSessions: FocusSession[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; wordCloudIgnored?:string[] }
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; wordCloudIgnored?:string[] }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
 function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
@@ -1173,7 +1173,7 @@ function syncEntityKey(entityType: SyncEntityType, entityId: string) {
 }
 
 function rowSyncId(entityType: SyncEntityType, row: any): string {
-  return entityType === 'mood' ? String(row.date) : String(row.id)
+  return entityType === 'mood' || entityType === 'energy' ? String(row.date) : String(row.id)
 }
 
 async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], nextRows: any[]) {
@@ -3494,12 +3494,18 @@ function App() {
     if (resettingData) return
     setResettingData(true); setBackupMessage('正在清空数据…')
     try {
-      await replaceZingData({tasks:[],journals:[],moods:[],energies:[],periods:[],tags:[DEFAULT_TAG],anniversaries:[],focusSessions:[],attachments:[]})
-      setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setMenstrualPeriods([]); setTags([DEFAULT_TAG]); setAnniversaries([]); setFocusSessions([])
+      // Clear user data and create sync tombstones in one IndexedDB transaction.
+      // This makes “清空所有数据” a real cross-device deletion on the next GitHub sync.
+      await clearZingUserDataWithSync(REQUIRED_SYSTEM_TAGS)
+      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], mood:[], energy:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[] }
+      syncSnapshotsRef.current = cleared
+      Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
+      setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
+      setLocalWriteRevision(value=>value+1)
       setSelectedDate(today); setSearchQuery('')
       setResetDataConfirm(false)
-      setStorageStats({total:0,images:0,audio:0,data:0,attachmentCount:0})
-      setBackupMessage('数据已清空 · 应用设置已保留')
+      setStorageStats(await getStorageStats())
+      setBackupMessage('数据已清空 · 删除将在下次 GitHub 同步传播 · 应用设置已保留')
     } catch (error) {
       console.error('Failed to reset Zing data', error)
       setBackupMessage(error instanceof Error ? `清空失败：${error.message}` : '清空失败')
@@ -3510,28 +3516,28 @@ function App() {
     const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
     const rows=[
       ['id','title','start_date','end_date','all_day','time','priority','status','deadline','completed_at','original_date','postpone_count','repeat_rule','tags','notes','attachment_count','created_at','updated_at'],
-      ...tasks.map(task=>[
+      ...activeTasks.map(task=>[
         task.id,task.title,task.date,task.endDate??'',task.allDay,task.time??'',`P${task.priority}`,task.status,task.deadline??'',task.completedAt??'',task.originalDate??'',
         task.postponeHistory?.length??0,task.recurrence?JSON.stringify(task.recurrence):'',(task.tagIds??[]).map(tagName).join(' | '),task.notes??'',task.attachments?.length??0,task.createdAt,task.updatedAt
       ])
     ]
     const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
     downloadTextFile(`zing-tasks-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
-    setBackupMessage(`任务 CSV 已导出 · ${tasks.length} 条`)
+    setBackupMessage(`任务 CSV 已导出 · ${activeTasks.length} 条`)
   }
 
   const exportJournalsCsv = () => {
     const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
     const rows=[
       ['id','date','time','title','event_impact','tags','body_markdown','image_count','audio_count','created_at','updated_at'],
-      ...journalEntries.map(entry=>[
+      ...activeJournalEntries.map(entry=>[
         entry.id,entry.date,entry.time??'',entry.title,entry.impact,(entry.tagIds??[]).map(tagName).join(' | '),entry.content??'',
         (entry.attachments??[]).filter(item=>item.type==='image').length,(entry.attachments??[]).filter(item=>item.type==='audio').length,entry.createdAt,entry.updatedAt
       ])
     ]
     const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
     downloadTextFile(`zing-journals-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
-    setBackupMessage(`记录 CSV 已导出 · ${journalEntries.length} 条`)
+    setBackupMessage(`记录 CSV 已导出 · ${activeJournalEntries.length} 条`)
   }
 
   const exportFullBackup = async () => {
@@ -3551,7 +3557,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks,showAllRecurringTasks,wordCloudIgnored})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,wordCloudIgnored})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -3605,7 +3611,7 @@ function App() {
       })
       const expected=manifest.counts ?? {}
       if ((expected.tasks??tasks.length)!==tasks.length || (expected.journals??journals.length)!==journals.length ||
-          (expected.moods??moods.length)!==moods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
+          (expected.moods??moods.length)!==moods.length || (expected.energies??energies.length)!==energies.length || (expected.periods??periods.length)!==periods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
           (expected.anniversaries??restoredAnniversaries.length)!==restoredAnniversaries.length ||
           (expected.focusSessions??restoredFocusSessions.length)!==restoredFocusSessions.length ||
           (expected.attachments??attachments.length)!==attachments.length) throw new Error('备份数量校验失败')
@@ -3639,12 +3645,18 @@ function App() {
       if (s.dateFormat) localStorage.setItem('zing:dateFormat',s.dateFormat)
       if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
       if (typeof s.showAllRecurringTasks==='boolean') localStorage.setItem('zing:showAllRecurringTasks',String(s.showAllRecurringTasks))
+      if (typeof s.defaultPriority==='number' && s.defaultPriority>=0 && s.defaultPriority<=3) localStorage.setItem('zing:defaultPriority',String(s.defaultPriority))
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
+      // Restore is device-local by design. Reset sync snapshots first so replacing local
+      // state does not manufacture tombstones/upserts that overwrite newer cloud data.
+      syncSnapshotsRef.current = { task:backupPreview.tasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions }
+      Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setMenstrualPeriods(backupPreview.periods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
       if (s.dateFormat) setDateFormat(s.dateFormat)
+      if (typeof s.defaultPriority==='number' && s.defaultPriority>=0 && s.defaultPriority<=3) setDefaultPriority(s.defaultPriority as TaskPriority)
       if (typeof s.showEndedTasks==='boolean') setShowEndedTasks(s.showEndedTasks)
       if (typeof s.showAllRecurringTasks==='boolean') setShowAllRecurringTasks(s.showAllRecurringTasks)
       if (Array.isArray(s.wordCloudIgnored)) setWordCloudIgnored(s.wordCloudIgnored)
@@ -4168,7 +4180,7 @@ function App() {
                 <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
               </div>
               <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
-                <span><strong>备份</strong><small>任务、记录、心情、标签、纪念日、专注记录、设置与所有附件打包为 ZIP。</small></span>
+                <span><strong>备份</strong><small>任务、记录、心情、精力、经期、标签、纪念日、专注记录、设置与所有附件打包为 ZIP。</small></span>
                 <b>{backupExporting?'…':'↓'}</b>
               </button>
               <button className="settings-link-row backup-import-row" type="button" onClick={()=>backupInputRef.current?.click()}>
@@ -4176,7 +4188,7 @@ function App() {
               </button>
               <input ref={backupInputRef} className="backup-file-input" type="file" accept=".zip,application/zip" onChange={event=>{ const file=event.target.files?.[0]; if(file) void inspectBackupFile(file) }} />
               <button className="settings-link-row danger-data-row" type="button" onClick={()=>setResetDataConfirm(true)}>
-                <span><strong>清空所有数据</strong><small>清空任务、记录、心情、纪念日、专注记录、自建标签与附件；保留应用设置。</small></span><b>×</b>
+                <span><strong>清空所有数据</strong><small>清空任务、记录、心情、精力、经期、纪念日、专注记录、自建标签与附件；保留应用设置。删除会在下次 GitHub 同步传播。</small></span><b>×</b>
               </button>
               {backupMessage && <div className="backup-status" role="status">{backupMessage}</div>}
             </div>
@@ -4350,7 +4362,7 @@ function App() {
         <div className="backup-restore-backdrop" role="presentation">
           <section className="backup-restore-modal reset-data-modal" role="dialog" aria-modal="true" aria-label="确认清空所有数据">
             <span className="eyebrow">RESET DATA</span><h2>清空所有数据？</h2>
-            <p className="backup-restore-warning">任务、记录、Daily Mood、纪念日、专注记录、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。此操作不可撤销，建议先导出完整备份。</p>
+            <p className="backup-restore-warning">任务、记录、Daily Mood、精力、经期、纪念日、专注记录、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。删除会在下次 GitHub 同步传播到其他设备。此操作不可撤销，建议先导出完整备份。</p>
             <div className="backup-restore-actions">
               <button type="button" onClick={()=>setResetDataConfirm(false)} disabled={resettingData}>取消</button>
               <button className="danger-confirm" type="button" onClick={()=>void resetAllUserData()} disabled={resettingData}>{resettingData?'正在清空…':'确认清空'}</button>
@@ -4366,8 +4378,10 @@ function App() {
             <p className="backup-restore-date">{new Date(backupPreview.manifest.exportedAt).toLocaleString()}</p>
             <div className="backup-summary-grid">
               <span>任务 <b>{backupPreview.tasks.length}</b></span><span>记录 <b>{backupPreview.journals.length}</b></span>
-              <span>心情 <b>{backupPreview.moods.length}</b></span><span>标签 <b>{backupPreview.tags.length}</b></span>
-              <span>纪念日 <b>{backupPreview.anniversaries.length}</b></span><span>附件 <b>{backupPreview.attachments.length}</b></span>
+              <span>心情 <b>{backupPreview.moods.length}</b></span><span>精力 <b>{backupPreview.energies.length}</b></span>
+              <span>经期 <b>{backupPreview.periods.length}</b></span><span>标签 <b>{backupPreview.tags.length}</b></span>
+              <span>纪念日 <b>{backupPreview.anniversaries.length}</b></span><span>专注 <b>{backupPreview.focusSessions.length}</b></span>
+              <span>附件 <b>{backupPreview.attachments.length}</b></span>
             </div>
             <p className="backup-restore-warning">恢复后将替换当前设备中的 Zing Calendar 数据。请确认当前数据已经另行备份。</p>
             <div className="backup-restore-actions">
