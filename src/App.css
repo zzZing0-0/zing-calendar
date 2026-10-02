@@ -4279,3 +4279,26 @@ button {
   .trash-inbox-actions{flex:0 0 auto;gap:5px;justify-content:flex-end}
   .trash-inbox-actions button{padding:6px 8px;border-radius:8px;font-size:12px;line-height:1.15}
 }
+
+
+/* v1.8.3 — align recycle-bin and overdue status controls on mobile */
+@media(max-width:620px){
+  .calendar-status-controls .trash-inbox-trigger,
+  .calendar-status-controls .overdue-inbox-trigger{
+    height:42px !important;
+    min-height:42px !important;
+    padding:0 12px !important;
+    border-radius:11px !important;
+    font-size:13px !important;
+    line-height:1 !important;
+    gap:5px !important;
+    box-shadow:none !important;
+    animation:none !important;
+  }
+  .calendar-status-controls .trash-inbox-trigger span,
+  .calendar-status-controls .overdue-inbox-trigger span{
+    font-size:13px !important;
+    line-height:1 !important;
+  }
+  .calendar-status-controls .trash-trigger-icon{width:14px;height:14px}
+}

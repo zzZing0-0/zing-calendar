@@ -1,5 +1,6 @@
 const CACHE_NAME = 'zing-calendar-app-v1.7.0'
 const APP_SHELL = '/'
+// v1.8.3: navigations are network-first to avoid stale HTML referencing retired hashed assets.
 
 async function fetchAndCacheAppShell() {
   const cache = await caches.open(CACHE_NAME)
