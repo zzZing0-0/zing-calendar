@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.26'
+const APP_VERSION = '1.7.27'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2771,10 +2771,22 @@ function App() {
     const maxPostponeDays = eligibleTasks.reduce((max,task)=>Math.max(max,postponeDays(task)),0)
 
     const completedByDay = new Map<string,number>()
-    statsTasks.forEach(task=>{ if(task.completedAt){
-      const key=toDateKey(new Date(task.completedAt))
-      if(inRange(key)) completedByDay.set(key,(completedByDay.get(key)??0)+1)
-    }})
+    // Completion trend is an event timeline: range membership and grouping both use the actual completedAt date.
+    // Do not pre-filter by the task's planned/original date, otherwise the same calendar day can show different
+    // completion counts when switching between week/month/30-day ranges.
+    tasks.forEach(task => {
+      if (!task.recurrence) {
+        if (!task.completedAt) return
+        const key = toDateKey(new Date(task.completedAt))
+        if (inRange(key)) completedByDay.set(key, (completedByDay.get(key) ?? 0) + 1)
+        return
+      }
+      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => {
+        if (exception.deleted || exception.status !== 'completed' || !exception.completedAt) return
+        const key = toDateKey(new Date(exception.completedAt))
+        if (inRange(key)) completedByDay.set(key, (completedByDay.get(key) ?? 0) + 1)
+      })
+    })
     const rawCompletedTrend = [...completedByDay.entries()].sort((a,b)=>a[0].localeCompare(b[0]))
     const completionTrend = (() => {
       if (statsRange==='all') {
