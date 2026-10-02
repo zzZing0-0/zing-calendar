@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.8.4'
+const APP_VERSION = '1.8.5'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -4060,7 +4060,7 @@ function App() {
                   </div>
                 </> : <div className="sync-summary-empty"><b>两端数据一致，无需合并</b></div>
               })()}
-              <div className="editor-actions">
+              <div className="editor-actions sync-preview-actions">
                 <button type="button" className="secondary-button" onClick={()=>setGithubSyncPreview(null)}>取消</button>
                 <button type="button" className="github-sync-now" onClick={()=>{setGithubSyncPreview(null);void executeGithubSync(false)}}>确认同步</button>
               </div>
@@ -4251,7 +4251,15 @@ function App() {
                   <h2>{formatUiDate(selectedDate)}</h2>
                   <button className="date-action-button" type="button" onClick={() => openAnniversaryEditor()} aria-label="添加纪念日" title="添加纪念日">＋</button>
                 </div>
-                <span className="drawer-lunar-date">农历 {lunarFullLabel(selectedDate)}</span>
+                <span className="drawer-lunar-date">
+                  农历 {lunarFullLabel(selectedDate)}
+                  {(()=>{
+                    const annotation=calendarAnnotation(selectedDate,weekStartsMonday)
+                    return annotation && annotation.kind!=='week'
+                      ? <><span className="drawer-date-separator"> · </span><span className={`drawer-calendar-annotation annotation-${annotation.kind}`}>{annotation.label}</span></>
+                      : null
+                  })()}
+                </span>
               </div>
               <button className="close-button" type="button" onClick={closeDayDetail} aria-label="关闭">×</button>
             </div>

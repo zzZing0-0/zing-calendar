@@ -4302,3 +4302,39 @@ button {
   }
   .calendar-status-controls .trash-trigger-icon{width:14px;height:14px}
 }
+
+
+/* v1.8.5 sync preview actions + day-detail calendar annotation */
+.github-sync-summary-modal .sync-preview-actions{
+  display:grid;
+  grid-template-columns:minmax(0,2fr) minmax(0,3fr);
+  gap:10px;
+  align-items:stretch;
+  margin-top:18px;
+}
+.github-sync-summary-modal .sync-preview-actions button{
+  width:100%;
+  min-height:48px;
+  margin:0;
+  border-radius:13px;
+  padding:12px 16px;
+  font:inherit;
+  font-weight:750;
+  cursor:pointer;
+}
+.github-sync-summary-modal .sync-preview-actions .secondary-button{
+  border:1px solid var(--line);
+  background:var(--panel);
+  color:var(--text);
+}
+.github-sync-summary-modal .sync-preview-actions .github-sync-now{
+  border:1px solid #31463a;
+  background:#31463a;
+  color:#fff;
+}
+.drawer-date-separator{color:#a1aaa5}
+.drawer-calendar-annotation{font-weight:650}
+.drawer-calendar-annotation.annotation-statutory{color:#c65e63}
+.drawer-calendar-annotation.annotation-traditional{color:#c58a3b}
+.drawer-calendar-annotation.annotation-international{color:#8b6cab}
+.drawer-calendar-annotation.annotation-solar-term{color:#4d9b82}
