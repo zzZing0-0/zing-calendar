@@ -4140,3 +4140,46 @@ button {
   .task-timer-clock{font-size:31px}
   .task-timer-start,.task-timer-stop{width:100%}
 }
+
+
+/* v1.7.23 — unified overlay stacking model.
+   Page chrome stays below drawers; drawers stay below dialogs; nested utility
+   overlays (pickers, lightbox) stay above every dialog.  Each overlay owns one
+   stacking context so sticky descendants cannot escape above a dialog. */
+.modal-layer{
+  z-index:500;
+}
+.task-view-layer{
+  z-index:510;
+}
+.github-sync-layer{
+  z-index:520 !important;
+}
+.github-sync-summary-layer{
+  z-index:530 !important;
+}
+.storage-browser-layer{
+  z-index:500;
+}
+.backup-restore-backdrop{
+  z-index:550;
+}
+.scope-layer{
+  z-index:1000;
+}
+.month-picker-layer{
+  z-index:1200 !important;
+}
+.attachment-library-layer{
+  z-index:1400 !important;
+}
+.image-lightbox{
+  z-index:1600;
+}
+
+@media (min-width:621px){
+  /* Desktop day detail is intentionally above sticky page chrome, but every
+     modal/dialog is above the drawer. */
+  .drawer-backdrop{z-index:400 !important}
+  .day-drawer{z-index:401 !important}
+}
