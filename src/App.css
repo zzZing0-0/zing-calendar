@@ -4183,3 +4183,44 @@ button {
   .drawer-backdrop{z-index:400 !important}
   .day-drawer{z-index:401 !important}
 }
+
+/* v1.7.24 sync preview: show only changed modules, with counts first and a compact non-zero change summary. */
+.sync-preview-count-row {
+  grid-template-columns: minmax(84px, 1fr) repeat(3, auto);
+}
+.sync-change-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid #e1e6e2;
+  border-radius: 12px;
+  background: #f8faf8;
+}
+.sync-change-summary > b {
+  color: #354039;
+  font-size: 13px;
+}
+.sync-change-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #59645e;
+  font-size: 12px;
+}
+.sync-change-row span:last-child { text-align: right; }
+.sync-summary-empty {
+  padding: 18px 16px;
+  border: 1px solid #e1e6e2;
+  border-radius: 12px;
+  background: #f8faf8;
+  color: #59645e;
+}
+@media (max-width: 620px) {
+  .sync-preview-count-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .sync-preview-count-row b { margin-bottom: 2px; }
+}

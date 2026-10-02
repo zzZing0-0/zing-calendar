@@ -864,7 +864,15 @@ async function syncB2Attachments(bundle: SyncBundle): Promise<{ uploaded: number
 
 export type GitHubSyncPreview = {
   initializedRemote: boolean
-  rows: { entityType: SyncEntityType; localOnly: number; remoteOnly: number; different: number }[]
+  rows: {
+    entityType: SyncEntityType
+    localCount: number
+    remoteCount: number
+    mergedCount: number
+    added: number
+    updated: number
+    deleted: number
+  }[]
 }
 
 export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHubSyncPreview> {
@@ -872,39 +880,75 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
   if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
   const remote = await readGitHubBundleFile(config)
   const local = await createSyncBundle()
-  if (!remote.bundle) {
-    const counts = new Map<SyncEntityType, number>()
-    local.records.forEach(record => counts.set(record.entityType, (counts.get(record.entityType) || 0) + 1))
-    return { initializedRemote: true, rows: [...counts.entries()].map(([entityType, localOnly]) => ({ entityType, localOnly, remoteOnly: 0, different: 0 })) }
-  }
   const types: SyncEntityType[] = ['task','journal','mood','energy','period','tag','anniversary']
-  const localMap = new Map(local.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
-  const remoteMap = new Map(remote.bundle.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
+
+  if (!remote.bundle) {
+    return {
+      initializedRemote: true,
+      rows: types.map(entityType => {
+        const localCount = local.records.filter(record => record.entityType === entityType).length
+        return { entityType, localCount, remoteCount: 0, mergedCount: localCount, added: localCount, updated: 0, deleted: 0 }
+      }),
+    }
+  }
+
+  const localRecords = new Map(local.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
+  const remoteRecords = new Map(remote.bundle.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
+  const localDeletes = new Map(local.tombstones.map(tombstone => [tombstone.key, tombstone]))
+  const remoteDeletes = new Map(remote.bundle.tombstones.map(tombstone => [tombstone.key, tombstone]))
+
   const rows = types.map(entityType => {
-    let localOnly = 0, remoteOnly = 0, different = 0
+    const localTypeRecords = local.records.filter(record => record.entityType === entityType)
+    const remoteTypeRecords = remote.bundle!.records.filter(record => record.entityType === entityType)
     const keys = new Set([
-      ...local.records.filter(r => r.entityType === entityType).map(r => `${entityType}:${r.entityId}`),
-      ...remote.bundle!.records.filter(r => r.entityType === entityType).map(r => `${entityType}:${r.entityId}`),
+      ...localTypeRecords.map(record => `${entityType}:${record.entityId}`),
+      ...remoteTypeRecords.map(record => `${entityType}:${record.entityId}`),
+      ...local.tombstones.filter(t => t.entityType === entityType).map(t => t.key),
+      ...remote.bundle!.tombstones.filter(t => t.entityType === entityType).map(t => t.key),
     ])
+
+    let mergedCount = 0, added = 0, updated = 0, deleted = 0
     keys.forEach(key => {
-      const a = localMap.get(key), b = remoteMap.get(key)
-      if (a && !b) localOnly += 1
-      else if (!a && b) remoteOnly += 1
-      else if (a && b && JSON.stringify(a.payload) !== JSON.stringify(b.payload)) different += 1
+      const localRecord = localRecords.get(key)
+      const remoteRecord = remoteRecords.get(key)
+      const localDelete = localDeletes.get(key)
+      const remoteDelete = remoteDeletes.get(key)
+      const localRecordTime = localRecord ? (Date.parse(localRecord.updatedAt) || 0) : 0
+      const remoteRecordTime = remoteRecord ? (Date.parse(remoteRecord.updatedAt) || 0) : 0
+      const localDeleteTime = localDelete ? (Date.parse(localDelete.deletedAt) || 0) : 0
+      const remoteDeleteTime = remoteDelete ? (Date.parse(remoteDelete.deletedAt) || 0) : 0
+      const newestDeleteTime = Math.max(localDeleteTime, remoteDeleteTime)
+      const newestRecordTime = Math.max(localRecordTime, remoteRecordTime)
+
+      let mergedRecord: SyncEntityRecord | undefined
+      if (newestRecordTime >= newestDeleteTime && (localRecord || remoteRecord)) {
+        if (localRecord && remoteRecord && (entityType === 'task' || entityType === 'journal')) mergedRecord = mergeConcurrentAttachments(localRecord, remoteRecord)
+        else if (remoteRecordTime > localRecordTime) mergedRecord = remoteRecord
+        else mergedRecord = localRecord ?? remoteRecord
+      }
+
+      if (mergedRecord) mergedCount += 1
+
+      // The preview summarizes synchronization work across both sides, not just
+      // mutations applied to this device. Zero-value operations stay hidden in the UI.
+      if (mergedRecord && (!localRecord || !remoteRecord)) added += 1
+      else if (!mergedRecord && (localRecord || remoteRecord)) deleted += 1
+      else if (localRecord && remoteRecord && JSON.stringify(localRecord.payload) !== JSON.stringify(remoteRecord.payload)) updated += 1
+      else if (!localRecord && !remoteRecord && Boolean(localDelete) !== Boolean(remoteDelete)) deleted += 1
+      else if (!localRecord && !remoteRecord && localDelete && remoteDelete && localDelete.deletedAt !== remoteDelete.deletedAt) deleted += 1
     })
-    // Deletions are data changes too. Include tombstones in the manual preview instead
-    // of silently applying them after a preview that claimed there was no difference.
-    const localDeletes = new Map(local.tombstones.filter(t => t.entityType === entityType).map(t => [t.key, t]))
-    const remoteDeletes = new Map(remote.bundle!.tombstones.filter(t => t.entityType === entityType).map(t => [t.key, t]))
-    const deleteKeys = new Set([...localDeletes.keys(), ...remoteDeletes.keys()])
-    deleteKeys.forEach(key => {
-      const a = localDeletes.get(key), b = remoteDeletes.get(key)
-      if (a && !b) localOnly += 1
-      else if (!a && b) remoteOnly += 1
-      else if (a && b && a.deletedAt !== b.deletedAt) different += 1
-    })
-    return { entityType, localOnly, remoteOnly, different }
+
+    return {
+      entityType,
+      localCount: localTypeRecords.length,
+      remoteCount: remoteTypeRecords.length,
+      mergedCount,
+      added,
+      updated,
+      deleted,
+    }
   })
+
   return { initializedRemote: false, rows }
 }
 

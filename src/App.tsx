@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.23'
+const APP_VERSION = '1.7.24'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1157,8 +1157,7 @@ function App() {
   const [githubSyncBranch, setGithubSyncBranch] = useState(() => localStorage.getItem('zing:githubSyncBranch') || 'main')
   const [githubSyncToken, setGithubSyncToken] = useState('')
   const [githubTokenSaved, setGithubTokenSaved] = useState(false)
-  const [githubSyncSummary, setGithubSyncSummary] = useState<{rows:{label:string;added:number;updated:number;deleted:number;total:number}[]; pushedRecords:number; pushedTombstones:number; attachments:{uploaded:number;downloaded:number;missing:number;total:number}; finishedAt:string}|null>(null)
-  const [githubSyncPreview, setGithubSyncPreview] = useState<{initializedRemote:boolean; rows:{entityType:string;localOnly:number;remoteOnly:number;different:number}[]}|null>(null)
+  const [githubSyncPreview, setGithubSyncPreview] = useState<{initializedRemote:boolean; rows:{entityType:string;localCount:number;remoteCount:number;mergedCount:number;added:number;updated:number;deleted:number}[]}|null>(null)
   const [githubSyncBusy, setGithubSyncBusy] = useState(false)
   const [githubSyncMessage, setGithubSyncMessage] = useState('')
   const [githubSyncMessageKind, setGithubSyncMessageKind] = useState<'idle'|'working'|'success'|'error'>('idle')
@@ -3326,19 +3325,6 @@ function App() {
   }
 
 
-  const syncRows = (before:any[], after:any[], type:'task'|'journal'|'mood'|'energy'|'period'|'tag'|'anniversary', label:string) => {
-    const id = (row:any) => (type === 'mood' || type === 'energy') ? String(row.date) : String(row.id)
-    const b = new Map(before.map(row=>[id(row),row]))
-    const n = new Map(after.map(row=>[id(row),row]))
-    let added=0, updated=0, deleted=0
-    for (const [key,row] of n) {
-      if (!b.has(key)) added += 1
-      else if (JSON.stringify(b.get(key)) !== JSON.stringify(row)) updated += 1
-    }
-    for (const key of b.keys()) if (!n.has(key)) deleted += 1
-    return {label,added,updated,deleted,total:after.length}
-  }
-
   const executeGithubSync = async (automatic = false) => {
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
       setGithubSyncMessageKind('error')
@@ -3354,7 +3340,6 @@ function App() {
     setGithubSyncMessageKind('working')
     setGithubSyncMessage('正在连接 GitHub…')
     try {
-      const beforeTasks = tasks, beforeJournals = journalEntries, beforeMoods = dailyMoods, beforeEnergy=dailyEnergy, beforePeriods=menstrualPeriods, beforeTags = tags, beforeAnniversaries = anniversaries
       const result = await syncWithGitHub({
         owner: githubSyncOwner.trim(),
         repo: githubSyncRepo.trim(),
@@ -3386,21 +3371,6 @@ function App() {
         await saveTags(hydratedTags)
         await recordSyncDiff('tag', normalizedNextTags, hydratedTags)
       }
-      if (!automatic) setGithubSyncSummary({
-        rows: [
-          syncRows(beforeTasks,nextTasks,'task','任务'),
-          syncRows(beforeJournals,nextJournals,'journal','日记'),
-          syncRows(beforeMoods,nextMoods,'mood','心情'),
-          syncRows(beforeEnergy,nextEnergy,'energy','能量'),
-          syncRows(beforePeriods,nextPeriods,'period','月经'),
-          syncRows(beforeAnniversaries,nextAnniversaries,'anniversary','纪念日'),
-          syncRows(beforeTags,hydratedTags,'tag','标签'),
-        ],
-        pushedRecords: result.pushedRecords,
-        pushedTombstones: result.pushedTombstones,
-        attachments: result.attachments,
-        finishedAt: stamp,
-      })
       // Remote merge is hydration, not a local user edit. Reset the diff baselines
       // before React state changes so pulled records/deletes do not generate fresh tombstones.
       syncSnapshotsRef.current = {
@@ -3884,35 +3854,27 @@ function App() {
               <button className="close-button" type="button" onClick={()=>setGithubSyncPreview(null)}>×</button>
             </div>
             <div className="editor-body">
-              <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下是本机与服务器当前差异。确认后才会合并并写回。'}</p>
-              <div className="sync-summary-grid">
-                {githubSyncPreview.rows.filter(row=>row.localOnly||row.remoteOnly||row.different).map(row=>{const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日'};return <div className="sync-summary-row" key={row.entityType}><b>{labels[row.entityType]||row.entityType}</b><span>仅本机 {row.localOnly}</span><span>仅服务器 {row.remoteOnly}</span><span>两端不同 {row.different}</span></div>})}
-                {!githubSyncPreview.rows.some(row=>row.localOnly||row.remoteOnly||row.different) && <div className="sync-summary-row"><b>没有数据差异</b></div>}
-              </div>
+              <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
+              {(() => {
+                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日'}
+                const changedRows=githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount)
+                return changedRows.length ? <>
+                  <div className="sync-summary-grid">
+                    {changedRows.map(row=><div className="sync-summary-row sync-preview-count-row" key={row.entityType}><b>{labels[row.entityType]||row.entityType}</b><span>本机 {row.localCount}</span><span>服务器 {row.remoteCount}</span><span>合并后 {row.mergedCount}</span></div>)}
+                  </div>
+                  <div className="sync-change-summary">
+                    <b>本次变化</b>
+                    {changedRows.map(row=>{
+                      const changes=[row.added?`增加 ${row.added}`:'',row.updated?`更新 ${row.updated}`:'',row.deleted?`删除 ${row.deleted}`:''].filter(Boolean)
+                      return changes.length?<div className="sync-change-row" key={row.entityType}><span>{labels[row.entityType]||row.entityType}</span><span>{changes.join('　')}</span></div>:null
+                    })}
+                  </div>
+                </> : <div className="sync-summary-empty"><b>两端数据一致，无需合并</b></div>
+              })()}
               <div className="editor-actions">
                 <button type="button" className="secondary-button" onClick={()=>setGithubSyncPreview(null)}>取消</button>
                 <button type="button" className="github-sync-now" onClick={()=>{setGithubSyncPreview(null);void executeGithubSync(false)}}>确认同步</button>
               </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {githubSyncSummary && (
-        <div className="modal-layer github-sync-summary-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭同步结果" onClick={()=>setGithubSyncSummary(null)} />
-          <section className="task-editor github-sync-summary-modal" role="dialog" aria-modal="true" aria-label="同步结果">
-            <div className="editor-header">
-              <div><span className="eyebrow">SYNC RESULT</span><h2>同步完成</h2></div>
-              <button className="close-button" type="button" onClick={()=>setGithubSyncSummary(null)}>×</button>
-            </div>
-            <div className="editor-body">
-              <p className="sync-summary-time">{new Date(githubSyncSummary.finishedAt).toLocaleString()}</p>
-              <div className="sync-summary-grid">
-                {githubSyncSummary.rows.map(row=><div className="sync-summary-row" key={row.label}><b>{row.label}</b><span>新增 {row.added}</span><span>更新 {row.updated}</span><span>删除 {row.deleted}</span><small>当前 {row.total}</small></div>)}
-              </div>
-              <div className="sync-summary-cloud"><b>云端状态</b><span>GitHub 数据 {githubSyncSummary.pushedRecords} 条</span><span>B2 附件 {githubSyncSummary.attachments.total} 个</span><span>历史删除标记 {githubSyncSummary.pushedTombstones} 条</span></div><small className="sync-summary-tombstone-note">本次 B2 附件：上传/迁移 {githubSyncSummary.attachments.uploaded} · 下载 {githubSyncSummary.attachments.downloaded}{githubSyncSummary.attachments.missing ? ` · 缺失 ${githubSyncSummary.attachments.missing}` : ''}。历史删除标记用于防止其他设备把已删除的数据重新恢复，不代表本次删除。</small>
-              <button className="github-sync-now" type="button" onClick={()=>setGithubSyncSummary(null)}>完成</button>
             </div>
           </section>
         </div>
@@ -4476,7 +4438,7 @@ function App() {
                 </section>
               )}
 
-              {viewingTask.actualDurationMinutes && viewingTask.actualDurationMinutes > 0 && (
+              {Number(viewingTask.actualDurationMinutes ?? 0) > 0 && (
                 <section className="task-view-section">
                   <h3>实际用时</h3><p>{formatActualDuration(viewingTask.actualDurationMinutes)}</p>
                 </section>
