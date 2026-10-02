@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.1'
+const APP_VERSION = '1.9.2'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -4488,7 +4488,7 @@ function App() {
               )}
 
               <button className="add-button" type="button" onClick={openTaskEditor}>＋ 添加任务</button>
-              {selectedDate && toDateKey(selectedDate) <= toDateKey(today) && <button className="day-focus-time day-focus-button" type="button" onClick={()=>setFocusHistoryDate(toDateKey(selectedDate))}>{sameDay(selectedDate,today) ? '今日专注' : '当日专注'} · {formatFocusDuration(selectedFocusSeconds)} <span>›</span></button>}
+              {selectedDate && toDateKey(selectedDate) <= toDateKey(today) && <button className="day-focus-time day-focus-button" type="button" onClick={()=>setFocusHistoryDate(toDateKey(selectedDate))}>{sameDay(selectedDate,today) ? '今日专注' : '当日专注'} · {formatFocusDuration(selectedFocusSeconds)}<span>›</span></button>}
             </section>
 
             {!selectedIsFuture && <>
@@ -4651,7 +4651,7 @@ function App() {
               {focusHistoryRecords.length===0?<p className="page-empty compact">这一天还没有专注记录。</p>:<div className="focus-history-list">{focusHistoryRecords.map(record=>{
                 const editing=record.kind==='direct'&&record.session&&focusEditId===record.session.id
                 return <div className="focus-history-item" key={record.id}>
-                  <div className="focus-history-main"><strong>{record.title}</strong><small>{record.kind==='task'?'任务计时':'自由专注'} · {formatFocusDuration(record.seconds)}</small><div className="focus-history-tags">{record.tagIds.map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}</div></div>
+                  <div className="focus-history-main"><strong>{record.title}</strong><div className="focus-history-tags">{record.tagIds.map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}<small>{formatFocusDuration(record.seconds)}</small></div></div>
                   {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} /> 分钟</label><div className="focus-history-edit-tags">{managedTags.filter(tag=>!tag.archived).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds(cur=>checked?cur.filter(id=>id!==tag.id):[...cur,tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
                     <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);setSelectedDate(null);setViewingTask(record.task)}}}>更改</button>
                     <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session)setFocusSessions(cur=>cur.filter(item=>item.id!==record.session!.id));else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
