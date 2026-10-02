@@ -58,6 +58,14 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
 
+  // API responses are dynamic and may contain short-lived credentials such as
+  // B2 presigned URLs. Never cache them in the PWA cache. Offline app/data
+  // access is provided by the cached app shell plus IndexedDB instead.
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(request, { cache: 'no-store' }))
+    return
+  }
+
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try {
