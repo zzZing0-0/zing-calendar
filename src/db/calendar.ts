@@ -415,6 +415,27 @@ export type SyncMergePlan = {
 }
 
 
+function mergeConcurrentSettings(localRecord: SyncEntityRecord, remoteRecord: SyncEntityRecord): SyncEntityRecord {
+  const localTime = Date.parse(localRecord.updatedAt) || 0
+  const remoteTime = Date.parse(remoteRecord.updatedAt) || 0
+  const newer = remoteTime > localTime ? remoteRecord : localRecord
+  const normalizeClock = (record: SyncEntityRecord) => {
+    const added: Record<string,string> = { ...(record.payload?.wordCloudIgnoredAddedAt ?? {}) }
+    const removed: Record<string,string> = { ...(record.payload?.wordCloudIgnoredRemovedAt ?? {}) }
+    const fallback = record.updatedAt || '1970-01-01T00:00:00.000Z'
+    const words = Array.isArray(record.payload?.wordCloudIgnored) ? record.payload.wordCloudIgnored : []
+    words.forEach((raw:any)=>{ const word=String(raw).trim().toLowerCase(); if(word&&!added[word]&&!removed[word]) added[word]=fallback })
+    return { added, removed }
+  }
+  const localClock=normalizeClock(localRecord), remoteClock=normalizeClock(remoteRecord)
+  const added:Record<string,string>={...localClock.added}
+  const removed:Record<string,string>={...localClock.removed}
+  Object.entries(remoteClock.added).forEach(([word,at])=>{ if(!added[word]||(Date.parse(at)||0)>(Date.parse(added[word])||0)) added[word]=at })
+  Object.entries(remoteClock.removed).forEach(([word,at])=>{ if(!removed[word]||(Date.parse(at)||0)>(Date.parse(removed[word])||0)) removed[word]=at })
+  const words=[...new Set([...Object.keys(added),...Object.keys(removed)])].filter(word=>(Date.parse(added[word]||'')||0)>(Date.parse(removed[word]||'')||0)).sort()
+  return { ...newer, updatedAt:new Date(Math.max(localTime,remoteTime)).toISOString(), payload:{...newer.payload,wordCloudIgnored:words,wordCloudIgnoredAddedAt:added,wordCloudIgnoredRemovedAt:removed} }
+}
+
 function mergeConcurrentAttachments(localRecord: SyncEntityRecord, remoteRecord: SyncEntityRecord): SyncEntityRecord {
   if (!['task','journal'].includes(localRecord.entityType) || localRecord.entityType !== remoteRecord.entityType) {
     return (Date.parse(remoteRecord.updatedAt)||0) > (Date.parse(localRecord.updatedAt)||0) ? remoteRecord : localRecord
@@ -469,7 +490,11 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
     // Task/journal attachment links are merged independently from the record-level LWW.
     // If one device removed an old attachment while another added a newer one, the old
     // link stays removed and the new link survives. The binary itself is immutable/shared.
-    if (localRecord && (remoteRecord.entityType === 'task' || remoteRecord.entityType === 'journal') && deleteTime <= Math.max(localTime, remoteTime)) {
+    if (localRecord && remoteRecord.entityType === 'settings' && deleteTime <= Math.max(localTime, remoteTime)) {
+      const merged = mergeConcurrentSettings(localRecord, remoteRecord)
+      if (JSON.stringify(merged.payload) !== JSON.stringify(localRecord.payload)) upserts.push(merged)
+      else ignoredRemoteRecords += 1
+    } else if (localRecord && (remoteRecord.entityType === 'task' || remoteRecord.entityType === 'journal') && deleteTime <= Math.max(localTime, remoteTime)) {
       const merged = mergeConcurrentAttachments(localRecord, remoteRecord)
       if (JSON.stringify(merged.payload) !== JSON.stringify(localRecord.payload)) upserts.push(merged)
       else ignoredRemoteRecords += 1

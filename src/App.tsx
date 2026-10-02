@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.14'
+const APP_VERSION = '1.9.15'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1039,6 +1039,8 @@ type SyncedUserSettings = {
   showAllRecurringTasks: boolean
   excludeDefaultFocusStats: boolean
   wordCloudIgnored: string[]
+  wordCloudIgnoredAddedAt?: Record<string,string>
+  wordCloudIgnoredRemovedAt?: Record<string,string>
 }
 
 type BackupPreview = {
@@ -1392,6 +1394,7 @@ function App() {
   const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, period: false, tag: false, anniversary: false, focus: false, settings: false })
   const settingsSyncReadyRef = useRef(false)
   const suppressNextSettingsSyncRef = useRef(false)
+  const settingsWordClockRef = useRef<{added:Record<string,string>;removed:Record<string,string>}>({added:{},removed:{}})
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
@@ -1873,15 +1876,29 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => {
+    const now = new Date().toISOString()
+    const wordSet = new Set(wordCloudIgnored.map(word=>word.trim().toLowerCase()).filter(Boolean))
+    const clocks = settingsWordClockRef.current
+    wordSet.forEach(word=>{ if (!clocks.added[word] || (Date.parse(clocks.removed[word]||'')||0) >= (Date.parse(clocks.added[word])||0)) clocks.added[word]=now })
+    Object.keys(clocks.added).forEach(word=>{ if (!wordSet.has(word) && (!clocks.removed[word] || (Date.parse(clocks.removed[word])||0) < (Date.parse(clocks.added[word])||0))) clocks.removed[word]=now })
     const next: SyncedUserSettings = {
-      id:'settings', updatedAt:new Date().toISOString(), greeting:greeting || 'Hello, Zing',
+      id:'settings', updatedAt:now, greeting:greeting || 'Hello, Zing',
       weekStart:weekStartsMonday?'monday':'sunday', dateFormat, defaultPriority, showEndedTasks,
-      showAllRecurringTasks, excludeDefaultFocusStats, wordCloudIgnored,
+      showAllRecurringTasks, excludeDefaultFocusStats, wordCloudIgnored:[...wordSet],
+      wordCloudIgnoredAddedAt:{...clocks.added}, wordCloudIgnoredRemovedAt:{...clocks.removed},
     }
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
       void loadUserSettings<SyncedUserSettings>().then(async rows => {
-        if (rows.length) { syncSnapshotsRef.current.settings = rows; syncSnapshotReadyRef.current.settings = true; return }
+        if (rows.length) {
+          const existing=rows[0]
+          const stamp=existing.updatedAt || now
+          const added={...(existing.wordCloudIgnoredAddedAt ?? {})}
+          const removed={...(existing.wordCloudIgnoredRemovedAt ?? {})}
+          ;(existing.wordCloudIgnored ?? []).forEach(word=>{ const key=word.trim().toLowerCase(); if(key&&!added[key]&&!removed[key]) added[key]=stamp })
+          settingsWordClockRef.current={added,removed}
+          syncSnapshotsRef.current.settings = rows; syncSnapshotReadyRef.current.settings = true; return
+        }
         await saveUserSettings([next])
         syncSnapshotsRef.current.settings = [next]
         syncSnapshotReadyRef.current.settings = true
@@ -3976,6 +3993,11 @@ function App() {
       setFocusSessions(nextFocusSessions)
       const syncedSettings = nextSettings[0]
       if (syncedSettings) {
+        const stamp=syncedSettings.updatedAt || new Date().toISOString()
+        const added={...(syncedSettings.wordCloudIgnoredAddedAt ?? {})}
+        const removed={...(syncedSettings.wordCloudIgnoredRemovedAt ?? {})}
+        ;(syncedSettings.wordCloudIgnored ?? []).forEach(word=>{ const key=word.trim().toLowerCase(); if(key&&!added[key]&&!removed[key]) added[key]=stamp })
+        settingsWordClockRef.current={added,removed}
         suppressNextSettingsSyncRef.current = true
         localStorage.setItem('zing:greeting',syncedSettings.greeting || 'Hello, Zing')
         localStorage.setItem('zing:weekStart',syncedSettings.weekStart)
