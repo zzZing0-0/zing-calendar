@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.7.21'
+const APP_VERSION = '1.7.22'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -14,7 +14,8 @@ type RecurrenceEnd = { type: 'date'; date: string } | { type: 'count'; count: nu
 type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: number[]; end?: RecurrenceEnd }
 type PostponeEvent = { from: string; to: string; at: string }
 type Attachment = { id: string; type: 'image' | 'audio'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string; duration?: number }
-type RecurrenceException = { deleted?: boolean; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
+type TimerSession = { startedAt: string; endedAt: string; durationSeconds: number }
+type RecurrenceException = { deleted?: boolean; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; activeTimerStartedAt?: string; timerSessions?: TimerSession[]; timerSecondsRemainder?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 type CalendarDay = {
   date: Date
@@ -35,6 +36,9 @@ type Task = {
   deadline?: string
   notes?: string
   actualDurationMinutes?: number
+  activeTimerStartedAt?: string
+  timerSessions?: TimerSession[]
+  timerSecondsRemainder?: number
   createdAt: string
   updatedAt: string
   completedAt?: string
@@ -1232,6 +1236,7 @@ function App() {
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null)
   const [viewingJournalId, setViewingJournalId] = useState<string | null>(null)
   const [viewingTask, setViewingTask] = useState<Task | null>(null)
+  const [timerNow, setTimerNow] = useState(() => Date.now())
   const [recording, setRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
@@ -2018,6 +2023,99 @@ function App() {
     setAnniversaryEditorOpen(false); setEditingAnniversaryId(null)
   }
 
+  const activeTimerTask = useMemo(() => {
+    for (const task of tasks) {
+      if (task.activeTimerStartedAt) return task
+      if (!task.recurrenceExceptions) continue
+      for (const [occurrenceDate, exception] of Object.entries(task.recurrenceExceptions) as [string, RecurrenceException][]) {
+        if (!exception.activeTimerStartedAt) continue
+        const occurrence = materializeOccurrence(task, occurrenceDate)
+        if (occurrence) return occurrence
+      }
+    }
+    return null
+  }, [tasks])
+
+  useEffect(() => {
+    if (!activeTimerTask) return
+    setTimerNow(Date.now())
+    const timer = window.setInterval(() => setTimerNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt])
+
+  useEffect(() => {
+    if (!tasksHydrated || !activeTimerTask) return
+    setMainView('calendar')
+    setViewingTask(activeTimerTask)
+  }, [tasksHydrated, activeTimerTask?.id])
+
+  useEffect(() => {
+    if (!viewingTask) return
+    const current = viewingTask.seriesId && viewingTask.occurrenceDate
+      ? tasks.find(item => item.id === viewingTask.seriesId)
+      : tasks.find(item => item.id === viewingTask.id)
+    const refreshed = current
+      ? (viewingTask.seriesId && viewingTask.occurrenceDate ? materializeOccurrence(current, viewingTask.occurrenceDate) : current)
+      : null
+    if (refreshed) setViewingTask(refreshed)
+  }, [tasks])
+
+  const updateTimedTask = (task: Task, updater: (current: Task | RecurrenceException) => Partial<Task> | Partial<RecurrenceException>) => {
+    const now = new Date().toISOString()
+    if (task.seriesId && task.occurrenceDate) {
+      setTasks(current => current.map(series => {
+        if (series.id !== task.seriesId) return series
+        const existing = series.recurrenceExceptions?.[task.occurrenceDate!] ?? { updatedAt: now }
+        return {
+          ...series,
+          recurrenceExceptions: {
+            ...series.recurrenceExceptions,
+            [task.occurrenceDate!]: { ...existing, ...updater(existing), updatedAt: now },
+          },
+          updatedAt: now,
+        }
+      }))
+      return
+    }
+    setTasks(current => current.map(item => item.id === task.id ? { ...item, ...updater(item), updatedAt: now } : item))
+  }
+
+  const startTaskTimer = (task: Task) => {
+    if (activeTimerTask || task.status !== 'todo') return
+    const startedAt = new Date().toISOString()
+    updateTimedTask(task, () => ({ activeTimerStartedAt: startedAt }))
+    setTimerNow(Date.now())
+  }
+
+  const stopTaskTimer = (task: Task, complete = false) => {
+    if (!task.activeTimerStartedAt) return
+    const endedAt = new Date()
+    const startedAt = new Date(task.activeTimerStartedAt)
+    const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
+    updateTimedTask(task, current => {
+      const previousMinutes = Number(current.actualDurationMinutes ?? task.actualDurationMinutes ?? 0)
+      const previousRemainder = Number(current.timerSecondsRemainder ?? task.timerSecondsRemainder ?? 0)
+      const totalSeconds = previousRemainder + durationSeconds
+      const addedMinutes = Math.floor(totalSeconds / 60)
+      return {
+        activeTimerStartedAt: undefined,
+        timerSessions: [...(current.timerSessions ?? task.timerSessions ?? []), { startedAt: task.activeTimerStartedAt!, endedAt: endedAt.toISOString(), durationSeconds }],
+        timerSecondsRemainder: totalSeconds % 60,
+        actualDurationMinutes: previousMinutes + addedMinutes,
+        ...(complete ? { status: 'completed' as TaskStatus, completedAt: endedAt.toISOString() } : {}),
+      }
+    })
+  }
+
+  const formatRunningTimer = (task: Task) => {
+    if (!task.activeTimerStartedAt) return '00:00:00'
+    const seconds = Math.max(0, Math.floor((timerNow - new Date(task.activeTimerStartedAt).getTime()) / 1000))
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const remainder = seconds % 60
+    return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(remainder).padStart(2,'0')}`
+  }
+
   const openTaskEditor = () => {
     const date = selectedDate ?? today
     setEditingTaskId(null)
@@ -2031,6 +2129,7 @@ function App() {
   }
 
   const editTask = (task: Task) => {
+    if (task.activeTimerStartedAt) return
     setViewingTask(null)
     const series = task.seriesId ? tasks.find(item => item.id === task.seriesId) : task
     if (!series) return
@@ -2086,7 +2185,12 @@ function App() {
         const occurrence = editingOccurrenceDate && series.recurrence ? materializeOccurrence(series, editingOccurrenceDate) : null
 
         if (occurrence && scope === 'occurrence') {
-          const exception: RecurrenceException = { ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined), updatedAt: now }
+          const existingException = series.recurrenceExceptions?.[editingOccurrenceDate!] ?? { updatedAt: now }
+          const exception: RecurrenceException = {
+            ...existingException,
+            ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
+            updatedAt: now,
+          }
           return current.map(task => task.id === series.id
             ? { ...task, recurrenceExceptions: { ...task.recurrenceExceptions, [editingOccurrenceDate!]: exception }, updatedAt: now }
             : task)
@@ -2113,6 +2217,8 @@ function App() {
               ...series,
               ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
               id: crypto.randomUUID(), status: occurrence.status, completedAt: occurrence.completedAt,
+              timerSessions: occurrence.timerSessions, timerSecondsRemainder: occurrence.timerSecondsRemainder,
+              activeTimerStartedAt: undefined,
               originalDate: draft.date, recurrence: undefined, recurrenceExceptions: undefined,
               createdAt: now, updatedAt: now,
             }
@@ -4310,14 +4416,14 @@ function App() {
 
       {viewingTask && (
         <div className="modal-layer task-view-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭任务详情" onClick={()=>setViewingTask(null)} />
+          <button className="modal-backdrop" type="button" aria-label={viewingTask.activeTimerStartedAt ? "任务计时中" : "关闭任务详情"} onClick={()=>{ if (!viewingTask.activeTimerStartedAt) setViewingTask(null) }} />
           <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
             <div className="editor-header task-view-header">
               <div>
                 <span className="eyebrow">TASK</span>
                 <h2 id="task-view-title">{viewingTask.title}</h2>
               </div>
-              <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>
+              {!viewingTask.activeTimerStartedAt && <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>}
             </div>
             <div className="editor-body task-view-body">
               <div className="task-view-primary-meta">
@@ -4327,6 +4433,10 @@ function App() {
                   aria-label={viewingTask.status==='completed'?'取消完成':'完成任务'}
                   onClick={()=>{
                     const nextStatus:TaskStatus=viewingTask.status==='completed'?'todo':'completed'
+                    if (viewingTask.activeTimerStartedAt && nextStatus==='completed') {
+                      stopTaskTimer(viewingTask, true)
+                      return
+                    }
                     setTaskStatus(viewingTask,nextStatus)
                     setViewingTask(current=>current?{...current,status:nextStatus,completedAt:nextStatus==='completed'?new Date().toISOString():undefined}:current)
                   }}
@@ -4337,6 +4447,24 @@ function App() {
                     : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}
                 </span>
               </div>
+
+              {viewingTask.status === 'todo' && (
+                <section className={`task-timer-panel ${viewingTask.activeTimerStartedAt ? 'running' : ''}`}>
+                  {viewingTask.activeTimerStartedAt ? (
+                    <>
+                      <span className="task-timer-label">正在专注</span>
+                      <strong className="task-timer-clock">{formatRunningTimer(viewingTask)}</strong>
+                      <button className="task-timer-stop" type="button" onClick={()=>stopTaskTimer(viewingTask)}>■ 结束计时</button>
+                      <small>结束本次计时后，可继续浏览或编辑任务。</small>
+                    </>
+                  ) : (
+                    <>
+                      <span className="task-timer-label">任务计时</span>
+                      <button className="task-timer-start" type="button" onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</button>
+                    </>
+                  )}
+                </section>
+              )}
 
               {(viewingTask.attachments ?? []).some(item=>item.type==='image') && (
                 <section className="task-view-section task-view-images">
@@ -4372,8 +4500,14 @@ function App() {
             </div>
             <div className="editor-footer">
               <div className="editor-primary-actions">
-                <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
-                <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
+                {viewingTask.activeTimerStartedAt ? (
+                  <span className="task-timer-lock-note">🔒 计时中，结束计时后可编辑或退出</span>
+                ) : (
+                  <>
+                    <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
+                    <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
+                  </>
+                )}
               </div>
             </div>
           </section>

@@ -4118,3 +4118,25 @@ button {
 .day-cell.today .day-number[data-month-key] {
   white-space: nowrap;
 }
+
+
+/* v1.7.22 — task-bound focus timer */
+.task-timer-panel{
+  display:flex;flex-direction:column;align-items:center;gap:10px;margin:2px 0 16px;padding:18px;
+  border:1px solid #dfe7e2;border-radius:14px;background:#f7faf8;text-align:center
+}
+.task-timer-panel.running{background:#f3f7f4;border-color:#cbd9d0}
+.task-timer-label{color:#748078;font-size:12px;font-weight:700;letter-spacing:.04em}
+.task-timer-clock{font-variant-numeric:tabular-nums;color:#304239;font-size:34px;line-height:1.15;letter-spacing:.04em}
+.task-timer-start,.task-timer-stop{
+  min-width:150px;height:40px;padding:0 18px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700
+}
+.task-timer-start{border:1px solid #34483e;background:#34483e;color:#fff}
+.task-timer-stop{border:1px solid #9da9a2;background:#fff;color:#4c5c53}
+.task-timer-panel small{color:#8a938e;font-size:11px;line-height:1.5}
+.task-timer-lock-note{display:inline-flex;align-items:center;min-height:36px;color:#69756e;font-size:12px;font-weight:650}
+@media(max-width:640px){
+  .task-timer-panel{margin-inline:0;padding:16px 12px}
+  .task-timer-clock{font-size:31px}
+  .task-timer-start,.task-timer-stop{width:100%}
+}
