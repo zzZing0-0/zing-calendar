@@ -865,7 +865,7 @@ async function syncB2Attachments(bundle: SyncBundle): Promise<{ uploaded: number
 export type GitHubSyncPreview = {
   initializedRemote: boolean
   rows: {
-    entityType: SyncEntityType
+    entityType: SyncEntityType | 'trash'
     localCount: number
     remoteCount: number
     mergedCount: number
@@ -873,6 +873,55 @@ export type GitHubSyncPreview = {
     updated: number
     deleted: number
   }[]
+}
+
+type TrashPreviewItem = { key: string; trashedAt: string }
+
+function trashPreviewItems(records: SyncEntityRecord[]): TrashPreviewItem[] {
+  const items: TrashPreviewItem[] = []
+  records.forEach(record => {
+    const row = record.payload ?? {}
+    if (record.entityType === 'task') {
+      if (row.trashedAt) {
+        items.push({ key: `task:series:${record.entityId}`, trashedAt: String(row.trashedAt) })
+        return
+      }
+      if (row.trashFuture?.from && row.trashFuture?.trashedAt) {
+        items.push({ key: `task:future:${record.entityId}:${row.trashFuture.from}`, trashedAt: String(row.trashFuture.trashedAt) })
+      }
+      Object.entries(row.recurrenceExceptions ?? {}).forEach(([date, exception]: [string, any]) => {
+        if (exception?.trashedAt) items.push({ key: `task:occurrence:${record.entityId}:${date}`, trashedAt: String(exception.trashedAt) })
+      })
+    } else if ((record.entityType === 'journal' || record.entityType === 'anniversary') && row.trashedAt) {
+      items.push({ key: `${record.entityType}:${record.entityId}`, trashedAt: String(row.trashedAt) })
+    }
+  })
+  return items
+}
+
+function recordVisibleOutsideTrash(record: SyncEntityRecord | undefined): boolean {
+  if (!record) return false
+  if (record.entityType === 'task' || record.entityType === 'journal' || record.entityType === 'anniversary') return !record.payload?.trashedAt
+  return true
+}
+
+function payloadForNormalPreview(record: SyncEntityRecord): any {
+  const payload = record.payload ?? {}
+  if (record.entityType === 'journal' || record.entityType === 'anniversary') {
+    const { trashedAt: _trashedAt, updatedAt: _updatedAt, ...rest } = payload
+    return rest
+  }
+  if (record.entityType !== 'task') {
+    const { updatedAt: _updatedAt, ...rest } = payload
+    return rest
+  }
+  const { trashedAt: _trashedAt, trashFuture: _trashFuture, recurrenceExceptions, updatedAt: _updatedAt, ...rest } = payload
+  const cleanExceptions = Object.fromEntries(Object.entries(recurrenceExceptions ?? {}).map(([date, value]: [string, any]) => {
+    if (!value || typeof value !== 'object') return [date, value]
+    const { trashedAt: _exceptionTrashedAt, updatedAt: _exceptionUpdatedAt, ...clean } = value
+    return [date, clean]
+  }))
+  return { ...rest, recurrenceExceptions: cleanExceptions }
 }
 
 export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHubSyncPreview> {
@@ -883,12 +932,15 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
   const types: SyncEntityType[] = ['task','journal','mood','energy','period','tag','anniversary']
 
   if (!remote.bundle) {
+    const normalRows = types.map(entityType => {
+      const localRecords = local.records.filter(record => record.entityType === entityType && recordVisibleOutsideTrash(record))
+      const localCount = localRecords.length
+      return { entityType, localCount, remoteCount: 0, mergedCount: localCount, added: localCount, updated: 0, deleted: 0 }
+    })
+    const localTrashCount = trashPreviewItems(local.records).length
     return {
       initializedRemote: true,
-      rows: types.map(entityType => {
-        const localCount = local.records.filter(record => record.entityType === entityType).length
-        return { entityType, localCount, remoteCount: 0, mergedCount: localCount, added: localCount, updated: 0, deleted: 0 }
-      }),
+      rows: [...normalRows, { entityType:'trash' as const, localCount:localTrashCount, remoteCount:0, mergedCount:localTrashCount, added:localTrashCount, updated:0, deleted:0 }],
     }
   }
 
@@ -896,8 +948,9 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
   const remoteRecords = new Map(remote.bundle.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
   const localDeletes = new Map(local.tombstones.map(tombstone => [tombstone.key, tombstone]))
   const remoteDeletes = new Map(remote.bundle.tombstones.map(tombstone => [tombstone.key, tombstone]))
+  const mergedRecords: SyncEntityRecord[] = []
 
-  const rows = types.map(entityType => {
+  const rows: GitHubSyncPreview['rows'] = types.map(entityType => {
     const localTypeRecords = local.records.filter(record => record.entityType === entityType)
     const remoteTypeRecords = remote.bundle!.records.filter(record => record.entityType === entityType)
     const keys = new Set([
@@ -926,27 +979,52 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
         else if (remoteRecordTime > localRecordTime) mergedRecord = remoteRecord
         else mergedRecord = localRecord ?? remoteRecord
       }
+      if (mergedRecord) mergedRecords.push(mergedRecord)
 
-      if (mergedRecord) mergedCount += 1
+      const localVisible = recordVisibleOutsideTrash(localRecord)
+      const remoteVisible = recordVisibleOutsideTrash(remoteRecord)
+      const mergedVisible = recordVisibleOutsideTrash(mergedRecord)
+      if (mergedVisible) mergedCount += 1
 
-      // The preview summarizes synchronization work across both sides, not just
-      // mutations applied to this device. Zero-value operations stay hidden in the UI.
-      if (mergedRecord && (!localRecord || !remoteRecord)) added += 1
-      else if (!mergedRecord && (localRecord || remoteRecord)) deleted += 1
-      else if (localRecord && remoteRecord && JSON.stringify(localRecord.payload) !== JSON.stringify(remoteRecord.payload)) updated += 1
+      // Normal modules describe active data only. Recycle-bin lifecycle changes are
+      // summarized separately below, so trashed records do not inflate active counts.
+      if (mergedVisible && (!localVisible || !remoteVisible)) added += 1
+      else if (!mergedVisible && (localVisible || remoteVisible)) deleted += 1
+      else if (localVisible && remoteVisible && mergedVisible && localRecord && remoteRecord && JSON.stringify(payloadForNormalPreview(localRecord)) !== JSON.stringify(payloadForNormalPreview(remoteRecord))) updated += 1
       else if (!localRecord && !remoteRecord && Boolean(localDelete) !== Boolean(remoteDelete)) deleted += 1
       else if (!localRecord && !remoteRecord && localDelete && remoteDelete && localDelete.deletedAt !== remoteDelete.deletedAt) deleted += 1
     })
 
     return {
       entityType,
-      localCount: localTypeRecords.length,
-      remoteCount: remoteTypeRecords.length,
+      localCount: localTypeRecords.filter(recordVisibleOutsideTrash).length,
+      remoteCount: remoteTypeRecords.filter(recordVisibleOutsideTrash).length,
       mergedCount,
       added,
       updated,
       deleted,
     }
+  })
+
+  const localTrash = new Map(trashPreviewItems(local.records).map(item => [item.key, item]))
+  const remoteTrash = new Map(trashPreviewItems(remote.bundle.records).map(item => [item.key, item]))
+  const mergedTrash = new Map(trashPreviewItems(mergedRecords).map(item => [item.key, item]))
+  const trashKeys = new Set([...localTrash.keys(), ...remoteTrash.keys(), ...mergedTrash.keys()])
+  let trashAdded = 0, trashUpdated = 0, trashDeleted = 0
+  trashKeys.forEach(key => {
+    const localItem = localTrash.get(key), remoteItem = remoteTrash.get(key), mergedItem = mergedTrash.get(key)
+    if (mergedItem && (!localItem || !remoteItem)) trashAdded += 1
+    else if (!mergedItem && (localItem || remoteItem)) trashDeleted += 1
+    else if (localItem && remoteItem && localItem.trashedAt !== remoteItem.trashedAt) trashUpdated += 1
+  })
+  rows.push({
+    entityType:'trash',
+    localCount:localTrash.size,
+    remoteCount:remoteTrash.size,
+    mergedCount:mergedTrash.size,
+    added:trashAdded,
+    updated:trashUpdated,
+    deleted:trashDeleted,
   })
 
   return { initializedRemote: false, rows }

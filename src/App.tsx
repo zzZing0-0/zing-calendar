@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.8.3'
+const APP_VERSION = '1.8.4'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -3558,6 +3558,13 @@ function App() {
     }
   }
 
+  const switchMainView = (view: 'calendar' | 'statistics' | 'anniversaries' | 'settings') => {
+    setMainView(view)
+    // Bottom navigation changes the top-level page. Do not reuse the document
+    // scroll position from the previous page; calendar-internal restoration is separate.
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }))
+  }
+
   const runGithubSync = async (automatic = false) => {
     if (automatic) return executeGithubSync(true)
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
@@ -4038,7 +4045,7 @@ function App() {
             <div className="editor-body">
               <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
               {(() => {
-                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日'}
+                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日',trash:'回收站'}
                 const changedRows=githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount)
                 return changedRows.length ? <>
                   <div className="sync-summary-grid">
@@ -4199,10 +4206,10 @@ function App() {
 
       {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
-        <button type="button" className={mainView==='calendar'?'active':''} onClick={() => setMainView('calendar')}><span>▦</span>日历</button>
-        <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => setMainView('anniversaries')}><span>🎂</span>纪念日</button>
-        <button type="button" className={mainView==='statistics'?'active':''} onClick={() => setMainView('statistics')}><span>⌁</span>统计</button>
-        <button type="button" className={mainView==='settings'?'active':''} onClick={() => setMainView('settings')}><span>⚙</span>设置</button>
+        <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><span>▦</span>日历</button>
+        <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><span>🎂</span>纪念日</button>
+        <button type="button" className={mainView==='statistics'?'active':''} onClick={() => switchMainView('statistics')}><span>⌁</span>统计</button>
+        <button type="button" className={mainView==='settings'?'active':''} onClick={() => switchMainView('settings')}><span>⚙</span>设置</button>
       </nav>
       )}
 
