@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.8.5'
+const APP_VERSION = '1.9.0'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -15,6 +15,7 @@ type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: numbe
 type PostponeEvent = { from: string; to: string; at: string }
 type Attachment = { id: string; type: 'image' | 'audio'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string; duration?: number }
 type TimerSession = { startedAt: string; endedAt: string; durationSeconds: number }
+type FocusSession = { id:string; tagIds:string[]; mode:'stopwatch'|'countdown'; plannedSeconds?:number; startedAt:string; endedAt?:string; durationSeconds?:number; createdAt:string; updatedAt:string }
 type RecurrenceException = { deleted?: boolean; trashedAt?: string; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; activeTimerStartedAt?: string; timerSessions?: TimerSession[]; timerSecondsRemainder?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 type CalendarDay = {
@@ -327,7 +328,7 @@ function fromDateKey(value: string) {
   return new Date(year, month - 1, day)
 }
 
-function focusSecondsByDate(tasks: Task[], nowMs: number) {
+function taskFocusSecondsByDate(tasks: Task[], nowMs: number) {
   const totals = new Map<string, number>()
   const addSeconds = (dateKey: string, seconds: number) => {
     if (!dateKey || !Number.isFinite(seconds) || seconds <= 0) return
@@ -369,6 +370,32 @@ function focusSecondsByDate(tasks: Task[], nowMs: number) {
   return totals
 }
 
+
+function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number) {
+  const totals = new Map<string, number>()
+  const add = (key:string, seconds:number) => totals.set(key,(totals.get(key)??0)+Math.max(0,seconds))
+  sessions.forEach(session => {
+    const start = new Date(session.startedAt).getTime()
+    if (!Number.isFinite(start)) return
+    const plannedEnd = session.mode==='countdown' && session.plannedSeconds ? start + session.plannedSeconds*1000 : Infinity
+    const explicitEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs
+    const end = Math.min(Number.isFinite(explicitEnd)?explicitEnd:nowMs, plannedEnd)
+    if (end<=start) return
+    let cursor=start
+    while(cursor<end){
+      const d=new Date(cursor), midnight=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime()
+      const segmentEnd=Math.min(end,midnight)
+      add(toDateKey(d),Math.round((segmentEnd-cursor)/1000)); cursor=segmentEnd
+    }
+  })
+  return totals
+}
+
+function combinedFocusSecondsByDate(tasks:Task[], sessions:FocusSession[], nowMs:number){
+  const totals=taskFocusSecondsByDate(tasks,nowMs)
+  directFocusSecondsByDate(sessions,nowMs).forEach((seconds,key)=>totals.set(key,(totals.get(key)??0)+seconds))
+  return totals
+}
 function formatFocusDuration(seconds: number) {
   const totalMinutes = Math.floor(Math.max(0, seconds) / 60)
   const hours = Math.floor(totalMinutes / 60)
@@ -1006,6 +1033,7 @@ type BackupPreview = {
   periods: MenstrualPeriod[]
   tags: Tag[]
   anniversaries: Anniversary[]
+  focusSessions: FocusSession[]
   settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; wordCloudIgnored?:string[] }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
@@ -1296,14 +1324,20 @@ function App() {
   const [viewingJournalId, setViewingJournalId] = useState<string | null>(null)
   const [viewingTask, setViewingTask] = useState<Task | null>(null)
   const [timerNow, setTimerNow] = useState(() => Date.now())
+  const [focusSessions, setFocusSessions] = useState<FocusSession[]>([])
+  const [focusHydrated, setFocusHydrated] = useState(false)
+  const [focusOpen, setFocusOpen] = useState(false)
+  const [focusMode, setFocusMode] = useState<'stopwatch'|'countdown'>('stopwatch')
+  const [focusMinutes, setFocusMinutes] = useState('15')
+  const [focusTagIds, setFocusTagIds] = useState<string[]>([DEFAULT_TAG_ID])
   const [recording, setRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
   const [journalDraft, setJournalDraft] = useState<JournalDraft>(() => emptyJournalDraft(today))
   const [tags, setTags] = useState<Tag[]>([DEFAULT_TAG])
   const [tagsHydrated, setTagsHydrated] = useState(false)
-  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], period: [], tag: [], anniversary: [] })
-  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, period: false, tag: false, anniversary: false })
+  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], period: [], tag: [], anniversary: [], focus: [] })
+  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, period: false, tag: false, anniversary: false, focus: false })
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
@@ -1684,8 +1718,25 @@ function App() {
       if (!active) return
       setMenstrualPeriods(rows); setPeriodsHydrated(true)
     }).catch(error => { console.error('Failed to load menstrual periods',error); if(active)setPeriodsHydrated(true) })
+    loadFocusSessions<FocusSession>().then(rows => {
+      if (!active) return
+      setFocusSessions(rows); setFocusHydrated(true)
+    }).catch(error => { console.error('Failed to load focus sessions',error); if(active)setFocusHydrated(true) })
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (!focusHydrated) return
+    saveFocusSessions(focusSessions).catch(error => console.error('Failed to save focus sessions', error))
+    if (!syncSnapshotReadyRef.current.focus) {
+      syncSnapshotsRef.current.focus = focusSessions
+      syncSnapshotReadyRef.current.focus = true
+    } else {
+      const previous = syncSnapshotsRef.current.focus
+      syncSnapshotsRef.current.focus = focusSessions
+      void recordSyncDiff('focus', previous, focusSessions).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record focus sync changes', error))
+    }
+  }, [focusSessions, focusHydrated])
 
   useEffect(() => {
     if (!anniversariesHydrated) return
@@ -1851,8 +1902,8 @@ function App() {
 
   const selectedFocusSeconds = useMemo(() => {
     if (!selectedDate) return 0
-    return focusSecondsByDate(activeTasks, timerNow).get(toDateKey(selectedDate)) ?? 0
-  }, [selectedDate, activeTasks, timerNow])
+    return combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow).get(toDateKey(selectedDate)) ?? 0
+  }, [selectedDate, activeTasks, focusSessions, timerNow])
 
   const anniversaryOccurrencesByDate = useMemo(() => {
     const map = new Map<string, { anniversary: Anniversary; occurrence: Date }[]>()
@@ -2105,6 +2156,30 @@ function App() {
   }
 
 
+  const activeFocusSession = useMemo(() => focusSessions.find(session=>!session.endedAt) ?? null, [focusSessions])
+  const activeFocusElapsed = activeFocusSession ? Math.max(0,Math.floor((timerNow-new Date(activeFocusSession.startedAt).getTime())/1000)) : 0
+  const activeFocusRemaining = activeFocusSession?.mode==='countdown' ? Math.max(0,(activeFocusSession.plannedSeconds??0)-activeFocusElapsed) : 0
+  const formatClock = (seconds:number) => {
+    const safe=Math.max(0,Math.floor(seconds)), h=Math.floor(safe/3600), m=Math.floor((safe%3600)/60), sec=safe%60
+    return h>0 ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+  }
+  const startDirectFocus = () => {
+    if (activeTimerTask || activeFocusSession) return
+    const plannedMinutes=Math.max(1,Number.parseInt(focusMinutes||'15',10)||15)
+    const now=new Date().toISOString()
+    setFocusSessions(current=>[...current,{id:crypto.randomUUID(),tagIds:focusTagIds.length?focusTagIds:[DEFAULT_TAG_ID],mode:focusMode,...(focusMode==='countdown'?{plannedSeconds:plannedMinutes*60}:{}),startedAt:now,createdAt:now,updatedAt:now}])
+    setTimerNow(Date.now())
+  }
+  const stopDirectFocus = (automatic=false) => {
+    if (!activeFocusSession) return
+    const endMs=automatic && activeFocusSession.mode==='countdown' && activeFocusSession.plannedSeconds
+      ? new Date(activeFocusSession.startedAt).getTime()+activeFocusSession.plannedSeconds*1000 : Date.now()
+    const endedAt=new Date(endMs).toISOString()
+    const durationSeconds=Math.max(0,Math.round((endMs-new Date(activeFocusSession.startedAt).getTime())/1000))
+    setFocusSessions(current=>current.map(session=>session.id===activeFocusSession.id?{...session,endedAt,durationSeconds,updatedAt:endedAt}:session))
+  }
+
+
   const activeTimerTask = useMemo(() => {
     for (const task of activeTasks) {
       if (task.activeTimerStartedAt) return task
@@ -2119,11 +2194,17 @@ function App() {
   }, [activeTasks])
 
   useEffect(() => {
-    if (!activeTimerTask) return
+    if (!activeTimerTask && !activeFocusSession) return
     setTimerNow(Date.now())
     const timer = window.setInterval(() => setTimerNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt])
+  }, [activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt, activeFocusSession?.id])
+
+  useEffect(() => {
+    if (!activeFocusSession || activeFocusSession.mode!=='countdown' || !activeFocusSession.plannedSeconds) return
+    const due=new Date(activeFocusSession.startedAt).getTime()+activeFocusSession.plannedSeconds*1000
+    if(timerNow>=due) stopDirectFocus(true)
+  },[timerNow,activeFocusSession?.id,activeFocusSession?.plannedSeconds])
 
   useEffect(() => {
     if (!tasksHydrated || !activeTimerTask) return
@@ -2163,7 +2244,7 @@ function App() {
   }
 
   const startTaskTimer = (task: Task) => {
-    if (activeTimerTask || task.status !== 'todo') return
+    if (activeTimerTask || activeFocusSession || task.status !== 'todo') return
     const startedAt = new Date().toISOString()
     updateTimedTask(task, () => ({ activeTimerStartedAt: startedAt }))
     setTimerNow(Date.now())
@@ -2881,7 +2962,27 @@ function App() {
         label: statsRange==='year' ? `${Number(key.slice(5,7))}月` : `${Number(key.slice(5,7))}/${Number(key.slice(8,10))}`
       }))
     })()
-    const focusByDay = focusSecondsByDate(activeTasks, timerNow)
+    const focusByDay = combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow)
+    const focusTagRows = managedTags.map(tag=>{
+      let seconds=0, sessions=0
+      activeTasks.forEach(task=>{
+        if(!(task.tagIds??[DEFAULT_TAG_ID]).includes(tag.id)) return
+        if(!task.recurrence){ if(inRange(task.date)){ const value=Math.max(0,Number(task.actualDurationMinutes??0)*60); seconds+=value; if(value>0)sessions+=(task.timerSessions?.length||1) } return }
+        Object.entries(task.recurrenceExceptions??{}).forEach(([date,exception]:[string,RecurrenceException])=>{
+          if(!inRange(date)||exception.deleted||exception.trashedAt) return
+          const value=Math.max(0,Number(exception.actualDurationMinutes??0)*60); seconds+=value; if(value>0)sessions+=(exception.timerSessions?.length||1)
+        })
+      })
+      focusSessions.forEach(session=>{
+        if(!(session.tagIds??[DEFAULT_TAG_ID]).includes(tag.id)) return
+        const date=toDateKey(new Date(session.startedAt)); if(!inRange(date)) return
+        const start=new Date(session.startedAt).getTime(), end=session.endedAt?new Date(session.endedAt).getTime():timerNow
+        const cap=session.mode==='countdown'&&session.plannedSeconds?start+session.plannedSeconds*1000:end
+        seconds+=Math.max(0,Math.round((Math.min(end,cap)-start)/1000)); sessions+=1
+      })
+      return {tag,seconds,sessions}
+    }).filter(row=>row.seconds>0||row.sessions>0).sort((a,b)=>b.seconds-a.seconds)
+
     const rawFocusTrend = [...focusByDay.entries()].filter(([date])=>inRange(date)).sort((a,b)=>a[0].localeCompare(b[0]))
     const focusSeconds = rawFocusTrend.reduce((sum,[,seconds])=>sum+seconds,0)
     const focusTrend = (() => {
@@ -3077,9 +3178,9 @@ function App() {
     })
 
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
-      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
+      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,focusTagRows,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
       impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
-  },[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
+  },[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,focusSessions,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
@@ -3329,8 +3430,8 @@ function App() {
     if (resettingData) return
     setResettingData(true); setBackupMessage('正在清空数据…')
     try {
-      await replaceZingData({tasks:[],journals:[],moods:[],energies:[],periods:[],tags:[DEFAULT_TAG],anniversaries:[],attachments:[]})
-      setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setMenstrualPeriods([]); setTags([DEFAULT_TAG]); setAnniversaries([])
+      await replaceZingData({tasks:[],journals:[],moods:[],energies:[],periods:[],tags:[DEFAULT_TAG],anniversaries:[],focusSessions:[],attachments:[]})
+      setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setMenstrualPeriods([]); setTags([DEFAULT_TAG]); setAnniversaries([]); setFocusSessions([])
       setSelectedDate(today); setSearchQuery('')
       setResetDataConfirm(false)
       setStorageStats({total:0,images:0,audio:0,data:0,attachmentCount:0})
@@ -3385,6 +3486,7 @@ function App() {
         {path:'data/periods.json',bytes:json(menstrualPeriods)},
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
+        {path:'data/focus.json',bytes:json(focusSessions)},
         {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,showEndedTasks,showAllRecurringTasks,wordCloudIgnored})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
@@ -3397,8 +3499,8 @@ function App() {
         entries.push({path,bytes:new Uint8Array(await blob.arrayBuffer())})
         attachmentRows.push({storageKey:attachment.storageKey,path,filename:attachment.filename,mimeType:attachment.mimeType,size:blob.size,type:attachment.type,duration:attachment.duration,createdAt:attachment.createdAt})
       }
-      const manifest={format:'zing-calendar-backup',schemaVersion:1,appVersion:'0.6.22',exportedAt,
-        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,energies:dailyEnergy.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,attachments:attachmentRows.length},
+      const manifest={format:'zing-calendar-backup',schemaVersion:1,appVersion:APP_VERSION,exportedAt,
+        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,energies:dailyEnergy.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,focusSessions:focusSessions.length,attachments:attachmentRows.length},
         attachments:attachmentRows}
       entries.unshift({path:'manifest.json',bytes:json(manifest)})
       setBackupMessage('正在生成 ZIP…')
@@ -3427,8 +3529,9 @@ function App() {
       const periods=entries.has('data/periods.json')?decodeBackupJson<MenstrualPeriod[]>(entries,'data/periods.json'):[]
       const restoredTags=decodeBackupJson<Tag[]>(entries,'data/tags.json')
       const restoredAnniversaries=decodeBackupJson<Anniversary[]>(entries,'data/anniversaries.json')
+      const restoredFocusSessions=entries.has('data/focus.json')?decodeBackupJson<FocusSession[]>(entries,'data/focus.json'):[]
       const settings=decodeBackupJson<BackupPreview['settings']>(entries,'data/settings.json')
-      if (![tasks,journals,moods,energies,periods,restoredTags,restoredAnniversaries].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
+      if (![tasks,journals,moods,energies,periods,restoredTags,restoredAnniversaries,restoredFocusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
       const rows=Array.isArray(manifest.attachments)?manifest.attachments:[]
       const attachments=rows.map((row:any)=>{
         if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
@@ -3440,8 +3543,9 @@ function App() {
       if ((expected.tasks??tasks.length)!==tasks.length || (expected.journals??journals.length)!==journals.length ||
           (expected.moods??moods.length)!==moods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
           (expected.anniversaries??restoredAnniversaries.length)!==restoredAnniversaries.length ||
+          (expected.focusSessions??restoredFocusSessions.length)!==restoredFocusSessions.length ||
           (expected.attachments??attachments.length)!==attachments.length) throw new Error('备份数量校验失败')
-      setBackupPreview({file,manifest,tasks,journals,moods,energies,periods,tags:restoredTags,anniversaries:restoredAnniversaries,settings,attachments})
+      setBackupPreview({file,manifest,tasks,journals,moods,energies,periods,tags:restoredTags,anniversaries:restoredAnniversaries,focusSessions:restoredFocusSessions,settings,attachments})
       setBackupMessage('')
     } catch(error) {
       console.error('Failed to inspect backup',error)
@@ -3458,7 +3562,7 @@ function App() {
       // The archive is fully parsed and validated before any local write begins.
       await replaceZingData({
         tasks:backupPreview.tasks,journals:backupPreview.journals,moods:backupPreview.moods,energies:backupPreview.energies,periods:backupPreview.periods,
-        tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,
+        tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,
         attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
           const copy = new Uint8Array(item.bytes.byteLength)
           copy.set(item.bytes)
@@ -3473,7 +3577,7 @@ function App() {
       if (typeof s.showAllRecurringTasks==='boolean') localStorage.setItem('zing:showAllRecurringTasks',String(s.showAllRecurringTasks))
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setMenstrualPeriods(backupPreview.periods)
-      setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries)
+      setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
       if (s.dateFormat) setDateFormat(s.dateFormat)
@@ -3523,8 +3627,8 @@ function App() {
           : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
-      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextPeriods,nextTags,nextAnniversaries] = await Promise.all([
-        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>()
+      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions] = await Promise.all([
+        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>()
       ])
       const normalizedNextTags = normalizeTags(nextTags)
       const hydratedTags = ensureRequiredSystemTags(normalizedNextTags)
@@ -3545,11 +3649,13 @@ function App() {
         period: nextPeriods,
         tag: hydratedTags,
         anniversary: nextAnniversaries,
+        focus: nextFocusSessions,
       }
-      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, period:true, tag:true, anniversary:true }
+      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, period:true, tag:true, anniversary:true, focus:true }
       setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setMenstrualPeriods(nextPeriods)
       setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
+      setFocusSessions(nextFocusSessions)
     } catch (error) {
       setGithubSyncMessageKind('error')
       setGithubSyncMessage(`同步失败 · ${error instanceof Error ? error.message : '未知错误'}`)
@@ -3642,6 +3748,7 @@ function App() {
             <button className="today-button" type="button" onClick={goToday}>Today</button>
           </div>
           <div className="calendar-status-controls">
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>setFocusOpen(true)}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
             {trashItems.length>0 && <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={`打开回收站，共 ${trashItems.length} 条`}><svg className="trash-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg><span>回收站 {trashItems.length}</span></button>}
             {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
             {endedTasksViewToggle('calendar-ended-toggle')}
@@ -3738,6 +3845,9 @@ function App() {
                   })}
                 </div>
               </div> : <p className="page-empty compact">这个时间范围还没有专注记录。</p>}
+              {statistics.focusTagRows.length>0 && <div className="focus-tag-stats">
+                {statistics.focusTagRows.map(row=><div key={row.tag.id}><span><i style={{background:row.tag.color}} />#{row.tag.name}</span><strong>{formatFocusDuration(row.seconds)}</strong><small>{row.sessions} 次</small></div>)}
+              </div>}
             </div>
           </section>
 
@@ -3994,7 +4104,7 @@ function App() {
                 <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
               </div>
               <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
-                <span><strong>备份</strong><small>任务、记录、心情、标签、纪念日、设置与所有附件打包为 ZIP。</small></span>
+                <span><strong>备份</strong><small>任务、记录、心情、标签、纪念日、专注记录、设置与所有附件打包为 ZIP。</small></span>
                 <b>{backupExporting?'…':'↓'}</b>
               </button>
               <button className="settings-link-row backup-import-row" type="button" onClick={()=>backupInputRef.current?.click()}>
@@ -4002,7 +4112,7 @@ function App() {
               </button>
               <input ref={backupInputRef} className="backup-file-input" type="file" accept=".zip,application/zip" onChange={event=>{ const file=event.target.files?.[0]; if(file) void inspectBackupFile(file) }} />
               <button className="settings-link-row danger-data-row" type="button" onClick={()=>setResetDataConfirm(true)}>
-                <span><strong>清空所有数据</strong><small>清空任务、记录、心情、纪念日、自建标签与附件；保留应用设置。</small></span><b>×</b>
+                <span><strong>清空所有数据</strong><small>清空任务、记录、心情、纪念日、专注记录、自建标签与附件；保留应用设置。</small></span><b>×</b>
               </button>
               {backupMessage && <div className="backup-status" role="status">{backupMessage}</div>}
             </div>
@@ -4045,7 +4155,7 @@ function App() {
             <div className="editor-body">
               <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
               {(() => {
-                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日',trash:'回收站'}
+                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日',focus:'专注',trash:'回收站'}
                 const changedRows=githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount)
                 return changedRows.length ? <>
                   <div className="sync-summary-grid">
@@ -4176,7 +4286,7 @@ function App() {
         <div className="backup-restore-backdrop" role="presentation">
           <section className="backup-restore-modal reset-data-modal" role="dialog" aria-modal="true" aria-label="确认清空所有数据">
             <span className="eyebrow">RESET DATA</span><h2>清空所有数据？</h2>
-            <p className="backup-restore-warning">任务、记录、Daily Mood、纪念日、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。此操作不可撤销，建议先导出完整备份。</p>
+            <p className="backup-restore-warning">任务、记录、Daily Mood、纪念日、专注记录、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。此操作不可撤销，建议先导出完整备份。</p>
             <div className="backup-restore-actions">
               <button type="button" onClick={()=>setResetDataConfirm(false)} disabled={resettingData}>取消</button>
               <button className="danger-confirm" type="button" onClick={()=>void resetAllUserData()} disabled={resettingData}>{resettingData?'正在清空…':'确认清空'}</button>
@@ -4204,7 +4314,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><span>🎂</span>纪念日</button>
@@ -4467,6 +4577,29 @@ function App() {
         </>
       )}
 
+      {focusOpen && (
+        <div className="modal-layer focus-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭专注" onClick={()=>setFocusOpen(false)} />
+          <section className="task-editor focus-panel" role="dialog" aria-modal="true" aria-label="专注">
+            <div className="editor-header"><div><span className="eyebrow">FOCUS</span><h2>{activeFocusSession?'正在专注':'开始专注'}</h2></div><button className="close-button" type="button" onClick={()=>setFocusOpen(false)}>×</button></div>
+            <div className="editor-body focus-body">
+              {activeFocusSession ? <>
+                <div className="focus-live-clock">{formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}</div>
+                <div className="focus-live-tags">{activeFocusSession.tagIds.map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />#{tag!.name}</span>)}</div>
+                <small>{activeFocusSession.mode==='countdown'?`倒计时 · 原定 ${Math.round((activeFocusSession.plannedSeconds??0)/60)} 分钟`:'正计时'}</small>
+                <button className="focus-stop-button" type="button" onClick={()=>stopDirectFocus(false)}>■ 结束专注</button>
+              </> : <>
+                <div className="focus-mode-switch"><button type="button" className={focusMode==='stopwatch'?'active':''} onClick={()=>setFocusMode('stopwatch')}>正计时</button><button type="button" className={focusMode==='countdown'?'active':''} onClick={()=>setFocusMode('countdown')}>倒计时</button></div>
+                {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} /><b>分钟</b></div></label>}
+                <div className="focus-tag-picker"><span>专注标签</span><div>{managedTags.filter(tag=>!tag.archived).map(tag=>{const checked=focusTagIds.includes(tag.id);return <button type="button" key={tag.id} className={checked?'selected':''} onClick={()=>setFocusTagIds(current=>checked?current.filter(id=>id!==tag.id):[...current,tag.id])}><i style={{background:tag.color}} />#{tag.name}</button>})}</div></div>
+                {activeTimerTask && <p className="focus-conflict-note">当前有任务正在计时，请先结束任务计时。</p>}
+                <button className="focus-start-button" type="button" disabled={Boolean(activeTimerTask)||focusTagIds.length===0} onClick={startDirectFocus}>▶ 开始专注</button>
+              </>}
+            </div>
+          </section>
+        </div>
+      )}
+
       {trashOpen && (
         <div className="modal-layer overdue-inbox-layer trash-inbox-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭回收站" onClick={()=>setTrashOpen(false)} />
@@ -4645,7 +4778,7 @@ function App() {
                   ) : (
                     <>
                       <span className="task-timer-label">任务计时</span>
-                      <button className="task-timer-start" type="button" onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</button>
+                      <button className="task-timer-start" type="button" disabled={Boolean(activeFocusSession)} onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</button>{activeFocusSession && <small>已有自由专注正在进行，请先结束后再开始任务计时。</small>}
                     </>
                   )}
                 </section>

@@ -1,5 +1,5 @@
 const DB_NAME = 'zing-calendar'
-const DB_VERSION = 7
+const DB_VERSION = 8
 const TASK_STORE = 'tasks'
 const JOURNAL_STORE = 'journalEntries'
 const MOOD_STORE = 'dailyMoods'
@@ -8,6 +8,7 @@ const PERIOD_STORE = 'menstrualPeriods'
 const TAG_STORE = 'tags'
 const ATTACHMENT_STORE = 'attachments'
 const ANNIVERSARY_STORE = 'anniversaries'
+const FOCUS_STORE = 'focusSessions'
 const SYNC_META_STORE = 'syncMetadata'
 const SYNC_TOMBSTONE_STORE = 'syncTombstones'
 const SYNC_CHANGE_STORE = 'syncChanges'
@@ -26,6 +27,7 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(TAG_STORE)) db.createObjectStore(TAG_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(ATTACHMENT_STORE)) db.createObjectStore(ATTACHMENT_STORE)
       if (!db.objectStoreNames.contains(ANNIVERSARY_STORE)) db.createObjectStore(ANNIVERSARY_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(FOCUS_STORE)) db.createObjectStore(FOCUS_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(SYNC_META_STORE)) db.createObjectStore(SYNC_META_STORE, { keyPath: 'key' })
       if (!db.objectStoreNames.contains(SYNC_TOMBSTONE_STORE)) db.createObjectStore(SYNC_TOMBSTONE_STORE, { keyPath: 'key' })
       if (!db.objectStoreNames.contains(SYNC_CHANGE_STORE)) {
@@ -86,6 +88,8 @@ export const saveMenstrualPeriods = <T,>(rows: T[]) => replaceAll(PERIOD_STORE, 
 
 export const loadTags = <T,>() => loadAll<T>(TAG_STORE)
 export const saveTags = <T,>(rows: T[]) => replaceAll(TAG_STORE, rows)
+export const loadFocusSessions = <T,>() => loadAll<T>(FOCUS_STORE)
+export const saveFocusSessions = <T,>(rows: T[]) => replaceAll(FOCUS_STORE, rows)
 
 export async function putAttachmentBlob(key: string, blob: Blob): Promise<void> {
   const db = await openDatabase()
@@ -112,7 +116,7 @@ export async function getStorageStats(): Promise<ZingStorageStats> {
     let images=0, audio=0
     blobs.forEach(blob => { if (blob.type.startsWith('image/')) images += blob.size; else if (blob.type.startsWith('audio/')) audio += blob.size })
     let data=0
-    for (const storeName of [TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE]) {
+    for (const storeName of [TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE]) {
       const rows = await loadAll<any>(storeName)
       data += new Blob([JSON.stringify(rows)]).size
     }
@@ -151,7 +155,7 @@ export async function cleanupOrphanAttachmentBlobs(referencedKeys: string[]): Pr
 // working exactly as before. Later sync releases can use this metadata without
 // changing the user's task/journal data model or exposing credentials client-side.
 
-export type SyncEntityType = 'task' | 'journal' | 'mood' | 'energy' | 'period' | 'tag' | 'anniversary'
+export type SyncEntityType = 'task' | 'journal' | 'mood' | 'energy' | 'period' | 'tag' | 'anniversary' | 'focus'
 export type SyncOperation = 'upsert' | 'delete'
 
 export type SyncChange = {
@@ -347,7 +351,8 @@ function entityStoreName(entityType: SyncEntityType): string {
   if (entityType === 'energy') return ENERGY_STORE
   if (entityType === 'period') return PERIOD_STORE
   if (entityType === 'tag') return TAG_STORE
-  return ANNIVERSARY_STORE
+  if (entityType === 'anniversary') return ANNIVERSARY_STORE
+  return FOCUS_STORE
 }
 
 function entityIdOf(entityType: SyncEntityType, row: any): string {
@@ -362,7 +367,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
   const tombstones = await loadSyncTombstones()
   if (!tombstones.length) return 0
   const liveTimes = new Map<string, number>()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'period', 'tag', 'anniversary']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'period', 'tag', 'anniversary', 'focus']
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
     rows.forEach(row => liveTimes.set(`${entityType}:${entityIdOf(entityType, row)}`, Date.parse(entityUpdatedAt(row)) || 0))
@@ -377,7 +382,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
 export async function createSyncBundle(): Promise<SyncBundle> {
   const deviceId = getOrCreateDeviceId()
   await pruneStaleSyncTombstones()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'period', 'tag', 'anniversary']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'period', 'tag', 'anniversary', 'focus']
   const records: SyncEntityRecord[] = []
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
@@ -490,7 +495,7 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
 
 export async function applySyncMerge(plan: SyncMergePlan): Promise<void> {
   const db = await openDatabase()
-  const stores = [TASK_STORE, JOURNAL_STORE, MOOD_STORE, ENERGY_STORE, PERIOD_STORE, TAG_STORE, ANNIVERSARY_STORE, SYNC_TOMBSTONE_STORE]
+  const stores = [TASK_STORE, JOURNAL_STORE, MOOD_STORE, ENERGY_STORE, PERIOD_STORE, TAG_STORE, ANNIVERSARY_STORE, FOCUS_STORE, SYNC_TOMBSTONE_STORE]
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(stores, 'readwrite')
@@ -929,7 +934,7 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
   if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
   const remote = await readGitHubBundleFile(config)
   const local = await createSyncBundle()
-  const types: SyncEntityType[] = ['task','journal','mood','energy','period','tag','anniversary']
+  const types: SyncEntityType[] = ['task','journal','mood','energy','period','tag','anniversary','focus']
 
   if (!remote.bundle) {
     const normalRows = types.map(entityType => {
@@ -1102,17 +1107,17 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
 
 
 export async function replaceZingData(payload: {
-  tasks:any[]; journals:any[]; moods:any[]; energies:any[]; periods:any[]; tags:any[]; anniversaries:any[];
+  tasks:any[]; journals:any[]; moods:any[]; energies:any[]; periods:any[]; tags:any[]; anniversaries:any[]; focusSessions:any[];
   attachments:{key:string;blob:Blob}[]
 }): Promise<void> {
   const db=await openDatabase()
-  const stores=[TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,ATTACHMENT_STORE]
+  const stores=[TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,ATTACHMENT_STORE]
   try {
     await new Promise<void>((resolve,reject)=>{
       const tx=db.transaction(stores,'readwrite')
       const replace=(name:string,rows:any[])=>{ const store=tx.objectStore(name); store.clear(); rows.forEach(row=>store.put(row)) }
       replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(MOOD_STORE,payload.moods); replace(ENERGY_STORE,payload.energies); replace(PERIOD_STORE,payload.periods)
-      replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries)
+      replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries); replace(FOCUS_STORE,payload.focusSessions)
       const attachments=tx.objectStore(ATTACHMENT_STORE); attachments.clear()
       payload.attachments.forEach(item=>attachments.put(item.blob,item.key))
       tx.oncomplete=()=>resolve()

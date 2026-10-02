@@ -4338,3 +4338,20 @@ button {
 .drawer-calendar-annotation.annotation-traditional{color:#c58a3b}
 .drawer-calendar-annotation.annotation-international{color:#8b6cab}
 .drawer-calendar-annotation.annotation-solar-term{color:#4d9b82}
+
+/* v1.9.0 Focus */
+.focus-trigger{border:1px solid #a9b9b0;background:#f7faf8;color:#40554a;border-radius:10px;padding:7px 11px;font:inherit;font-size:12px;font-weight:700;white-space:nowrap}
+.focus-trigger.running{background:#34483e;border-color:#34483e;color:#fff;font-variant-numeric:tabular-nums}
+.focus-panel{max-width:430px}
+.focus-body{display:flex;flex-direction:column;gap:18px}
+.focus-mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#f2f4f2;padding:4px;border-radius:12px}
+.focus-mode-switch button{border:0;background:transparent;border-radius:9px;padding:10px;font:inherit;color:#77827c;font-weight:700}
+.focus-mode-switch button.active{background:#fff;color:#34483e;box-shadow:0 1px 4px rgba(30,45,37,.1)}
+.focus-minutes-field{display:flex;align-items:center;justify-content:space-between;gap:16px;color:#5f6e66;font-size:13px;font-weight:700}
+.focus-minutes-field div{display:flex;align-items:center;gap:8px}.focus-minutes-field input{width:88px;border:1px solid #d4ddd8;border-radius:9px;padding:9px 10px;font:inherit;text-align:right}.focus-minutes-field b{font-size:12px;color:#849088}
+.focus-tag-picker>span{display:block;margin-bottom:9px;color:#5f6e66;font-size:13px;font-weight:700}.focus-tag-picker>div{display:flex;flex-wrap:wrap;gap:8px}.focus-tag-picker button{display:inline-flex;align-items:center;gap:6px;border:1px solid #d8dfdb;background:#fff;border-radius:999px;padding:7px 10px;font:inherit;font-size:12px;color:#647168}.focus-tag-picker button.selected{border-color:#72887b;background:#f0f5f2;color:#31483c}.focus-tag-picker i,.focus-live-tags i,.focus-tag-stats i{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.focus-start-button,.focus-stop-button{border:1px solid #34483e;background:#34483e;color:#fff;border-radius:11px;padding:12px 16px;font:inherit;font-weight:750}.focus-start-button:disabled{opacity:.45}.focus-stop-button{background:#fff;color:#4c5c53;border-color:#9da9a2}
+.focus-live-clock{text-align:center;font-size:46px;font-weight:700;letter-spacing:.04em;color:#304239;font-variant-numeric:tabular-nums}.focus-live-tags{display:flex;justify-content:center;flex-wrap:wrap;gap:8px}.focus-live-tags span{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#66736c}.focus-body>small{text-align:center;color:#8a938e}.focus-conflict-note{margin:0;color:#a06955;font-size:12px}
+.focus-tag-stats{display:grid;gap:7px;margin-top:14px}.focus-tag-stats>div{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:8px 10px;border-radius:9px;background:#f7f8f7}.focus-tag-stats span{display:flex;align-items:center;gap:6px;min-width:0;color:#58675f;font-size:12px}.focus-tag-stats strong{font-size:12px;color:#34483e}.focus-tag-stats small{font-size:11px;color:#909992}
+@media(max-width:620px){.focus-trigger{padding:7px 9px}.focus-live-clock{font-size:40px}.focus-panel{width:min(94vw,430px)}}
+.task-timer-start:disabled{opacity:.45;cursor:not-allowed}
