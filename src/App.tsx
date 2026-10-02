@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.16'
+const APP_VERSION = '1.9.17'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1029,6 +1029,7 @@ function attachmentExtension(attachment: Attachment) {
 
 
 type EncouragementMessage = { id:string; text:string; updatedAt:string; deletedAt?:string }
+type EncouragementStyle = 'dark'|'light'|'random'
 
 type SyncedUserSettings = {
   id: 'settings'
@@ -1044,6 +1045,7 @@ type SyncedUserSettings = {
   wordCloudIgnoredAddedAt?: Record<string,string>
   wordCloudIgnoredRemovedAt?: Record<string,string>
   encouragementMessages?: EncouragementMessage[]
+  encouragementStyle?: EncouragementStyle
 }
 
 type BackupPreview = {
@@ -1057,7 +1059,7 @@ type BackupPreview = {
   tags: Tag[]
   anniversaries: Anniversary[]
   focusSessions: FocusSession[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[]; encouragementMessages?:EncouragementMessage[] }
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[]; encouragementMessages?:EncouragementMessage[]; encouragementStyle?:EncouragementStyle }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
 function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
@@ -1279,10 +1281,12 @@ function App() {
   const [encouragementMessages, setEncouragementMessages] = useState<EncouragementMessage[]>(() => {
     try { const rows=JSON.parse(localStorage.getItem('zing:encouragementMessages') || '[]'); return Array.isArray(rows)?rows:[] } catch { return [] }
   })
+  const [encouragementStyle, setEncouragementStyle] = useState<EncouragementStyle>(() => { const value=localStorage.getItem('zing:encouragementStyle'); return value==='dark'||value==='light'?value:'random' })
   const [encouragementManagerOpen, setEncouragementManagerOpen] = useState(false)
   const [encouragementDraft, setEncouragementDraft] = useState('')
   const [encouragementEditingId, setEncouragementEditingId] = useState<string|null>(null)
   const [encouragementReward, setEncouragementReward] = useState('')
+  const [encouragementRewardStyle, setEncouragementRewardStyle] = useState<'dark'|'light'>('dark')
   const lastEncouragementIdRef = useRef<string|null>(null)
   const [wordIgnoreDraft, setWordIgnoreDraft] = useState('')
   const [wordIgnoreManagerOpen, setWordIgnoreManagerOpen] = useState(false)
@@ -1887,6 +1891,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
+  useEffect(() => { localStorage.setItem('zing:encouragementStyle', encouragementStyle) }, [encouragementStyle])
   useEffect(() => {
     const now = new Date().toISOString()
     const wordSet = new Set(wordCloudIgnored.map(word=>word.trim().toLowerCase()).filter(Boolean))
@@ -1898,7 +1903,7 @@ function App() {
       weekStart:weekStartsMonday?'monday':'sunday', dateFormat, defaultPriority, showEndedTasks,
       showAllRecurringTasks, excludeDefaultFocusStats, wordCloudIgnored:[...wordSet],
       wordCloudIgnoredAddedAt:{...clocks.added}, wordCloudIgnoredRemovedAt:{...clocks.removed},
-      encouragementMessages,
+      encouragementMessages, encouragementStyle,
     }
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -1927,7 +1932,7 @@ function App() {
     if (beforeComparable && JSON.stringify(beforeComparable) === JSON.stringify(comparable)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -2661,6 +2666,7 @@ function App() {
     const candidates=active.length>1?active.filter(item=>item.id!==lastEncouragementIdRef.current):active
     const picked=candidates[Math.floor(Math.random()*candidates.length)] || active[0]
     lastEncouragementIdRef.current=picked.id
+    setEncouragementRewardStyle(encouragementStyle==='random'?(Math.random()<0.5?'dark':'light'):encouragementStyle)
     setEncouragementReward(picked.text.trim())
   }
 
@@ -3835,7 +3841,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -3927,6 +3933,7 @@ function App() {
       if (typeof s.defaultPriority==='number' && s.defaultPriority>=0 && s.defaultPriority<=3) localStorage.setItem('zing:defaultPriority',String(s.defaultPriority))
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       if (Array.isArray(s.encouragementMessages)) localStorage.setItem('zing:encouragementMessages',JSON.stringify(s.encouragementMessages))
+      if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') localStorage.setItem('zing:encouragementStyle',s.encouragementStyle)
       // Restore is device-local by design. Persist restored settings locally too, but do
       // not create sync changes/tombstones that could roll the cloud back.
       const restoredAt=new Date().toISOString()
@@ -3938,6 +3945,7 @@ function App() {
         showAllRecurringTasks:s.showAllRecurringTasks??showAllRecurringTasks,excludeDefaultFocusStats:s.excludeDefaultFocusStats??excludeDefaultFocusStats,
         wordCloudIgnored:restoredWords,wordCloudIgnoredAddedAt:Object.fromEntries(restoredWords.map(word=>[word.trim().toLowerCase(),restoredAt])),wordCloudIgnoredRemovedAt:{},
         encouragementMessages:Array.isArray(s.encouragementMessages)?s.encouragementMessages:encouragementMessages,
+        encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
@@ -3955,6 +3963,7 @@ function App() {
       if (typeof s.excludeDefaultFocusStats==='boolean') setExcludeDefaultFocusStats(s.excludeDefaultFocusStats)
       if (Array.isArray(s.wordCloudIgnored)) setWordCloudIgnored(s.wordCloudIgnored)
       if (Array.isArray(s.encouragementMessages)) setEncouragementMessages(s.encouragementMessages)
+      if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') setEncouragementStyle(s.encouragementStyle)
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
     } catch(error) {
@@ -4045,7 +4054,8 @@ function App() {
         localStorage.setItem('zing:excludeDefaultFocusStats',String(syncedSettings.excludeDefaultFocusStats))
         localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(syncedSettings.wordCloudIgnored ?? []))
         localStorage.setItem('zing:encouragementMessages',JSON.stringify(syncedSettings.encouragementMessages ?? []))
-        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? [])
+        localStorage.setItem('zing:encouragementStyle',syncedSettings.encouragementStyle ?? 'random')
+        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random')
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -4606,6 +4616,7 @@ function App() {
             </div>
             <div className="editor-body">
               <p className="encouragement-intro">只放你自己真正喜欢的话。完成任务时会随机出现一句；两句以上时不会连续重复。</p>
+              <div className="encouragement-style-row"><span><strong>样式</strong><small>随机会在 Dark 与 Light 之间随机出现。</small></span><div className="setting-segment"><button type="button" className={encouragementStyle==='dark'?'active':''} onClick={()=>setEncouragementStyle('dark')}>Dark</button><button type="button" className={encouragementStyle==='light'?'active':''} onClick={()=>setEncouragementStyle('light')}>Light</button><button type="button" className={encouragementStyle==='random'?'active':''} onClick={()=>setEncouragementStyle('random')}>随机</button></div></div>
               <div className="encouragement-add">
                 <textarea value={encouragementDraft} onChange={e=>setEncouragementDraft(e.target.value)} placeholder="写一句鼓励自己的话" rows={3} />
                 <button type="button" disabled={!encouragementDraft.trim()} onClick={()=>{const text=encouragementDraft.trim();if(!text)return;const now=new Date().toISOString();if(encouragementEditingId){setEncouragementMessages(rows=>rows.map(item=>item.id===encouragementEditingId?{...item,text,updatedAt:now,deletedAt:undefined}:item))}else{setEncouragementMessages(rows=>[...rows,{id:crypto.randomUUID(),text,updatedAt:now}])}setEncouragementDraft('');setEncouragementEditingId(null)}}>{encouragementEditingId?'保存':'添加'}</button>
@@ -4835,7 +4846,7 @@ function App() {
       )}
 
       {autoSyncToast && <div className="auto-sync-toast" role="status" aria-live="polite">{autoSyncToast}</div>}
-      {encouragementReward && <div className="encouragement-reward" role="status" aria-live="polite"><span>✓ 任务完成</span><strong>{encouragementReward}</strong></div>}
+      {encouragementReward && <div className={`encouragement-reward ${encouragementRewardStyle}`} role="status" aria-live="polite"><span>✓ 任务完成</span><strong>{encouragementReward}</strong></div>}
 
       <footer className="status-line">
         <span className="status-links" aria-label="基础设施快捷入口">
