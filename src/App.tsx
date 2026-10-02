@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.5'
+const APP_VERSION = '1.9.6'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -203,7 +203,7 @@ function ensureRequiredSystemTags(rows: Tag[]): Tag[] {
   const existing = new Set(normalized.map(tag => tag.id))
   return [...REQUIRED_SYSTEM_TAGS.filter(tag => !existing.has(tag.id)), ...normalized]
 }
-const TAG_COLORS = ['#c85f5a', '#d77b52', '#d89b3f', '#c6ad3f', '#91a64b', '#5f9870', '#4f9b88', '#4f969d', '#5686a6', '#667caf', '#7b70ad', '#9870a8', '#b5688d', '#b56f72', '#9b7b5f', '#78817d']
+const TAG_COLORS = ['#f58f7d', '#eb7258', '#df8748', '#f5a64b', '#ffc557', '#ffdc4f', '#d7df55', '#a6c35a', '#65d19b', '#79ccd4', '#58b4c7', '#7695bd', '#9183da', '#d69bae', '#b9848f']
 
 const ANNIVERSARY_TYPES: { value: AnniversaryType; label: string; icon: string }[] = [
   { value: 'birthday', label: '生日', icon: '🎂' },
@@ -1986,7 +1986,7 @@ function App() {
     setFocusSessions(current=>current.map(session=>{
       if(session.id!==focusEditId) return session
       const endedAt=new Date(new Date(session.startedAt).getTime()+minutes*60000).toISOString()
-      return {...session,tagIds:focusEditTagIds.length?focusEditTagIds:session.tagIds,endedAt,durationSeconds:minutes*60,updatedAt:now}
+      return {...session,tagIds:singleOrdinaryTagIds(focusEditTagIds.length?focusEditTagIds:session.tagIds),endedAt,durationSeconds:minutes*60,updatedAt:now}
     }))
     setFocusEditId(null)
   }
@@ -2401,7 +2401,7 @@ function App() {
       notes: task.notes ?? '',
       actualDurationHours: task.actualDurationMinutes ? String(Math.floor(task.actualDurationMinutes / 60)) : '',
       actualDurationMinutes: task.actualDurationMinutes ? String(task.actualDurationMinutes % 60) : '',
-      tagIds: task.tagIds?.length ? task.tagIds : [DEFAULT_TAG_ID],
+      tagIds: singleOrdinaryTagIds(task.tagIds),
       attachments: task.attachments ?? [],
       ...draftRepeat(series),
     })
@@ -2429,7 +2429,7 @@ function App() {
         const total = hours * 60 + minutes
         return total > 0 ? total : undefined
       })(),
-      tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
+      tagIds: singleOrdinaryTagIds(draft.tagIds),
       attachments: draft.attachments,
     })
 
@@ -2562,7 +2562,7 @@ function App() {
         time: draft.allDay ? undefined : draft.time || undefined,
         deadline: draft.deadline || undefined,
         notes: draft.notes.trim() || undefined,
-        tagIds: draft.tagIds.length ? draft.tagIds : [DEFAULT_TAG_ID],
+        tagIds: singleOrdinaryTagIds(draft.tagIds),
         attachments: draft.attachments,
         originalDate: draft.date,
         recurrence: undefined,
@@ -2711,16 +2711,28 @@ function App() {
     closeEditor()
   }
 
+  const singleOrdinaryTagIds = (ids?: string[]) => {
+    const sourceIds=(ids??[]).filter(isImportSourceTagId)
+    const ordinary=(ids??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
+    return ordinary ? [ordinary,...sourceIds] : [DEFAULT_TAG_ID,...sourceIds]
+  }
+
   const toggleDraftTag = (kind: 'task' | 'journal', id: string) => {
-    const update = (ids: string[]) => {
+    const updateJournal = (ids: string[]) => {
       const managed = ids.filter(isImportSourceTagId)
       const real = ids.filter(tagId => tagId !== DEFAULT_TAG_ID && !isImportSourceTagId(tagId))
       if (id === DEFAULT_TAG_ID) return [DEFAULT_TAG_ID, ...managed]
       const next = real.includes(id) ? real.filter(tagId => tagId !== id) : [...real, id]
       return next.length ? [...next, ...managed] : [DEFAULT_TAG_ID, ...managed]
     }
-    if (kind === 'task') setDraft(current => ({ ...current, tagIds: update(current.tagIds) }))
-    else setJournalDraft(current => ({ ...current, tagIds: update(current.tagIds) }))
+    const updateTask = (ids: string[]) => {
+      const managed = ids.filter(isImportSourceTagId)
+      const currentOrdinary = ids.find(tagId => tagId !== DEFAULT_TAG_ID && !isImportSourceTagId(tagId))
+      if (id === DEFAULT_TAG_ID || currentOrdinary === id) return [DEFAULT_TAG_ID, ...managed]
+      return [id, ...managed]
+    }
+    if (kind === 'task') setDraft(current => ({ ...current, tagIds: updateTask(current.tagIds) }))
+    else setJournalDraft(current => ({ ...current, tagIds: updateJournal(current.tagIds) }))
   }
 
   const tagScopeLabel = (scope: TagScope) => scope === 'both' ? '共享标签' : scope === 'task' ? '任务标签' : '记录标签'
@@ -3077,26 +3089,42 @@ function App() {
       }))
     })()
     const focusByDay = combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow)
-    const focusTagRows = managedTags.map(tag=>{
-      let seconds=0, sessions=0
-      activeTasks.forEach(task=>{
-        if(!(task.tagIds??[DEFAULT_TAG_ID]).includes(tag.id)) return
-        if(!task.recurrence){ if(inRange(task.date)){ const value=Math.max(0,Number(task.actualDurationMinutes??0)*60); seconds+=value; if(value>0)sessions+=(task.timerSessions?.length||1) } return }
-        Object.entries(task.recurrenceExceptions??{}).forEach(([date,exception]:[string,RecurrenceException])=>{
-          if(!inRange(date)||exception.deleted||exception.trashedAt) return
-          const value=Math.max(0,Number(exception.actualDurationMinutes??0)*60); seconds+=value; if(value>0)sessions+=(exception.timerSessions?.length||1)
-        })
+    const focusTagMap = new Map<string,{tag:Tag,seconds:number,sessions:number}>()
+    const focusTagForIds = (ids?:string[]) => {
+      const ordinaryId=(ids??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
+      return tags.find(tag=>tag.id===(ordinaryId??DEFAULT_TAG_ID)) ?? DEFAULT_TAG
+    }
+    const addFocusTagValue = (tag:Tag, seconds:number, sessions:number) => {
+      if(seconds<=0&&sessions<=0) return
+      const row=focusTagMap.get(tag.id)??{tag,seconds:0,sessions:0}
+      row.seconds+=seconds; row.sessions+=sessions; focusTagMap.set(tag.id,row)
+    }
+    activeTasks.forEach(task=>{
+      const tag=focusTagForIds(task.tagIds)
+      if(!task.recurrence){
+        if(inRange(task.date)){const value=Math.max(0,Number(task.actualDurationMinutes??0)*60);addFocusTagValue(tag,value,value>0?(task.timerSessions?.length||1):0)}
+        return
+      }
+      Object.entries(task.recurrenceExceptions??{}).forEach(([date,exception]:[string,RecurrenceException])=>{
+        if(!inRange(date)||exception.deleted||exception.trashedAt)return
+        const value=Math.max(0,Number(exception.actualDurationMinutes??0)*60)
+        addFocusTagValue(focusTagForIds(exception.tagIds??task.tagIds),value,value>0?(exception.timerSessions?.length||1):0)
       })
-      focusSessions.forEach(session=>{
-        if(!(session.tagIds??[DEFAULT_TAG_ID]).includes(tag.id)) return
-        const date=toDateKey(new Date(session.startedAt)); if(!inRange(date)) return
-        const start=new Date(session.startedAt).getTime(), end=session.endedAt?new Date(session.endedAt).getTime():timerNow
-        const cap=session.mode==='countdown'&&session.plannedSeconds?start+session.plannedSeconds*1000:end
-        seconds+=Math.max(0,Math.round((Math.min(end,cap)-start)/1000)); sessions+=1
-      })
-      return {tag,seconds,sessions}
-    }).filter(row=>row.seconds>0||row.sessions>0).sort((a,b)=>b.seconds-a.seconds)
-
+    })
+    focusSessions.forEach(session=>{
+      const date=toDateKey(new Date(session.startedAt)); if(!inRange(date))return
+      const start=new Date(session.startedAt).getTime(),end=session.endedAt?new Date(session.endedAt).getTime():timerNow
+      const cap=session.mode==='countdown'&&session.plannedSeconds?start+session.plannedSeconds*1000:end
+      const value=Math.max(0,Math.round((Math.min(end,cap)-start)/1000))
+      addFocusTagValue(focusTagForIds(session.tagIds),value,1)
+    })
+    const focusColorRank=(color:string)=>{const index=TAG_COLORS.findIndex(item=>item.toLowerCase()===color.toLowerCase());return index<0?TAG_COLORS.length:index}
+    const focusTagRows=[...focusTagMap.values()].sort((a,b)=>focusColorRank(a.tag.color)-focusColorRank(b.tag.color)||b.seconds-a.seconds||a.tag.name.localeCompare(b.tag.name))
+    const focusPieGradient=(()=>{
+      const total=focusTagRows.reduce((sum,row)=>sum+row.seconds,0); if(!total)return ''
+      let cursor=0
+      return `conic-gradient(${focusTagRows.map(row=>{const from=cursor;cursor+=row.seconds/total*100;return `${row.tag.color} ${from.toFixed(3)}% ${cursor.toFixed(3)}%`}).join(',')})`
+    })()
     const rawFocusTrend = [...focusByDay.entries()].filter(([date])=>inRange(date)).sort((a,b)=>a[0].localeCompare(b[0]))
     const focusSeconds = rawFocusTrend.reduce((sum,[,seconds])=>sum+seconds,0)
     const focusTrend = (() => {
@@ -3292,7 +3320,7 @@ function App() {
     })
 
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
-      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,focusTagRows,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
+      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,focusTagRows,focusPieGradient,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
       impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
   },[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,focusSessions,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
 
@@ -3423,7 +3451,7 @@ function App() {
           }
           ordinaryTagIds.push(tag.id)
         })
-        const tagIds=ordinaryTagIds.length?[...new Set([...ordinaryTagIds,EXTERNAL_SOURCE_TAG_ID,GENERIC_SOURCE_TAG_ID])]:[DEFAULT_TAG_ID,EXTERNAL_SOURCE_TAG_ID,GENERIC_SOURCE_TAG_ID]
+        const tagIds=ordinaryTagIds.length?[ordinaryTagIds[0],EXTERNAL_SOURCE_TAG_ID,GENERIC_SOURCE_TAG_ID]:[DEFAULT_TAG_ID,EXTERNAL_SOURCE_TAG_ID,GENERIC_SOURCE_TAG_ID]
         const statusText=cell(col.status).toLowerCase()
         const completed=['yes','y','true','1','完成','已完成','done','completed'].includes(statusText)
         const abandoned=['放弃','已放弃','abandoned','cancelled','canceled'].includes(statusText)
@@ -3491,7 +3519,7 @@ function App() {
           }
           ordinaryTagIds.push(tag.id)
         })
-        const tagIds=ordinaryTagIds.length ? [...new Set([...ordinaryTagIds,EXTERNAL_SOURCE_TAG_ID,DIDA_APP_SOURCE_TAG_ID])] : [DEFAULT_TAG_ID,EXTERNAL_SOURCE_TAG_ID,DIDA_APP_SOURCE_TAG_ID]
+        const tagIds=ordinaryTagIds.length ? [ordinaryTagIds[0],EXTERNAL_SOURCE_TAG_ID,DIDA_APP_SOURCE_TAG_ID] : [DEFAULT_TAG_ID,EXTERNAL_SOURCE_TAG_ID,DIDA_APP_SOURCE_TAG_ID]
         const statusRaw=get('Status')
         const status:TaskStatus=statusRaw==='2'?'completed':statusRaw==='-1'?'abandoned':'todo'
         const priorityRaw=Number.parseInt(get('Priority')||'0',10)
@@ -4015,6 +4043,12 @@ function App() {
                 </div>
               </div> : <p className="page-empty compact">这个时间范围还没有完成记录。</p>}
             </div>
+
+          </section>
+
+
+          <section className="stats-section focus-section">
+            <div className="stats-section-title"><div><span className="eyebrow">FOCUS</span><h3>专注</h3></div><small>{formatFocusDuration(statistics.focusSeconds)}</small></div>
             <div className="stats-subblock focus-stats-block">
               <div className="focus-stats-heading"><h4>专注时间</h4><strong>{formatFocusDuration(statistics.focusSeconds)}</strong></div>
               {statistics.focusTrend.length ? <div className="completion-chart-wrap">
@@ -4031,12 +4065,14 @@ function App() {
                   })}
                 </div>
               </div> : <p className="page-empty compact">这个时间范围还没有专注记录。</p>}
-              {statistics.focusTagRows.length>0 && <div className="focus-tag-stats">
+              {statistics.focusTagRows.length>0 && <div className="focus-distribution">
+                <div className="focus-pie" style={{background:statistics.focusPieGradient}} aria-label="按标签的专注时间分布"><i /></div>
+                <div className="focus-tag-stats">
                 {statistics.focusTagRows.map(row=><div key={row.tag.id}><span><i style={{background:row.tag.color}} />{row.tag.name}</span><strong>{formatFocusDuration(row.seconds)}</strong><small>{row.sessions} 次</small></div>)}
+                </div>
               </div>}
             </div>
           </section>
-
           <section className="stats-section">
             <div className="stats-section-title"><div><span className="eyebrow">JOURNAL</span><h3>记录与事件影响</h3></div><small>{statistics.journals.length} 篇 · {statistics.journalDays} 天</small></div>
             <div className="impact-distribution">
@@ -4248,6 +4284,11 @@ function App() {
           </div>
 
           <div className="settings-group">
+            <div className="settings-group-title"><h3>标签</h3></div>
+            <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务、记录与专注共用的标签。</small></span><b>›</b></button>
+          </div>
+
+          <div className="settings-group">
             <div className="settings-group-title"><h3>词云</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setWordIgnoreManagerOpen(true)}>
               <span><strong>管理屏蔽词</strong><small>{wordCloudIgnored.length ? `已屏蔽 ${wordCloudIgnored.length} 个词` : '添加或恢复不参与词云统计的词。'}</small></span><b>›</b>
@@ -4279,7 +4320,6 @@ function App() {
               </div>
               <small>本设备同时在 IndexedDB 保留数据与附件缓存，用于离线使用；这里显示的是当前有效内容，不代表 GitHub 仓库或 B2 桶的实际总占用。</small>
             </div>
-            <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务与记录共用的标签。</small></span><b>›</b></button>
             <div className="backup-settings-block">
               <button className="settings-link-row external-import-row" type="button" onClick={openExternalImport}>
                 <span><strong>从外部导入</strong><small>通用 CSV 或已支持来源；导入任务统一标记为“从外部导入”。</small></span><b>›</b>
@@ -4809,7 +4849,7 @@ function App() {
                 const editing=record.kind==='direct'&&record.session&&focusEditId===record.session.id
                 return <div className="focus-history-item" key={record.id}>
                   <div className="focus-history-main"><strong>{record.title}</strong><div className="focus-history-tags">{record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}<small>{formatFocusDuration(record.seconds)}</small></div></div>
-                  {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} /> 分钟</label><div className="focus-history-edit-tags">{managedTags.filter(tag=>!tag.archived).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds(cur=>checked?cur.filter(id=>id!==tag.id):[...cur,tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
+                  {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} /> 分钟</label><div className="focus-history-edit-tags">{tagsFor('task').map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
                     <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);setSelectedDate(null);setViewingTask(record.task)}}}>更改</button>
                     <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session)setFocusSessions(cur=>cur.filter(item=>item.id!==record.session!.id));else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
                   </div>}
@@ -4833,7 +4873,7 @@ function App() {
               </> : <>
                 <div className="focus-mode-switch"><button type="button" className={focusMode==='stopwatch'?'active':''} onClick={()=>setFocusMode('stopwatch')}>正计时</button><button type="button" className={focusMode==='countdown'?'active':''} onClick={()=>setFocusMode('countdown')}>倒计时</button></div>
                 {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} /><b>分钟</b></div></label>}
-                <div className="focus-tag-picker"><span>专注标签</span>{([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=>{const scoped=managedTags.filter(tag=>!tag.archived&&tag.scope===scope);return scoped.length?<div className="focus-tag-group" key={scope}><small>{label}</small><div>{scoped.map(tag=>{const checked=focusTagIds.includes(tag.id);return <button type="button" key={tag.id} className={checked?'selected':''} onClick={()=>setFocusTagIds(current=>checked?current.filter(id=>id!==tag.id):[...current,tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div></div>:null})}</div>
+                <div className="focus-tag-picker"><span>专注标签</span>{([['both','共享'],['task','任务']] as const).map(([scope,label])=>{const scoped=tags.filter(tag=>!isImportSourceTag(tag)&&!tag.archived&&(tag.id===DEFAULT_TAG_ID||(tag.scope===scope&&tag.id!==DEFAULT_TAG_ID))).filter((tag,index,list)=>list.findIndex(item=>item.id===tag.id)===index);return scoped.length?<div className="focus-tag-group" key={scope}><small>{label}</small><div>{scoped.map(tag=>{const checked=focusTagIds.includes(tag.id);return <button type="button" key={tag.id} className={checked?'selected':''} onClick={()=>setFocusTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div></div>:null})}</div>
                 {activeTimerTask && <p className="focus-conflict-note">当前有任务正在计时，请先结束任务计时。</p>}
                 <button className="focus-start-button" type="button" disabled={Boolean(activeTimerTask)||focusTagIds.length===0} onClick={startDirectFocus}>▶ 开始专注</button>
               </>}
