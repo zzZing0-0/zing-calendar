@@ -433,7 +433,12 @@ function mergeConcurrentSettings(localRecord: SyncEntityRecord, remoteRecord: Sy
   Object.entries(remoteClock.added).forEach(([word,at])=>{ if(!added[word]||(Date.parse(at)||0)>(Date.parse(added[word])||0)) added[word]=at })
   Object.entries(remoteClock.removed).forEach(([word,at])=>{ if(!removed[word]||(Date.parse(at)||0)>(Date.parse(removed[word])||0)) removed[word]=at })
   const words=[...new Set([...Object.keys(added),...Object.keys(removed)])].filter(word=>(Date.parse(added[word]||'')||0)>(Date.parse(removed[word]||'')||0)).sort()
-  return { ...newer, updatedAt:new Date(Math.max(localTime,remoteTime)).toISOString(), payload:{...newer.payload,wordCloudIgnored:words,wordCloudIgnoredAddedAt:added,wordCloudIgnoredRemovedAt:removed} }
+  const encouragementMap=new Map<string,any>()
+  const mergeEncouragement=(raw:any)=>{ if(!raw||!raw.id)return; const current=encouragementMap.get(String(raw.id)); if(!current||(Date.parse(raw.updatedAt)||0)>(Date.parse(current.updatedAt)||0)) encouragementMap.set(String(raw.id),raw) }
+  ;(Array.isArray(localRecord.payload?.encouragementMessages)?localRecord.payload.encouragementMessages:[]).forEach(mergeEncouragement)
+  ;(Array.isArray(remoteRecord.payload?.encouragementMessages)?remoteRecord.payload.encouragementMessages:[]).forEach(mergeEncouragement)
+  const encouragementMessages=[...encouragementMap.values()].sort((a,b)=>(Date.parse(a.updatedAt)||0)-(Date.parse(b.updatedAt)||0))
+  return { ...newer, updatedAt:new Date(Math.max(localTime,remoteTime)).toISOString(), payload:{...newer.payload,wordCloudIgnored:words,wordCloudIgnoredAddedAt:added,wordCloudIgnoredRemovedAt:removed,encouragementMessages} }
 }
 
 function mergeConcurrentAttachments(localRecord: SyncEntityRecord, remoteRecord: SyncEntityRecord): SyncEntityRecord {
