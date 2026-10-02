@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.11'
+const APP_VERSION = '1.9.12'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -3703,6 +3703,39 @@ function App() {
     setBackupMessage(`记录 CSV 已导出 · ${activeJournalEntries.length} 条`)
   }
 
+  const exportFocusCsv = () => {
+    const tagById=(id:string)=>tags.find(tag=>tag.id===id)
+    const rows=[
+      ['id','start_time','end_time','duration_minutes','mode','planned_minutes','tag','source','created_at','updated_at'],
+      ...focusSessions.map(session=>{
+        const ordinaryTagId=(session.tagIds??[]).find(id=>id===DEFAULT_TAG_ID||!isImportSourceTagId(id)) ?? DEFAULT_TAG_ID
+        const ordinaryTag=tagById(ordinaryTagId)
+        const sources=(session.tagIds??[]).map(tagById).filter((tag): tag is Tag=>Boolean(tag&&isImportSourceTag(tag))).map(tag=>tag.name)
+        return [
+          session.id,session.startedAt,session.endedAt??'',Math.round(((session.durationSeconds??0)/60)*100)/100,session.mode,
+          session.plannedSeconds==null?'':Math.round((session.plannedSeconds/60)*100)/100,ordinaryTag?.name??ordinaryTagId,sources.length?sources.join(' | '):'Zing',session.createdAt,session.updatedAt
+        ]
+      })
+    ]
+    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
+    downloadTextFile(`zing-focus-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
+    setBackupMessage(`专注 CSV 已导出 · ${focusSessions.length} 条`)
+  }
+
+  const exportAnniversariesCsv = () => {
+    const typeLabel=(value:AnniversaryType)=>ANNIVERSARY_TYPES.find(item=>item.value===value)?.label ?? value
+    const rows=[
+      ['id','title','type','calendar','year','month','day','leap_month','repeat_yearly','notes','created_at','updated_at'],
+      ...activeAnniversaries.map(anniversary=>[
+        anniversary.id,anniversary.title,typeLabel(anniversary.type),anniversary.calendar,anniversary.year??'',anniversary.month,anniversary.day,
+        anniversary.isLeapMonth??false,anniversary.repeatYearly,anniversary.notes??'',anniversary.createdAt,anniversary.updatedAt
+      ])
+    ]
+    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
+    downloadTextFile(`zing-anniversaries-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
+    setBackupMessage(`纪念日 CSV 已导出 · ${activeAnniversaries.length} 条`)
+  }
+
   const exportFullBackup = async () => {
     if (backupExporting) return
     setBackupExporting(true); setBackupMessage('正在整理备份…')
@@ -4355,6 +4388,8 @@ function App() {
               <div className="plain-export-actions">
                 <button type="button" onClick={exportTasksCsv}><span>任务 CSV</span><b>↓</b></button>
                 <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
+                <button type="button" onClick={exportFocusCsv}><span>专注 CSV</span><b>↓</b></button>
+                <button type="button" onClick={exportAnniversariesCsv}><span>纪念日 CSV</span><b>↓</b></button>
               </div>
               <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
                 <span><strong>备份</strong><small>任务、记录、心情、精力、经期、标签、纪念日、专注记录、设置与所有附件打包为 ZIP。</small></span>
