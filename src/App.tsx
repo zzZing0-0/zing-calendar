@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.6'
+const APP_VERSION = '1.9.7'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1358,6 +1358,8 @@ function App() {
   const [focusMode, setFocusMode] = useState<'stopwatch'|'countdown'>('stopwatch')
   const [focusMinutes, setFocusMinutes] = useState('15')
   const [focusTagIds, setFocusTagIds] = useState<string[]>([DEFAULT_TAG_ID])
+  const [focusTagSelectOpen, setFocusTagSelectOpen] = useState(false)
+  const [expandedFocusColor, setExpandedFocusColor] = useState<string | null>(null)
   const [focusHistoryDate, setFocusHistoryDate] = useState<string | null>(null)
   const [focusEditId, setFocusEditId] = useState<string | null>(null)
   const [focusEditMinutes, setFocusEditMinutes] = useState('')
@@ -2794,13 +2796,23 @@ function App() {
     setJournalEntries(current => current.map(entry => ({ ...entry, tagIds: clean(entry.tagIds) })))
   }
 
-  const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.scope === 'both' || tag.scope === kind)).sort((a, b) => Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID))
+  const tagColorRank = (color: string) => {
+    const index = TAG_COLORS.findIndex(item => item.toLowerCase() === color.toLowerCase())
+    return index >= 0 ? index : TAG_COLORS.length
+  }
+  const sortTagsByColor = (rows: Tag[]) => [...rows].sort((a,b) => {
+    if (a.id === DEFAULT_TAG_ID || b.id === DEFAULT_TAG_ID) return Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID)
+    const rankDiff = tagColorRank(a.color) - tagColorRank(b.color)
+    if (rankDiff) return rankDiff
+    const colorDiff = a.color.localeCompare(b.color)
+    if (colorDiff) return colorDiff
+    return (a.sortOrder ?? tags.indexOf(a)) - (b.sortOrder ?? tags.indexOf(b))
+  })
+  const tagsFor = (kind: 'task' | 'journal') => sortTagsByColor(tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.scope === 'both' || tag.scope === kind)))
+  const focusSelectableTags = () => sortTagsByColor(tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.id === DEFAULT_TAG_ID || tag.scope === 'both' || tag.scope === 'task')))
 
   const managedTags = useMemo(() => {
-    const colorRank = (color: string) => {
-      const index = TAG_COLORS.findIndex(item => item.toLowerCase() === color.toLowerCase())
-      return index >= 0 ? index : TAG_COLORS.length
-    }
+    const colorRank = tagColorRank
     return tags
       .filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag))
       .sort((a,b) => {
@@ -3118,13 +3130,15 @@ function App() {
       const value=Math.max(0,Math.round((Math.min(end,cap)-start)/1000))
       addFocusTagValue(focusTagForIds(session.tagIds),value,1)
     })
-    const focusColorRank=(color:string)=>{const index=TAG_COLORS.findIndex(item=>item.toLowerCase()===color.toLowerCase());return index<0?TAG_COLORS.length:index}
+    const focusColorRank=(color:string)=>tagColorRank(color)
     const focusTagRows=[...focusTagMap.values()].sort((a,b)=>focusColorRank(a.tag.color)-focusColorRank(b.tag.color)||b.seconds-a.seconds||a.tag.name.localeCompare(b.tag.name))
-    const focusPieGradient=(()=>{
-      const total=focusTagRows.reduce((sum,row)=>sum+row.seconds,0); if(!total)return ''
-      let cursor=0
-      return `conic-gradient(${focusTagRows.map(row=>{const from=cursor;cursor+=row.seconds/total*100;return `${row.tag.color} ${from.toFixed(3)}% ${cursor.toFixed(3)}%`}).join(',')})`
-    })()
+    const focusColorMap=new Map<string,{color:string;seconds:number;sessions:number;tags:typeof focusTagRows}>()
+    focusTagRows.forEach(row=>{const key=row.tag.color.toLowerCase();const bucket=focusColorMap.get(key)??{color:row.tag.color,seconds:0,sessions:0,tags:[]};bucket.seconds+=row.seconds;bucket.sessions+=row.sessions;bucket.tags.push(row);focusColorMap.set(key,bucket)})
+    const focusColorTotal=focusTagRows.reduce((sum,row)=>sum+row.seconds,0)
+    const focusColorRows=[...focusColorMap.values()].sort((a,b)=>b.seconds-a.seconds||focusColorRank(a.color)-focusColorRank(b.color)).map(row=>({...row,percent:focusColorTotal?row.seconds/focusColorTotal*100:0}))
+    const focusPieGradient=(()=>{if(!focusColorTotal)return '';let cursor=0;return `conic-gradient(${focusColorRows.map(row=>{const from=cursor;cursor+=row.percent;return `${row.color} ${from.toFixed(3)}% ${cursor.toFixed(3)}%`}).join(',')})`})()
+    let focusPieCursor=0
+    const focusPieLabels=focusColorRows.map(row=>{const mid=focusPieCursor+row.percent/2;focusPieCursor+=row.percent;const angle=(mid/100*360-90)*Math.PI/180;return {...row,x:50+Math.cos(angle)*35,y:50+Math.sin(angle)*35}}).filter(row=>row.percent>=5)
     const rawFocusTrend = [...focusByDay.entries()].filter(([date])=>inRange(date)).sort((a,b)=>a[0].localeCompare(b[0]))
     const focusSeconds = rawFocusTrend.reduce((sum,[,seconds])=>sum+seconds,0)
     const focusTrend = (() => {
@@ -3320,7 +3334,7 @@ function App() {
     })
 
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
-      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,focusTagRows,focusPieGradient,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
+      postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,focusTagRows,focusColorRows,focusPieGradient,focusPieLabels,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
       impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
   },[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,focusSessions,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
 
@@ -3960,7 +3974,7 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>Today</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>setFocusOpen(true)}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(!activeFocusSession){const last=[...focusSessions].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='task'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
             <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={trashItems.length?`打开回收站，共 ${trashItems.length} 条`:'打开回收站，当前为空'}><svg className="trash-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg><span>回收站</span></button>
@@ -4065,10 +4079,10 @@ function App() {
                   })}
                 </div>
               </div> : <p className="page-empty compact">这个时间范围还没有专注记录。</p>}
-              {statistics.focusTagRows.length>0 && <div className="focus-distribution">
-                <div className="focus-pie" style={{background:statistics.focusPieGradient}} aria-label="按标签的专注时间分布"><i /></div>
-                <div className="focus-tag-stats">
-                {statistics.focusTagRows.map(row=><div key={row.tag.id}><span><i style={{background:row.tag.color}} />{row.tag.name}</span><strong>{formatFocusDuration(row.seconds)}</strong><small>{row.sessions} 次</small></div>)}
+              {statistics.focusColorRows.length>0 && <div className="focus-distribution">
+                <div className="focus-pie-wrap"><div className="focus-pie" style={{background:statistics.focusPieGradient}} aria-label="按标签颜色汇总的专注时间分布"><i><b>{formatFocusDuration(statistics.focusSeconds)}</b><small>总专注</small></i>{statistics.focusPieLabels.map(row=><span key={row.color} className="focus-pie-percent" style={{left:`${row.x}%`,top:`${row.y}%`}}>{Math.round(row.percent)}%</span>)}</div></div>
+                <div className="focus-color-stats">
+                {statistics.focusColorRows.map(row=><div className="focus-color-block" key={row.color}><button type="button" onClick={()=>setExpandedFocusColor(current=>current===row.color?null:row.color)}><span><i style={{background:row.color}} />{formatFocusDuration(row.seconds)}</span><strong>{row.percent.toFixed(row.percent>=10?0:1)}%</strong><b>{expandedFocusColor===row.color?'⌃':'›'}</b></button>{expandedFocusColor===row.color&&<div className="focus-color-detail">{row.tags.sort((a,b)=>b.seconds-a.seconds).map(tagRow=><div key={tagRow.tag.id}><span><i style={{background:tagRow.tag.color}} />{tagRow.tag.name}</span><strong>{formatFocusDuration(tagRow.seconds)}</strong><small>{row.seconds?`${(tagRow.seconds/row.seconds*100).toFixed(1)}%`:''}</small></div>)}</div>}</div>)}
                 </div>
               </div>}
             </div>
@@ -4873,7 +4887,8 @@ function App() {
               </> : <>
                 <div className="focus-mode-switch"><button type="button" className={focusMode==='stopwatch'?'active':''} onClick={()=>setFocusMode('stopwatch')}>正计时</button><button type="button" className={focusMode==='countdown'?'active':''} onClick={()=>setFocusMode('countdown')}>倒计时</button></div>
                 {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} /><b>分钟</b></div></label>}
-                <div className="focus-tag-picker"><span>专注标签</span>{([['both','共享'],['task','任务']] as const).map(([scope,label])=>{const scoped=tags.filter(tag=>!isImportSourceTag(tag)&&!tag.archived&&(tag.id===DEFAULT_TAG_ID||(tag.scope===scope&&tag.id!==DEFAULT_TAG_ID))).filter((tag,index,list)=>list.findIndex(item=>item.id===tag.id)===index);return scoped.length?<div className="focus-tag-group" key={scope}><small>{label}</small><div>{scoped.map(tag=>{const checked=focusTagIds.includes(tag.id);return <button type="button" key={tag.id} className={checked?'selected':''} onClick={()=>setFocusTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div></div>:null})}</div>
+                <div className="focus-tag-picker compact"><span>专注标签</span>{(()=>{const selected=tags.find(tag=>tag.id===(focusTagIds[0]??DEFAULT_TAG_ID))??DEFAULT_TAG;return <button className="focus-current-tag" type="button" onClick={()=>setFocusTagSelectOpen(true)}><span><i style={{background:selected.color}} />{selected.name}</span><b>›</b></button>})()}</div>
+                {focusTagSelectOpen&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setFocusTagSelectOpen(false)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setFocusTagSelectOpen(false)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags().map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);setFocusTagSelectOpen(false)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
                 {activeTimerTask && <p className="focus-conflict-note">当前有任务正在计时，请先结束任务计时。</p>}
                 <button className="focus-start-button" type="button" disabled={Boolean(activeTimerTask)||focusTagIds.length===0} onClick={startDirectFocus}>▶ 开始专注</button>
               </>}
