@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.4'
+const APP_VERSION = '1.9.5'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -203,7 +203,7 @@ function ensureRequiredSystemTags(rows: Tag[]): Tag[] {
   const existing = new Set(normalized.map(tag => tag.id))
   return [...REQUIRED_SYSTEM_TAGS.filter(tag => !existing.has(tag.id)), ...normalized]
 }
-const TAG_COLORS = ['#789c86', '#d3b64b', '#d88b48', '#c8665f', '#8798bd', '#9b83ad', '#789da3', '#a58d72']
+const TAG_COLORS = ['#c85f5a', '#d77b52', '#d89b3f', '#c6ad3f', '#91a64b', '#5f9870', '#4f9b88', '#4f969d', '#5686a6', '#667caf', '#7b70ad', '#9870a8', '#b5688d', '#b56f72', '#9b7b5f', '#78817d']
 
 const ANNIVERSARY_TYPES: { value: AnniversaryType; label: string; icon: string }[] = [
   { value: 'birthday', label: '生日', icon: '🎂' },
@@ -2725,10 +2725,16 @@ function App() {
 
   const tagScopeLabel = (scope: TagScope) => scope === 'both' ? '共享标签' : scope === 'task' ? '任务标签' : '记录标签'
 
+  const normalizedTagName = (name: string) => name.trim().toLocaleLowerCase()
+  const tagNameTaken = (name: string, exceptId?: string) => {
+    const normalized = normalizedTagName(name)
+    return Boolean(normalized && tags.some(tag => tag.id !== exceptId && normalizedTagName(tag.name) === normalized))
+  }
+
   const addTag = () => {
     const name = newTagName.trim()
     if (!name) return
-    const existing = tags.find(tag => tag.name.toLowerCase() === name.toLowerCase())
+    const existing = tags.find(tag => normalizedTagName(tag.name) === normalizedTagName(name))
     if (existing) {
       if (!existing.system && existing.scope !== 'both' && existing.scope !== newTagScope) {
         const upgrade = window.confirm(`#${existing.name} 已存在于「${tagScopeLabel(existing.scope)}」。\n\n是否更改为「共享标签」？`)
@@ -2778,9 +2784,25 @@ function App() {
 
   const tagsFor = (kind: 'task' | 'journal') => tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.scope === 'both' || tag.scope === kind)).sort((a, b) => Number(b.id === DEFAULT_TAG_ID) - Number(a.id === DEFAULT_TAG_ID))
 
-  const managedTags = useMemo(() => tags
-    .filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag))
-    .sort((a,b) => Number(Boolean(a.archived)) - Number(Boolean(b.archived)) || (a.sortOrder ?? tags.indexOf(a)) - (b.sortOrder ?? tags.indexOf(b))), [tags])
+  const managedTags = useMemo(() => {
+    const colorRank = (color: string) => {
+      const index = TAG_COLORS.findIndex(item => item.toLowerCase() === color.toLowerCase())
+      return index >= 0 ? index : TAG_COLORS.length
+    }
+    return tags
+      .filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag))
+      .sort((a,b) => {
+        const colorDiff = colorRank(a.color) - colorRank(b.color)
+        if (colorDiff) return colorDiff
+        if (colorRank(a.color) === TAG_COLORS.length) {
+          const customColorDiff = a.color.localeCompare(b.color)
+          if (customColorDiff) return customColorDiff
+        }
+        const archiveDiff = Number(Boolean(a.archived)) - Number(Boolean(b.archived))
+        if (archiveDiff) return archiveDiff
+        return (a.sortOrder ?? tags.indexOf(a)) - (b.sortOrder ?? tags.indexOf(b))
+      })
+  }, [tags])
 
   const tagDateFromKey = (key:string) => {
     const [year,month,day] = key.split('-').map(Number)
@@ -3380,7 +3402,7 @@ function App() {
         time:genericHeaderIndex(header,['时间','开始时间','time','starttime']),
       }
       const existingIds=new Set(tasks.map(task=>task.id))
-      const tagByName=new Map<string,Tag>(tags.filter(tag=>!isImportSourceTag(tag)).map(tag=>[tag.name.trim().toLowerCase(),tag] as [string,Tag]))
+      const tagByName=new Map<string,Tag>(tags.map(tag=>[normalizedTagName(tag.name),tag] as [string,Tag]))
       const importedTags:Tag[]=[]
       let duplicateCount=0, skippedNoDate=0
       const converted:Task[]=[]
@@ -3443,7 +3465,7 @@ function App() {
       const header=rows[headerIndex]
       const sourceRows=rows.slice(headerIndex+1).filter(row=>row.some(cell=>cell.trim()))
       const existingIds=new Set(tasks.map(task=>task.id))
-      const tagByName=new Map<string,Tag>(tags.filter(tag=>!isImportSourceTag(tag)).map(tag=>[tag.name.trim().toLowerCase(),tag] as [string,Tag]))
+      const tagByName=new Map<string,Tag>(tags.map(tag=>[normalizedTagName(tag.name),tag] as [string,Tag]))
       const importedTags:Tag[]=[]
       let duplicateCount=0, skippedNoDate=0, strippedAttachmentCount=0, ignoredChecklistCount=0
       const converted:Task[]=[]
@@ -3509,7 +3531,7 @@ function App() {
       const header=rows[headerIndex], sourceRows=rows.slice(headerIndex+1).filter(row=>row.some(cell=>cell.trim()))
       const startCol=header.indexOf('Start Time'), endCol=header.indexOf('End Time'), tagCol=header.indexOf('Tag'), successCol=header.indexOf('Is Success')
       const existingIds=new Set(focusSessions.map(session=>session.id))
-      const tagByName=new Map<string,Tag>(tags.filter(tag=>!isImportSourceTag(tag)).map(tag=>[tag.name.trim().toLowerCase(),tag] as [string,Tag]))
+      const tagByName=new Map<string,Tag>(tags.map(tag=>[normalizedTagName(tag.name),tag] as [string,Tag]))
       const importedTags:Tag[]=[]; const reusedNames=new Set<string>()
       let duplicateCount=0, failedCount=0, invalidCount=0
       const sessions:FocusSession[]=[]
@@ -4939,7 +4961,7 @@ function App() {
                 if(!tag) return null
                 return <div className="compact-tag-detail">
                   <div className="compact-tag-detail-heading"><i style={{background:tag.color}} /><strong>编辑标签</strong></div>
-                  <label className="field"><span>名称</span><input value={tag.name} onChange={e=>setTags(current=>current.map(item=>item.id===tag.id?{...item,name:e.target.value,updatedAt:new Date().toISOString()}:item))} /></label>
+                  <label className="field"><span>名称</span><input value={tag.name} onChange={e=>{const next=e.target.value;if(tagNameTaken(next,tag.id)){setAutoSyncToast(`⚠ #${next.trim()} 已存在`);return}setTags(current=>current.map(item=>item.id===tag.id?{...item,name:next,updatedAt:new Date().toISOString()}:item))}} /></label>
                   <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${tag.color===color?' active':''}`} style={{background:color}} onClick={()=>setTags(current=>current.map(item=>item.id===tag.id?{...item,color,updatedAt:new Date().toISOString()}:item))} aria-label={`设为 ${color}`} />)}</div></div>
                   <div className="field"><span>分类</span><div className="tag-detail-scope">
                     {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={tag.scope===scope?'active':''} onClick={()=>{setTags(current=>current.map(item=>item.id===tag.id?{...item,scope,updatedAt:new Date().toISOString()}:item));setNewTagScope(scope)}}>{label}</button>)}
