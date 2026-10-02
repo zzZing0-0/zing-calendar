@@ -4394,3 +4394,27 @@ button {
 .focus-stats-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;min-width:0}
 .focus-default-toggle{font-size:11px;color:#7a857f}
 @media (max-width:620px){.focus-stats-heading{align-items:flex-start}.focus-stats-heading-actions{gap:8px;flex-wrap:wrap}.focus-default-toggle span{font-size:10px}}
+
+/* v1.9.13 — export chooser, mobile chart/heatmap readability, search stacking */
+.plain-export-modal .plain-export-actions{padding:0;background:transparent}
+.plain-export-modal-actions{margin-top:8px}
+
+/* Search belongs above page-local sticky chrome, but remains below drawers/dialogs. */
+.global-search-wrap{z-index:200}
+.search-panel{z-index:210}
+
+@media(max-width:620px){
+  /* Dense chart values are useful on desktop, but on mobile only label the same
+     representative points as the x-axis to prevent the numbers merging. */
+  .completion-count:not(.show-mobile-count){visibility:hidden}
+
+  /* Search is a focused page overlay and must sit above sticky calendar,
+     anniversary and statistics headers. */
+  .mobile-search-backdrop{z-index:180!important}
+  .global-search-wrap,
+  .global-search-wrap.mobile-open,
+  .calendar-topbar .global-search-wrap.mobile-open{z-index:201!important}
+  .search-panel{z-index:210!important}
+  .brand-block.search-open,
+  .calendar-topbar .brand-block.search-open{z-index:220!important}
+}

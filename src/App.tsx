@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.12'
+const APP_VERSION = '1.9.13'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1252,7 +1252,7 @@ function App() {
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
-  const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('month')
+  const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
   const [excludeDefaultFocusStats, setExcludeDefaultFocusStats] = useState(() => localStorage.getItem('zing:excludeDefaultFocusStats') === 'true')
   const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
@@ -1290,6 +1290,7 @@ function App() {
   const [resettingData, setResettingData] = useState(false)
   const backupInputRef = useRef<HTMLInputElement|null>(null)
   const [externalImportOpen, setExternalImportOpen] = useState(false)
+  const [plainExportOpen, setPlainExportOpen] = useState(false)
   const [externalImportStage, setExternalImportStage] = useState<ExternalImportStage>('sources')
   const [didaImportPreview, setDidaImportPreview] = useState<DidaImportPreview|null>(null)
   const [forestImportPreview, setForestImportPreview] = useState<ForestImportPreview|null>(null)
@@ -4095,7 +4096,7 @@ function App() {
                     const labelEvery=Math.max(1,Math.ceil(statistics.completionTrend.length/8))
                     const showLabel=index===0||index===statistics.completionTrend.length-1||index%labelEvery===0
                     return <div key={item.key} title={`${item.key} · 完成 ${item.count}`}>
-                      <span className="completion-count">{item.count}</span>
+                      <span className={`completion-count${showLabel?' show-mobile-count':''}`}>{item.count}</span>
                       <i style={{height:`${Math.max(8,item.count/max*100)}%`}} />
                       <span className="completion-date">{showLabel?item.label:''}</span>
                     </div>
@@ -4118,7 +4119,7 @@ function App() {
                     const labelEvery=Math.max(1,Math.ceil(statistics.focusTrend.length/8))
                     const showLabel=index===0||index===statistics.focusTrend.length-1||index%labelEvery===0
                     return <div key={item.key} title={`${item.key} · 专注 ${formatFocusDuration(item.seconds)}`}>
-                      <span className="completion-count">{item.seconds >= 60 ? `${Math.floor(item.seconds/60)}m` : item.seconds > 0 ? '<1m' : '0'}</span>
+                      <span className={`completion-count${showLabel?' show-mobile-count':''}`}>{item.seconds >= 60 ? `${Math.floor(item.seconds/60)}m` : item.seconds > 0 ? '<1m' : '0'}</span>
                       <i style={{height:`${Math.max(8,item.seconds/max*100)}%`}} />
                       <span className="completion-date">{showLabel?item.label:''}</span>
                     </div>
@@ -4171,7 +4172,7 @@ function App() {
                   const index=Math.max(0,years.findIndex(group=>group.year===selected.year))
                   const heatmap=(kind:'mood'|'energy') => <div className="status-heatmap-block">
                     <strong>{kind==='mood'?'心情':'能量'}</strong>
-                    <div className="mood-year-heatmap status-year-heatmap">
+                    <div className="mood-year-heatmap status-year-heatmap" ref={element=>{if(element && window.innerWidth<=620) requestAnimationFrame(()=>{element.scrollLeft=element.scrollWidth})}}>
                       {Array.from({length:selected.leading}).map((_,i)=><i key={`${kind}-blank-${selected.year}-${i}`} className="heatmap-blank" />)}
                       {selected.days.map(day=>{
                         const level=kind==='mood'?day.level:day.energyLevel
@@ -4360,6 +4361,9 @@ function App() {
             <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('https://zzzing0-0.github.io/audio-vocabulary-sprint/index.html','_blank','noopener,noreferrer')}>
               <span><strong>Zing 背单词</strong><small>Audio Vocabulary Sprint · 背单词与学习统计</small></span><b>↗</b>
             </button>
+            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('http://www.yunshangxiezuo.com/home','_blank','noopener,noreferrer')}>
+              <span><strong>云上写作</strong><small>小说写作与作品数据</small></span><b>↗</b>
+            </button>
           </div>
 
           <div className="settings-group">
@@ -4384,13 +4388,9 @@ function App() {
               <button className="settings-link-row external-import-row" type="button" onClick={openExternalImport}>
                 <span><strong>从外部导入</strong><small>通用 CSV 或已支持来源；导入任务统一标记为“从外部导入”。</small></span><b>›</b>
               </button>
-              <div className="plain-export-heading"><strong>通用导出</strong><small>CSV 可直接用 Numbers、Excel 或其他软件打开，不用于 Zing 完整恢复。</small></div>
-              <div className="plain-export-actions">
-                <button type="button" onClick={exportTasksCsv}><span>任务 CSV</span><b>↓</b></button>
-                <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
-                <button type="button" onClick={exportFocusCsv}><span>专注 CSV</span><b>↓</b></button>
-                <button type="button" onClick={exportAnniversariesCsv}><span>纪念日 CSV</span><b>↓</b></button>
-              </div>
+              <button className="settings-link-row plain-export-row" type="button" onClick={()=>setPlainExportOpen(true)}>
+                <span><strong>通用导出</strong><small>CSV 可直接用 Numbers、Excel 或其他软件打开，不用于 Zing 完整恢复。</small></span><b>›</b>
+              </button>
               <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
                 <span><strong>备份</strong><small>任务、记录、心情、精力、经期、标签、纪念日、专注记录、设置与所有附件打包为 ZIP。</small></span>
                 <b>{backupExporting?'…':'↓'}</b>
@@ -4483,6 +4483,27 @@ function App() {
               </div>
               <div className="word-ignore-panel-list">
                 {wordCloudIgnored.length ? wordCloudIgnored.map(word=><button type="button" key={word} title="点击恢复到词云" onClick={()=>setWordCloudIgnored(list=>list.filter(item=>item!==word))}><span>{word}</span><b>×</b></button>) : <p className="page-empty compact">还没有手动屏蔽的词。</p>}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {plainExportOpen && (
+        <div className="modal-layer plain-export-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭通用导出" onClick={()=>setPlainExportOpen(false)} />
+          <section className="task-editor plain-export-modal" role="dialog" aria-modal="true" aria-label="通用导出">
+            <div className="editor-header">
+              <div><span className="eyebrow">EXPORT</span><h2>通用导出</h2></div>
+              <button className="close-button" type="button" onClick={()=>setPlainExportOpen(false)}>×</button>
+            </div>
+            <div className="editor-body">
+              <p className="external-import-intro">选择要单独导出的重要数据。CSV 便于用 Numbers、Excel 等查看；完整保存与恢复仍请使用“备份”。</p>
+              <div className="plain-export-actions plain-export-modal-actions">
+                <button type="button" onClick={exportTasksCsv}><span>任务 CSV</span><b>↓</b></button>
+                <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
+                <button type="button" onClick={exportFocusCsv}><span>专注 CSV</span><b>↓</b></button>
+                <button type="button" onClick={exportAnniversariesCsv}><span>纪念日 CSV</span><b>↓</b></button>
               </div>
             </div>
           </section>
