@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.8.0'
+const APP_VERSION = '1.8.1'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -95,6 +95,7 @@ type JournalEntry = {
   tagIds?: string[]
   attachments?: Attachment[]
   attachmentLinkTombstones?: AttachmentLinkTombstones
+  trashedAt?: string
 }
 
 type AnniversaryType = 'birthday' | 'anniversary' | 'important' | 'other'
@@ -112,6 +113,7 @@ type Anniversary = {
   notes?: string
   createdAt: string
   updatedAt: string
+  trashedAt?: string
 }
 type AnniversaryDraft = {
   title: string
@@ -1616,17 +1618,11 @@ function App() {
   }
 
   const deleteJournal = (id: string) => {
-    const stillReferenced = new Set<string>()
-    tasks.forEach(task => {
-      ;(task.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey))
-      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => (exception.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
-    })
-    journalEntries.filter(item => item.id !== id).forEach(item => (item.attachments ?? []).forEach(a => stillReferenced.add(a.storageKey)))
-    // Deleting a journal entry removes only its relation. Attachment binaries are immutable/shared
-    // and are reclaimed only by the explicit orphan-cleanup path after all relations are gone.
-    setJournalEntries(current => current.filter(entry => entry.id !== id))
+    const now = new Date().toISOString()
+    setJournalEntries(current => current.map(entry => entry.id === id ? { ...entry, trashedAt: now, updatedAt: now } : entry))
     setViewingJournalId(current => current === id ? null : current)
   }
+
 
   useEffect(() => {
     if (!tasksHydrated) return
@@ -1805,18 +1801,25 @@ function App() {
   )
 
   const activeTasks = useMemo(() => tasks.filter(task => !task.trashedAt), [tasks])
-  type TaskTrashItem = { key:string; kind:'series'|'occurrence'|'future'; task:Task; occurrenceDate?:string; trashedAt:string }
-  const taskTrashItems = useMemo<TaskTrashItem[]>(() => {
-    const items:TaskTrashItem[]=[]
+  const activeJournalEntries = useMemo(() => journalEntries.filter(entry => !entry.trashedAt), [journalEntries])
+  const activeAnniversaries = useMemo(() => anniversaries.filter(anniversary => !anniversary.trashedAt), [anniversaries])
+  type TrashItem =
+    | { key:string; entity:'task'; kind:'series'|'occurrence'|'future'; task:Task; occurrenceDate?:string; trashedAt:string }
+    | { key:string; entity:'journal'; journal:JournalEntry; trashedAt:string }
+    | { key:string; entity:'anniversary'; anniversary:Anniversary; trashedAt:string }
+  const trashItems = useMemo<TrashItem[]>(() => {
+    const items:TrashItem[]=[]
     tasks.forEach(task => {
-      if (task.trashedAt) { items.push({key:`series:${task.id}`,kind:'series',task,trashedAt:task.trashedAt}); return }
-      if (task.trashFuture) items.push({key:`future:${task.id}:${task.trashFuture.from}`,kind:'future',task,occurrenceDate:task.trashFuture.from,trashedAt:task.trashFuture.trashedAt});
-      (Object.entries(task.recurrenceExceptions ?? {}) as [string, RecurrenceException][]).forEach(([date, exception]) => {
-        if (exception.trashedAt) items.push({key:`occurrence:${task.id}:${date}`,kind:'occurrence',task,occurrenceDate:date,trashedAt:exception.trashedAt})
+      if (task.trashedAt) { items.push({key:`task:series:${task.id}`,entity:'task',kind:'series',task,trashedAt:task.trashedAt}); return }
+      if (task.trashFuture) items.push({key:`task:future:${task.id}:${task.trashFuture.from}`,entity:'task',kind:'future',task,occurrenceDate:task.trashFuture.from,trashedAt:task.trashFuture.trashedAt});
+      ;(Object.entries(task.recurrenceExceptions ?? {}) as [string, RecurrenceException][]).forEach(([date, exception]) => {
+        if (exception.trashedAt) items.push({key:`task:occurrence:${task.id}:${date}`,entity:'task',kind:'occurrence',task,occurrenceDate:date,trashedAt:exception.trashedAt})
       })
     })
+    journalEntries.forEach(journal => { if (journal.trashedAt) items.push({key:`journal:${journal.id}`,entity:'journal',journal,trashedAt:journal.trashedAt}) })
+    anniversaries.forEach(anniversary => { if (anniversary.trashedAt) items.push({key:`anniversary:${anniversary.id}`,entity:'anniversary',anniversary,trashedAt:anniversary.trashedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
-  },[tasks])
+  },[tasks,journalEntries,anniversaries])
 
   const displayTasks = useMemo(() => {
     const start = toDateKey(days[0].date)
@@ -1852,7 +1855,7 @@ function App() {
   const anniversaryOccurrencesByDate = useMemo(() => {
     const map = new Map<string, { anniversary: Anniversary; occurrence: Date }[]>()
     const years = Array.from(new Set(days.map(day => day.date.getFullYear())))
-    anniversaries.forEach(anniversary => years.forEach(year => {
+    activeAnniversaries.forEach(anniversary => years.forEach(year => {
       const occurrence = anniversaryOccurrence(anniversary, year)
       if (!occurrence) return
       const key = toDateKey(occurrence)
@@ -1860,34 +1863,34 @@ function App() {
       rows.push({ anniversary, occurrence }); map.set(key, rows)
     }))
     return map
-  }, [anniversaries, days])
+  }, [activeAnniversaries, days])
 
   const selectedAnniversaries = useMemo(() => {
     if (!selectedDate) return []
     const key=toDateKey(selectedDate)
     const cached=anniversaryOccurrencesByDate.get(key)
     if (cached) return cached
-    return anniversaries.map(anniversary => {
+    return activeAnniversaries.map(anniversary => {
       const occurrence=anniversaryOccurrence(anniversary, selectedDate.getFullYear())
       return occurrence && toDateKey(occurrence)===key ? {anniversary, occurrence} : null
     }).filter(Boolean) as { anniversary: Anniversary; occurrence: Date }[]
-  }, [selectedDate, anniversaries, anniversaryOccurrencesByDate])
+  }, [selectedDate, activeAnniversaries, anniversaryOccurrencesByDate])
 
   const selectedJournalEntries = useMemo(() => {
     if (!selectedDate) return []
     const key = toDateKey(selectedDate)
-    return journalEntries.filter(entry => entry.date === key).sort((a, b) => {
+    return activeJournalEntries.filter(entry => entry.date === key).sort((a, b) => {
       if (a.time && b.time && a.time !== b.time) return a.time.localeCompare(b.time)
       if (a.time !== b.time) return a.time ? -1 : 1
       return a.createdAt.localeCompare(b.createdAt)
     })
-  }, [selectedDate, journalEntries])
+  }, [selectedDate, activeJournalEntries])
 
-  const viewingJournal = viewingJournalId ? journalEntries.find(entry => entry.id === viewingJournalId) ?? null : null
+  const viewingJournal = viewingJournalId ? activeJournalEntries.find(entry => entry.id === viewingJournalId) ?? null : null
   const selectedMood = selectedDate ? dailyMoods.find(mood => mood.date === toDateKey(selectedDate)) : undefined
   const selectedImpactTotal = selectedJournalEntries.reduce((sum, entry) => sum + entry.impact, 0)
   const moodsByDate = useMemo(() => new Map(dailyMoods.map(mood => [mood.date, mood])), [dailyMoods])
-  const journalDates = useMemo(() => new Set(journalEntries.map(entry => entry.date)), [journalEntries])
+  const journalDates = useMemo(() => new Set(activeJournalEntries.map(entry => entry.date)), [journalEntries])
   const moodDays = useMemo(() => buildMonth(moodMonth.getFullYear(), moodMonth.getMonth(), weekStartsMonday), [moodMonth, weekStartsMonday])
 
   const renderCalendarMonthGrid = (month: Date) => {
@@ -1908,7 +1911,7 @@ function App() {
     })
     const monthAnniversaries=new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
     const years=Array.from(new Set(monthDays.map(day=>day.date.getFullYear())))
-    anniversaries.forEach(anniversary=>years.forEach(year=>{
+    activeAnniversaries.forEach(anniversary=>years.forEach(year=>{
       const occurrence=anniversaryOccurrence(anniversary,year); if(!occurrence)return
       const key=toDateKey(occurrence), rows=monthAnniversaries.get(key)??[]; rows.push({anniversary,occurrence}); monthAnniversaries.set(key,rows)
     }))
@@ -1946,7 +1949,7 @@ function App() {
     const occupied=weekDays.map((_,column)=>new Set(segments.filter(segment=>segment.week===0&&column>=segment.startColumn&&column<segment.startColumn+segment.span).map(segment=>segment.lane).filter(lane=>lane>=0&&lane<5)))
     const anniversaryMap=new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
     const years=Array.from(new Set(weekDays.map(day=>day.date.getFullYear())))
-    anniversaries.forEach(anniversary=>years.forEach(year=>{const occurrence=anniversaryOccurrence(anniversary,year);if(!occurrence)return;const key=toDateKey(occurrence);if(key<rangeStart||key>rangeEnd)return;const rows=anniversaryMap.get(key)??[];rows.push({anniversary,occurrence});anniversaryMap.set(key,rows)}))
+    activeAnniversaries.forEach(anniversary=>years.forEach(year=>{const occurrence=anniversaryOccurrence(anniversary,year);if(!occurrence)return;const key=toDateKey(occurrence);if(key<rangeStart||key>rangeEnd)return;const rows=anniversaryMap.get(key)??[];rows.push({anniversary,occurrence});anniversaryMap.set(key,rows)}))
     return <div className="calendar-grid continuous-week-grid">
       {weekDays.map(({date},dayIndex)=>{
         const isToday=sameDay(date,today), key=toDateKey(date), dayTasks=tasksByDate.get(key)??[], occupiedLanes=occupied[dayIndex]
@@ -2071,7 +2074,7 @@ function App() {
         <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days)}</div>
       </section>
     })
-  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,anniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar])
+  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
@@ -2094,9 +2097,11 @@ function App() {
   }
   const deleteAnniversary = () => {
     if (!editingAnniversaryId) return
-    setAnniversaries(cur=>cur.filter(a=>a.id!==editingAnniversaryId))
+    const now = new Date().toISOString()
+    setAnniversaries(cur=>cur.map(a=>a.id===editingAnniversaryId ? {...a,trashedAt:now,updatedAt:now} : a))
     setAnniversaryEditorOpen(false); setEditingAnniversaryId(null)
   }
+
 
   const activeTimerTask = useMemo(() => {
     for (const task of activeTasks) {
@@ -2471,7 +2476,9 @@ function App() {
     setTasks(current => current.map(series => series.id === seriesId ? { ...series, trashedAt:now, updatedAt:now } : series))
   }
 
-  const restoreTrashItem = (item: TaskTrashItem) => {
+  const restoreTrashItem = (item: TrashItem) => {
+    if(item.entity==='journal') { const now=new Date().toISOString(); setJournalEntries(current=>current.map(entry=>entry.id===item.journal.id?{...entry,trashedAt:undefined,updatedAt:now}:entry)); return }
+    if(item.entity==='anniversary') { const now=new Date().toISOString(); setAnniversaries(current=>current.map(a=>a.id===item.anniversary.id?{...a,trashedAt:undefined,updatedAt:now}:a)); return }
     const now=new Date().toISOString()
     setTasks(current=>current.map(task=>{
       if(task.id!==item.task.id) return task
@@ -2482,7 +2489,9 @@ function App() {
     }))
   }
 
-  const permanentlyDeleteTrashItem = (item: TaskTrashItem) => {
+  const permanentlyDeleteTrashItem = (item: TrashItem) => {
+    if(item.entity==='journal') { setJournalEntries(current=>current.filter(entry=>entry.id!==item.journal.id)); return }
+    if(item.entity==='anniversary') { setAnniversaries(current=>current.filter(a=>a.id!==item.anniversary.id)); return }
     const now=new Date().toISOString()
     if(item.kind==='series') { setTasks(current=>current.filter(task=>task.id!==item.task.id)); return }
     if(item.kind==='occurrence') {
@@ -2491,6 +2500,28 @@ function App() {
     }
     const date=item.occurrenceDate!, previousDate=addDaysKey(date,-1)
     setTasks(current=>current.map(task=>task.id===item.task.id?normalizeSingleOccurrenceSeries({...task,trashFuture:undefined,recurrence:task.recurrence?{...task.recurrence,end:{type:'date',date:previousDate}}:undefined,recurrenceExceptions:Object.fromEntries(Object.entries(task.recurrenceExceptions??{}).filter(([key])=>key<date)),updatedAt:now}):task))
+  }
+
+  const clearTrash = () => {
+    if (!trashItems.length) return
+    const now = new Date().toISOString()
+    setJournalEntries(current => current.filter(entry => !entry.trashedAt))
+    setAnniversaries(current => current.filter(anniversary => !anniversary.trashedAt))
+    setTasks(current => current.flatMap(task => {
+      if (task.trashedAt) return []
+      let next = task
+      const trashedDates = Object.entries(next.recurrenceExceptions ?? {}).filter(([,exception]) => exception.trashedAt).map(([date]) => date)
+      if (trashedDates.length) {
+        const exceptions = { ...next.recurrenceExceptions }
+        trashedDates.forEach(date => { exceptions[date] = { ...exceptions[date], trashedAt: undefined, deleted: true, updatedAt: now } })
+        next = { ...next, recurrenceExceptions: exceptions, updatedAt: now }
+      }
+      if (next.trashFuture) {
+        const from = next.trashFuture.from, previousDate = addDaysKey(from,-1)
+        next = normalizeSingleOccurrenceSeries({ ...next, trashFuture: undefined, recurrence: next.recurrence ? { ...next.recurrence, end:{type:'date',date:previousDate} } : undefined, recurrenceExceptions:Object.fromEntries(Object.entries(next.recurrenceExceptions??{}).filter(([key])=>key<from)), updatedAt:now })
+      }
+      return [next]
+    }))
   }
 
   const stopRepeating = (series: Task, occurrenceDate: string) => {
@@ -2586,7 +2617,7 @@ function App() {
     const usage = new Map<string,{tasks:number;journals:number;days:number}>()
     managedTags.forEach(tag => {
       const taskRows = activeTasks.filter(task => (task.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
-      const journalRows = journalEntries.filter(entry => (entry.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
+      const journalRows = activeJournalEntries.filter(entry => (entry.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
       const days = new Set<string>()
       taskRows.forEach(task => {
         const start = tagDateFromKey(task.date), end = tagDateFromKey(taskEndDate(task))
@@ -2597,7 +2628,7 @@ function App() {
       usage.set(tag.id,{tasks:taskRows.length,journals:journalRows.length,days:days.size})
     })
     return usage
-  },[managedTags,activeTasks,journalEntries])
+  },[managedTags,activeTasks,activeJournalEntries])
 
   useEffect(() => {
     if (sessionStorage.getItem('zing-program-refresh-pending') !== '1') return
@@ -2680,11 +2711,11 @@ function App() {
       const hay = `${task.title} ${task.notes ?? ''}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) results.push({ kind:'task', id:task.id, title:task.title, date:task.date, snippet:searchSnippet(task.notes ?? ''), item:task })
     })
-    if (searchFilter === 'all' || searchFilter === 'journal') journalEntries.forEach(entry => {
+    if (searchFilter === 'all' || searchFilter === 'journal') activeJournalEntries.forEach(entry => {
       const hay = `${entry.title} ${entry.content}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) results.push({ kind:'journal', id:entry.id, title:entry.title, date:entry.date, snippet:searchSnippet(entry.content), item:entry })
     })
-    if (searchFilter === 'all' || searchFilter === 'anniversary') anniversaries.forEach(anniversary => {
+    if (searchFilter === 'all' || searchFilter === 'anniversary') activeAnniversaries.forEach(anniversary => {
       const hay = `${anniversary.title} ${anniversary.notes ?? ''}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) {
         const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
@@ -2695,7 +2726,7 @@ function App() {
       }
     })
     return results.sort((a,b) => b.date.localeCompare(a.date))
-  }, [normalizedSearch, tagSearchMode, tagSearchTerm, searchFilter, activeTasks, journalEntries, anniversaries, managedTags, tagUsage])
+  }, [normalizedSearch, tagSearchMode, tagSearchTerm, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, managedTags, tagUsage])
 
   const searchDateLabel = (result: SearchResult) => {
     if (result.kind === 'tag') return ''
@@ -2882,7 +2913,7 @@ function App() {
     const mostPostponedTask = [...eligibleTasks].sort((a,b)=>(b.postponeHistory?.length??0)-(a.postponeHistory?.length??0))[0]
     const longestPostponedTask = [...eligibleTasks].sort((a,b)=>postponeDays(b)-postponeDays(a))[0]
 
-    const journals = journalEntries.filter(entry=>inRange(entry.date))
+    const journals = activeJournalEntries.filter(entry=>inRange(entry.date))
     const moods = dailyMoods.filter(mood=>inRange(mood.date))
     const energies = dailyEnergy.filter(energy=>inRange(energy.date))
     const journalDays = new Set(journals.map(entry=>entry.date)).size
@@ -3045,7 +3076,7 @@ function App() {
     return {rangeStart,todayKey,eligibleTasks,completed,abandoned,overdue,completionRate,postponedTasks:postponedTasks.length,
       postponeEvents:postponeEvents.length,postponeRate,maxPostponeCount,maxPostponeDays,completedByDay,completionTrend,focusSeconds,focusTrend,mostPostponedTag,mostPostponedTask,longestPostponedTask,journals,journalDays,moods,moodDays,energyDays,statusDays,
       impactCounts,moodCounts,energyCounts,priorityCounts,tagRows,defaultTagImpactRow,tagTaskTimelines,timelineStart:effectiveTimelineStart,timelineSpan,tagTimelineAll,words,moodLinePoints,energyLinePoints,heatmapLeading,yearHeatmap,allHeatmapYears}
-  },[activeTasks,journalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
+  },[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,statsRange,weekStartsMonday,wordCloudIgnored,timerNow])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
@@ -3053,7 +3084,7 @@ function App() {
 
   const anniversaryPageRows = useMemo(() => {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    return anniversaries.map(anniversary => {
+    return activeAnniversaries.map(anniversary => {
       let occurrence: Date | null = null
       if (anniversary.repeatYearly) {
         const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
@@ -3081,7 +3112,7 @@ function App() {
       // Today/future: nearest occurrence first.
       return a.occurrence.getTime() - b.occurrence.getTime()
     })
-  }, [anniversaries])
+  }, [activeAnniversaries])
 
   const anniversaryDistanceLabel = (anniversary: Anniversary, occurrence: Date | null) => {
     if (!occurrence) return ''
@@ -3601,7 +3632,7 @@ function App() {
             <button className="today-button" type="button" onClick={goToday}>Today</button>
           </div>
           <div className="calendar-status-controls">
-            {taskTrashItems.length>0 && <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={`打开回收站，共 ${taskTrashItems.length} 条`}><span>♻</span> 回收站 {taskTrashItems.length}</button>}
+            {trashItems.length>0 && <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={`打开回收站，共 ${trashItems.length} 条`}><span>♻</span> 回收站 {trashItems.length}</button>}
             {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
             {endedTasksViewToggle('calendar-ended-toggle')}
             <button className="program-refresh-button" type="button" onClick={()=>void refreshProgram()} disabled={programRefreshBusy} aria-label="检查并刷新程序" title="检查并刷新程序">{programRefreshBusy?'…':'↻'}</button>
@@ -4423,13 +4454,13 @@ function App() {
           <button className="modal-backdrop" type="button" aria-label="关闭回收站" onClick={()=>setTrashOpen(false)} />
           <section className="task-editor overdue-inbox-panel trash-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="trash-inbox-title">
             <div className="editor-header">
-              <div><span className="eyebrow">RECYCLE BIN</span><h2 id="trash-inbox-title">回收站 · {taskTrashItems.length}</h2></div>
-              <button className="close-button" type="button" onClick={()=>setTrashOpen(false)} aria-label="关闭">×</button>
+              <div><span className="eyebrow">RECYCLE BIN</span><h2 id="trash-inbox-title">回收站 · {trashItems.length}</h2></div>
+              <div className="trash-header-actions">{trashItems.length>0 && <button className="trash-clear-button" type="button" onClick={()=>{if(window.confirm(`确定永久删除回收站中的 ${trashItems.length} 项吗？此操作无法恢复。`)) clearTrash()}}>清空</button>}<button className="close-button" type="button" onClick={()=>setTrashOpen(false)} aria-label="关闭">×</button></div>
             </div>
             <div className="editor-body overdue-inbox-body">
-              {taskTrashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <div className="overdue-inbox-list">
-                {taskTrashItems.map(item=><article key={item.key} className="trash-inbox-item">
-                  <div className="trash-inbox-main"><strong>{item.task.title}</strong><small>{item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date.replaceAll('-','/')} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+              {trashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <div className="overdue-inbox-list">
+                {trashItems.map(item=><article key={item.key} className="trash-inbox-item">
+                  <div className="trash-inbox-main"><strong>{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.anniversary.title}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date.replaceAll('-','/')} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
                   <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
                 </article>)}
               </div>}
