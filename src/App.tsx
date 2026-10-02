@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.9'
+const APP_VERSION = '1.9.10'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -4888,12 +4888,13 @@ function App() {
                 <div className="focus-mode-switch"><button type="button" className={focusMode==='stopwatch'?'active':''} onClick={()=>setFocusMode('stopwatch')}>正计时</button><button type="button" className={focusMode==='countdown'?'active':''} onClick={()=>setFocusMode('countdown')}>倒计时</button></div>
                 {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} /><b>分钟</b></div></label>}
                 <div className="focus-tag-picker compact"><span>专注标签</span>{(()=>{const selected=tags.find(tag=>tag.id===(focusTagIds[0]??DEFAULT_TAG_ID))??DEFAULT_TAG;return <button className="focus-current-tag" type="button" onClick={()=>setFocusTagSelectOpen(true)}><span><i style={{background:selected.color}} />{selected.name}</span><b>›</b></button>})()}</div>
-                {focusTagSelectOpen&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setFocusTagSelectOpen(false)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setFocusTagSelectOpen(false)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags().map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);setFocusTagSelectOpen(false)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
+
                 {activeTimerTask && <p className="focus-conflict-note">当前有任务正在计时，请先结束任务计时。</p>}
                 <button className="focus-start-button" type="button" disabled={Boolean(activeTimerTask)||focusTagIds.length===0} onClick={startDirectFocus}>▶ 开始专注</button>
               </>}
             </div>
           </section>
+          {focusTagSelectOpen&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setFocusTagSelectOpen(false)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setFocusTagSelectOpen(false)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags().map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);setFocusTagSelectOpen(false)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
         </div>
       )}
 
