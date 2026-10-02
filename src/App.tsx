@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.17'
+const APP_VERSION = '1.9.18'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -4483,6 +4483,10 @@ function App() {
 
           <div className="settings-group">
             <div className="settings-group-title"><h3>鼓励语</h3></div>
+            <div className="encouragement-style-setting">
+              <span><strong>样式</strong><small>选择任务完成时鼓励卡的显示样式。</small></span>
+              <div className="setting-segment"><button type="button" className={encouragementStyle==='dark'?'active':''} onClick={()=>setEncouragementStyle('dark')}>Dark</button><button type="button" className={encouragementStyle==='light'?'active':''} onClick={()=>setEncouragementStyle('light')}>Light</button><button type="button" className={encouragementStyle==='random'?'active':''} onClick={()=>setEncouragementStyle('random')}>随机</button></div>
+            </div>
             <button className="settings-link-row" type="button" onClick={()=>setEncouragementManagerOpen(true)}>
               <span><strong>管理鼓励语</strong><small>{encouragementMessages.filter(item=>!item.deletedAt).length ? `已有 ${encouragementMessages.filter(item=>!item.deletedAt).length} 句话 · 完成任务时随机出现一句` : '写一些真正对自己有意义的话，完成任务时随机出现一句。'}</small></span><b>›</b>
             </button>
@@ -4616,7 +4620,6 @@ function App() {
             </div>
             <div className="editor-body">
               <p className="encouragement-intro">只放你自己真正喜欢的话。完成任务时会随机出现一句；两句以上时不会连续重复。</p>
-              <div className="encouragement-style-row"><span><strong>样式</strong><small>随机会在 Dark 与 Light 之间随机出现。</small></span><div className="setting-segment"><button type="button" className={encouragementStyle==='dark'?'active':''} onClick={()=>setEncouragementStyle('dark')}>Dark</button><button type="button" className={encouragementStyle==='light'?'active':''} onClick={()=>setEncouragementStyle('light')}>Light</button><button type="button" className={encouragementStyle==='random'?'active':''} onClick={()=>setEncouragementStyle('random')}>随机</button></div></div>
               <div className="encouragement-add">
                 <textarea value={encouragementDraft} onChange={e=>setEncouragementDraft(e.target.value)} placeholder="写一句鼓励自己的话" rows={3} />
                 <button type="button" disabled={!encouragementDraft.trim()} onClick={()=>{const text=encouragementDraft.trim();if(!text)return;const now=new Date().toISOString();if(encouragementEditingId){setEncouragementMessages(rows=>rows.map(item=>item.id===encouragementEditingId?{...item,text,updatedAt:now,deletedAt:undefined}:item))}else{setEncouragementMessages(rows=>[...rows,{id:crypto.randomUUID(),text,updatedAt:now}])}setEncouragementDraft('');setEncouragementEditingId(null)}}>{encouragementEditingId?'保存':'添加'}</button>

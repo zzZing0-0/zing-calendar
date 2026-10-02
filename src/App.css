@@ -4437,3 +4437,10 @@ button {
 .encouragement-reward.light{background:rgba(244,246,244,.97);color:#2f3933;border:1px solid rgba(70,80,73,.12);box-shadow:0 10px 34px rgba(46,58,50,.13)}
 .encouragement-reward.light span{color:#5f6d64;opacity:1}
 @media(max-width:620px){.encouragement-style-row{display:grid}.encouragement-style-row .setting-segment{width:100%;grid-template-columns:repeat(3,1fr)}.encouragement-reward{top:max(104px,calc(env(safe-area-inset-top) + 76px));bottom:auto}}
+
+/* v1.9.18 encouragement settings hierarchy + dedicated reward animation */
+.encouragement-style-setting{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid rgba(70,80,73,.08)}
+.encouragement-style-setting>span{display:grid;gap:3px}.encouragement-style-setting strong{font-size:14px;color:#28322c}.encouragement-style-setting small{color:rgba(70,80,73,.58);font-size:12px;line-height:1.4}
+.encouragement-reward{animation:encouragementRewardIn .2s ease-out}
+@keyframes encouragementRewardIn{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
+@media(max-width:620px){.encouragement-style-setting{display:grid;padding:13px 16px}.encouragement-style-setting .setting-segment{width:100%;grid-template-columns:repeat(3,1fr)}}
