@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, KeyboardEvent } from 'react'
 import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.22'
+const APP_VERSION = '1.9.23'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1345,6 +1345,75 @@ function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [editingOccurrenceDate, setEditingOccurrenceDate] = useState<string | null>(null)
   const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(today, defaultPriority))
+  const taskNotesRef = useRef<HTMLTextAreaElement | null>(null)
+  const insertTaskNoteChecklist = () => {
+    const textarea = taskNotesRef.current
+    const value = draft.notes
+    const start = textarea?.selectionStart ?? value.length
+    const end = textarea?.selectionEnd ?? start
+    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+    const prefix = value.slice(lineStart, start)
+    const insertion = prefix.trim().length === 0 ? '☐ ' : `\n☐ `
+    const next = value.slice(0, start) + insertion + value.slice(end)
+    const cursor = start + insertion.length
+    setDraft(current => ({ ...current, notes: next }))
+    requestAnimationFrame(() => {
+      textarea?.focus()
+      textarea?.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  const handleTaskNotesKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return
+    const textarea = event.currentTarget
+    const value = draft.notes
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    if (start !== end) return
+    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+    const line = value.slice(lineStart, start)
+    const match = line.match(/^(☐|☑)\s?(.*)$/)
+    if (!match) return
+    event.preventDefault()
+    if (!match[2].trim()) {
+      const next = value.slice(0, lineStart) + value.slice(start)
+      const cursor = lineStart
+      setDraft(current => ({ ...current, notes: next }))
+      requestAnimationFrame(() => {
+        textarea.focus()
+        textarea.setSelectionRange(cursor, cursor)
+      })
+      return
+    }
+    const insertion = `\n${match[1]} `
+    const next = value.slice(0, start) + insertion + value.slice(start)
+    const cursor = start + insertion.length
+    setDraft(current => ({ ...current, notes: next }))
+    requestAnimationFrame(() => {
+      textarea.focus()
+      textarea.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  const toggleTaskNoteChecklistLine = () => {
+    const textarea = taskNotesRef.current
+    if (!textarea) return
+    const value = draft.notes
+    const start = textarea.selectionStart
+    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+    const lineEndRaw = value.indexOf('\n', start)
+    const lineEnd = lineEndRaw === -1 ? value.length : lineEndRaw
+    const line = value.slice(lineStart, lineEnd)
+    if (!/^[☐☑]\s?/.test(line)) return
+    const nextMark = line.startsWith('☐') ? '☑' : '☐'
+    const next = value.slice(0, lineStart) + nextMark + value.slice(lineStart + 1)
+    setDraft(current => ({ ...current, notes: next }))
+    requestAnimationFrame(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start, start)
+    })
+  }
+
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
   const [dailyEnergy, setDailyEnergy] = useState<DailyEnergy[]>([])
@@ -3185,7 +3254,7 @@ function App() {
         setMobileSearchVisible(false)
       }
     }
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSearchOpen(false)
         setMobileSearchVisible(false)
@@ -5598,10 +5667,10 @@ function App() {
                 <small>自动压缩后保存 · 单张上限 1 MB</small>
               </div>
 
-              <label className="field full-field">
-                <span>备注</span>
-                <textarea rows={4} value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} placeholder="可选" />
-              </label>
+              <div className="field full-field task-notes-field">
+                <div className="task-notes-heading"><span>备注</span><div className="task-notes-tools"><button type="button" onClick={insertTaskNoteChecklist} title="插入清单项">☐ 清单</button><button type="button" onClick={toggleTaskNoteChecklistLine} title="勾选或取消当前清单项">✓ 切换</button></div></div>
+                <textarea ref={taskNotesRef} rows={4} value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} onKeyDown={handleTaskNotesKeyDown} placeholder="可选" />
+              </div>
 
               <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor('task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />{tag.name}</button>)}</div>
                 {draft.tagIds.some(isImportSourceTagId) && <div className="task-source-readonly">{draft.tagIds.filter(isImportSourceTagId).map(id => { const tag=tags.find(item=>item.id===id); return tag ? <span key={id} className="task-source-tag">#{tag.name}</span> : null })}<small>来源标签由系统管理</small></div>}
