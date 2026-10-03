@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.21'
+const APP_VERSION = '1.9.22'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1261,6 +1261,7 @@ function App() {
   const [mobileMonths, setMobileMonths] = useState(() => Array.from({length:7}, (_,index) => new Date(today.getFullYear(), today.getMonth() + index - 3, 1)))
   const continuousCalendarRef = useRef<HTMLDivElement | null>(null)
   const pendingCalendarScrollRef = useRef<string | null>(isMobileCalendar ? `date:${toDateKey(today)}` : null)
+  const [mobileCalendarPositionReady, setMobileCalendarPositionReady] = useState(() => !isMobileCalendar)
   const pendingPrependAnchorRef = useRef<{key:string; top:number} | null>(null)
   const dayDetailOriginScrollRef = useRef<number | null>(null)
   const [dayDetailClosing, setDayDetailClosing] = useState(false)
@@ -1516,6 +1517,7 @@ function App() {
           const delta = rect.top + rect.height / 2 - usableCenter
           if (Math.abs(delta) > 1) window.scrollBy({top:delta, behavior:'auto'})
           pendingCalendarScrollRef.current = null
+          setMobileCalendarPositionReady(true)
           return
         }
       } else {
@@ -1523,6 +1525,7 @@ function App() {
         if (target) {
           target.scrollIntoView({block:'start', behavior:'auto'})
           pendingCalendarScrollRef.current = null
+          setMobileCalendarPositionReady(true)
           return
         }
       }
@@ -1538,7 +1541,7 @@ function App() {
   }, [visibleMonth, isMobileCalendar, mainView, continuousMonths])
 
   useEffect(() => {
-    if (!isMobileCalendar || mainView !== 'calendar' || selectedDate) return
+    if (!isMobileCalendar || mainView !== 'calendar' || selectedDate || !mobileCalendarPositionReady) return
     const nodes = Array.from(continuousCalendarRef.current?.querySelectorAll<HTMLElement>('.continuous-week-section') ?? [])
     if (!nodes.length) return
     const observer = new IntersectionObserver(entries => {
@@ -1573,7 +1576,7 @@ function App() {
     }, {root:null, rootMargin:'-150px 0px -55% 0px', threshold:[0,.01,.2]})
     nodes.forEach(node => observer.observe(node))
     return () => observer.disconnect()
-  }, [continuousMonths, isMobileCalendar, mainView, selectedDate])
+  }, [continuousMonths, isMobileCalendar, mainView, selectedDate, mobileCalendarPositionReady])
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
   // It can still be browsed independently afterwards with its own month arrows.
@@ -4148,6 +4151,23 @@ function App() {
   }
 
   const switchMainView = (view: 'calendar' | 'statistics' | 'anniversaries' | 'settings') => {
+    if (view === 'calendar' && isMobileCalendar) {
+      // A calendar entry is a fresh navigation to Today. Reset the finite month
+      // window before mounting the page so the IntersectionObserver cannot inherit
+      // an old off-screen window and prepend progressively older months.
+      const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+      pendingPrependAnchorRef.current = null
+      pendingCalendarScrollRef.current = `date:${toDateKey(today)}`
+      setMobileCalendarPositionReady(false)
+      setVisibleMonth(currentMonth)
+      setMobileActiveMonth(currentMonth)
+      setMobileMonths(Array.from({length:7}, (_,index) => new Date(today.getFullYear(), today.getMonth() + index - 3, 1)))
+    } else if (view !== 'calendar') {
+      // Pending calendar navigation must never survive on another top-level page.
+      pendingCalendarScrollRef.current = null
+      pendingPrependAnchorRef.current = null
+      setMobileCalendarPositionReady(false)
+    }
     setMainView(view)
     // Bottom navigation changes the top-level page. Do not reuse the document
     // scroll position from the previous page; calendar-internal restoration is separate.
