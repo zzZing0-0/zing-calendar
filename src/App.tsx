@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.24'
+const APP_VERSION = '1.9.25'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1046,6 +1046,7 @@ type SyncedUserSettings = {
   wordCloudIgnoredRemovedAt?: Record<string,string>
   encouragementMessages?: EncouragementMessage[]
   encouragementStyle?: EncouragementStyle
+  maxFocusHours?: number
 }
 
 type BackupPreview = {
@@ -1059,7 +1060,7 @@ type BackupPreview = {
   tags: Tag[]
   anniversaries: Anniversary[]
   focusSessions: FocusSession[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[]; encouragementMessages?:EncouragementMessage[]; encouragementStyle?:EncouragementStyle }
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[]; encouragementMessages?:EncouragementMessage[]; encouragementStyle?:EncouragementStyle; maxFocusHours?:number }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
 function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
@@ -1275,6 +1276,7 @@ function App() {
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
   const [excludeDefaultFocusStats, setExcludeDefaultFocusStats] = useState(() => localStorage.getItem('zing:excludeDefaultFocusStats') === 'true')
+  const [maxFocusHours, setMaxFocusHours] = useState(() => { const value=Number.parseInt(localStorage.getItem('zing:maxFocusHours') || '2',10); return Math.min(12,Math.max(2,Number.isFinite(value)?value:2)) })
   const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
@@ -1987,6 +1989,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
   useEffect(() => { localStorage.setItem('zing:showAllRecurringTasks', String(showAllRecurringTasks)) }, [showAllRecurringTasks])
   useEffect(() => { localStorage.setItem('zing:excludeDefaultFocusStats', String(excludeDefaultFocusStats)) }, [excludeDefaultFocusStats])
+  useEffect(() => { localStorage.setItem('zing:maxFocusHours', String(maxFocusHours)) }, [maxFocusHours])
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
@@ -2002,7 +2005,7 @@ function App() {
       weekStart:weekStartsMonday?'monday':'sunday', dateFormat, defaultPriority, showEndedTasks,
       showAllRecurringTasks, excludeDefaultFocusStats, wordCloudIgnored:[...wordSet],
       wordCloudIgnoredAddedAt:{...clocks.added}, wordCloudIgnoredRemovedAt:{...clocks.removed},
-      encouragementMessages, encouragementStyle,
+      encouragementMessages, encouragementStyle, maxFocusHours,
     }
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -2031,7 +2034,7 @@ function App() {
     if (beforeComparable && JSON.stringify(beforeComparable) === JSON.stringify(comparable)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -2456,7 +2459,8 @@ function App() {
 
 
   const activeFocusSession = useMemo(() => focusSessions.find(session=>!session.endedAt) ?? null, [focusSessions])
-  const activeFocusElapsed = activeFocusSession ? Math.max(0,Math.floor((timerNow-new Date(activeFocusSession.startedAt).getTime())/1000)) : 0
+  const maxFocusSeconds = maxFocusHours * 3600
+  const activeFocusElapsed = activeFocusSession ? Math.min(maxFocusSeconds,Math.max(0,Math.floor((timerNow-new Date(activeFocusSession.startedAt).getTime())/1000))) : 0
   const activeFocusRemaining = activeFocusSession?.mode==='countdown' ? Math.max(0,(activeFocusSession.plannedSeconds??0)-activeFocusElapsed) : 0
   const formatClock = (seconds:number) => {
     const safe=Math.max(0,Math.floor(seconds)), h=Math.floor(safe/3600), m=Math.floor((safe%3600)/60), sec=safe%60
@@ -2471,8 +2475,10 @@ function App() {
   }
   const stopDirectFocus = (automatic=false) => {
     if (!activeFocusSession) return
-    const endMs=automatic && activeFocusSession.mode==='countdown' && activeFocusSession.plannedSeconds
-      ? new Date(activeFocusSession.startedAt).getTime()+activeFocusSession.plannedSeconds*1000 : Date.now()
+    const startMs=new Date(activeFocusSession.startedAt).getTime()
+    const capMs=startMs+maxFocusSeconds*1000
+    const countdownDue=activeFocusSession.mode==='countdown'&&activeFocusSession.plannedSeconds ? startMs+activeFocusSession.plannedSeconds*1000 : Number.POSITIVE_INFINITY
+    const endMs=automatic ? Math.min(capMs,countdownDue) : Math.min(Date.now(),capMs)
     const endedAt=new Date(endMs).toISOString()
     const durationSeconds=Math.max(0,Math.round((endMs-new Date(activeFocusSession.startedAt).getTime())/1000))
     setFocusSessions(current=>current.map(session=>session.id===activeFocusSession.id?{...session,endedAt,durationSeconds,updatedAt:endedAt}:session))
@@ -2500,10 +2506,12 @@ function App() {
   }, [activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt, activeFocusSession?.id])
 
   useEffect(() => {
-    if (!activeFocusSession || activeFocusSession.mode!=='countdown' || !activeFocusSession.plannedSeconds) return
-    const due=new Date(activeFocusSession.startedAt).getTime()+activeFocusSession.plannedSeconds*1000
-    if(timerNow>=due) stopDirectFocus(true)
-  },[timerNow,activeFocusSession?.id,activeFocusSession?.plannedSeconds])
+    if (!activeFocusSession) return
+    const startMs=new Date(activeFocusSession.startedAt).getTime()
+    const capDue=startMs+maxFocusSeconds*1000
+    const countdownDue=activeFocusSession.mode==='countdown'&&activeFocusSession.plannedSeconds ? startMs+activeFocusSession.plannedSeconds*1000 : Number.POSITIVE_INFINITY
+    if(timerNow>=Math.min(capDue,countdownDue)) stopDirectFocus(true)
+  },[timerNow,activeFocusSession?.id,activeFocusSession?.plannedSeconds,maxFocusSeconds])
 
   useEffect(() => {
     if (!tasksHydrated || !activeTimerTask) return
@@ -2555,9 +2563,10 @@ function App() {
     setTimerNow(Date.now())
   }
 
-  const stopTaskTimer = (task: Task, complete = false) => {
+  const stopTaskTimer = (task: Task, complete = false, forcedEndMs?: number) => {
     if (!task.activeTimerStartedAt) return
-    const endedAt = new Date()
+    const startedMs = new Date(task.activeTimerStartedAt).getTime()
+    const endedAt = new Date(Math.min(forcedEndMs ?? Date.now(), startedMs + maxFocusSeconds * 1000))
     const startedAt = new Date(task.activeTimerStartedAt)
     const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
     updateTimedTask(task, current => {
@@ -2575,9 +2584,16 @@ function App() {
     })
   }
 
+  useEffect(() => {
+    if (!activeTimerTask?.activeTimerStartedAt) return
+    const startMs=new Date(activeTimerTask.activeTimerStartedAt).getTime()
+    const capMs=startMs+maxFocusSeconds*1000
+    if(timerNow>=capMs) stopTaskTimer(activeTimerTask,false,capMs)
+  },[timerNow,activeTimerTask?.id,activeTimerTask?.activeTimerStartedAt,maxFocusSeconds])
+
   const formatRunningTimer = (task: Task) => {
     if (!task.activeTimerStartedAt) return '00:00:00'
-    const seconds = Math.max(0, Math.floor((timerNow - new Date(task.activeTimerStartedAt).getTime()) / 1000))
+    const seconds = Math.min(maxFocusSeconds, Math.max(0, Math.floor((timerNow - new Date(task.activeTimerStartedAt).getTime()) / 1000)))
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
     const remainder = seconds % 60
@@ -3995,7 +4011,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -4088,6 +4104,7 @@ function App() {
       if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
       if (Array.isArray(s.encouragementMessages)) localStorage.setItem('zing:encouragementMessages',JSON.stringify(s.encouragementMessages))
       if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') localStorage.setItem('zing:encouragementStyle',s.encouragementStyle)
+      if (typeof s.maxFocusHours==='number') localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,Math.round(s.maxFocusHours)))))
       // Restore is device-local by design. Persist restored settings locally too, but do
       // not create sync changes/tombstones that could roll the cloud back.
       const restoredAt=new Date().toISOString()
@@ -4100,6 +4117,7 @@ function App() {
         wordCloudIgnored:restoredWords,wordCloudIgnoredAddedAt:Object.fromEntries(restoredWords.map(word=>[word.trim().toLowerCase(),restoredAt])),wordCloudIgnoredRemovedAt:{},
         encouragementMessages:Array.isArray(s.encouragementMessages)?s.encouragementMessages:encouragementMessages,
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
+        maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
@@ -4118,6 +4136,7 @@ function App() {
       if (Array.isArray(s.wordCloudIgnored)) setWordCloudIgnored(s.wordCloudIgnored)
       if (Array.isArray(s.encouragementMessages)) setEncouragementMessages(s.encouragementMessages)
       if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') setEncouragementStyle(s.encouragementStyle)
+      if (typeof s.maxFocusHours==='number') setMaxFocusHours(Math.min(12,Math.max(2,Math.round(s.maxFocusHours))))
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
     } catch(error) {
@@ -4209,7 +4228,8 @@ function App() {
         localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(syncedSettings.wordCloudIgnored ?? []))
         localStorage.setItem('zing:encouragementMessages',JSON.stringify(syncedSettings.encouragementMessages ?? []))
         localStorage.setItem('zing:encouragementStyle',syncedSettings.encouragementStyle ?? 'random')
-        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random')
+        localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))))
+        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random'); setMaxFocusHours(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2)))
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -4651,6 +4671,14 @@ function App() {
             <div className="settings-group-title"><h3>标签</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务、记录与专注共用的标签。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setArchivedTagsOpen(true)}><span><strong>已归档</strong><small>{archivedTags.length ? `${archivedTags.length} 个已归档标签` : '暂无已归档标签'}</small></span><b>›</b></button>
+          </div>
+
+          <div className="settings-group">
+            <div className="settings-group-title"><h3>专注</h3></div>
+            <div className="encouragement-style-setting">
+              <span><strong>最长专注时长</strong><small>达到上限后自动结束并保存，避免忘记停止计时。</small></span>
+              <label className="max-focus-hours-control"><input type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /><b>小时</b></label>
+            </div>
           </div>
 
           <div className="settings-group">
