@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.38'
+const APP_VERSION = '1.9.39'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1315,6 +1315,7 @@ function App() {
   const [mobileCalendarPositionReady, setMobileCalendarPositionReady] = useState(() => !isMobileCalendar)
   const pendingPrependAnchorRef = useRef<{key:string; top:number} | null>(null)
   const dayDetailOriginScrollRef = useRef<number | null>(null)
+  const dayDetailCloseTimerRef = useRef<number | null>(null)
   const openDayRef = useRef<(date: Date) => void>(() => {})
   const [dayDetailClosing, setDayDetailClosing] = useState(false)
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
@@ -1716,6 +1717,10 @@ function App() {
     setMoodMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1))
   }, [selectedDate])
 
+  useEffect(() => () => {
+    if (dayDetailCloseTimerRef.current !== null) window.clearTimeout(dayDetailCloseTimerRef.current)
+  }, [])
+
   useEffect(() => {
     let active = true
     loadTasks<Task>().then(storedTasks => {
@@ -1880,7 +1885,7 @@ function App() {
       .sort((a,b)=>b.startDate.localeCompare(a.startDate))[0]
     if(activePeriod){
       const goToPrevious=window.confirm(`上一次月经（${activePeriod.startDate} 开始）还没有结束。\n\n请先回到上一次月经记录并标记结束，再开始新的月经。\n\n点击“确定”查看上一次月经。`)
-      if(goToPrevious){ setSelectedDate(fromDateKey(activePeriod.startDate)); setDayDetailOpen(true) }
+      if(goToPrevious){ cancelDayDetailCloseTimer(); setDayDetailClosing(false); setSelectedDate(fromDateKey(activePeriod.startDate)); setDayDetailOpen(true) }
       return
     }
     const now=new Date().toISOString()
@@ -2527,17 +2532,33 @@ function App() {
       pendingCalendarScrollRef.current=`date:${toDateKey(now)}`
       setVisibleMonth(month); setMobileActiveMonth(month)
       setSelectedDate(now)
-      setDayDetailOpen(false)
+      closeDayDetailImmediately()
       return
     }
     setVisibleMonth(month)
     setSelectedDate(now)
   }
 
+  const cancelDayDetailCloseTimer = () => {
+    if (dayDetailCloseTimerRef.current !== null) {
+      window.clearTimeout(dayDetailCloseTimerRef.current)
+      dayDetailCloseTimerRef.current = null
+    }
+  }
+
+  const closeDayDetailImmediately = () => {
+    cancelDayDetailCloseTimer()
+    setDayDetailClosing(false)
+    setDayDetailOpen(false)
+    dayDetailOriginScrollRef.current=null
+  }
+
   const closeDayDetail = () => {
     if (!dayDetailOpen || dayDetailClosing) return
+    cancelDayDetailCloseTimer()
     setDayDetailClosing(true)
-    window.setTimeout(() => {
+    dayDetailCloseTimerRef.current=window.setTimeout(() => {
+      dayDetailCloseTimerRef.current=null
       setDayDetailOpen(false)
       setDayDetailClosing(false)
       dayDetailOriginScrollRef.current=null
@@ -2547,19 +2568,14 @@ function App() {
   const openDay = (date: Date) => {
     const isMobile = window.matchMedia('(max-width: 760px)').matches
 
-    // While Day Detail is open, another day changes the single selected date in place.
-    if (isMobile && dayDetailOpen) {
-      if (dayDetailClosing) return
-      if (selectedDate && sameDay(selectedDate,date)) {
-        closeDayDetail()
-        return
-      }
-      setSelectedDate(date)
-      return
-    }
+    // A date tap always means select/open. Closing is handled only by the
+    // drawer backdrop/close button. This prevents a persistent selected date
+    // from ever being interpreted as a "toggle closed" command.
+    cancelDayDetailCloseTimer()
+    if (dayDetailClosing) setDayDetailClosing(false)
 
     if (isMobile) {
-      dayDetailOriginScrollRef.current=window.scrollY
+      if (!dayDetailOpen) dayDetailOriginScrollRef.current=window.scrollY
       setSelectedDate(date)
       setDayDetailOpen(true)
 
@@ -2583,9 +2599,6 @@ function App() {
 
     setSelectedDate(date)
     setDayDetailOpen(true)
-    if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
-      setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
-    }
   }
 
   openDayRef.current = openDay
@@ -3446,7 +3459,7 @@ function App() {
       setMobileMonths(Array.from({length:7},(_,index)=>new Date(date.getFullYear(),date.getMonth()+index-3,1)))
       dayDetailOriginScrollRef.current=null
     }
-    if(openDetail) setDayDetailOpen(true)
+    if(openDetail){ cancelDayDetailCloseTimer(); setDayDetailClosing(false); setDayDetailOpen(true) }
   }
 
   const openTaskAtItsDay = (task:Task) => {
@@ -4133,7 +4146,7 @@ function App() {
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
       setLocalWriteRevision(value=>value+1)
-      setSelectedDate(today); setDayDetailOpen(false); setSearchQuery('')
+      setSelectedDate(today); closeDayDetailImmediately(); setSearchQuery('')
       setResetDataConfirm(false)
       setStorageStats(await getStorageStats())
       setBackupMessage('数据已清空 · 删除将在下次 GitHub 同步传播 · 应用设置已保留')
@@ -5488,6 +5501,8 @@ function App() {
                         if (key > toDateKey(today)) return
                         const nextDate = new Date(date)
                         const nextMonth = new Date(date.getFullYear(), date.getMonth(), 1)
+                        cancelDayDetailCloseTimer()
+                        setDayDetailClosing(false)
                         setSelectedDate(nextDate)
                         setDayDetailOpen(true)
                         setMoodMonth(nextMonth)
@@ -5589,7 +5604,7 @@ function App() {
                 return <div className="focus-history-item" key={record.id}>
                   <div className="focus-history-main"><strong>{record.title}</strong><div className="focus-history-tags">{record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}<small>{formatFocusDuration(record.seconds)}</small></div></div>
                   {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} /> 分钟</label><div className="focus-history-edit-tags">{tagsFor('task').map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
-                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);setDayDetailOpen(false);setViewingTask(record.task)}}}>更改</button>
+                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}}}>更改</button>
                     <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session)setFocusSessions(cur=>cur.filter(item=>item.id!==record.session!.id));else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
                   </div>}
                 </div>})}</div>}
