@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.31'
+const APP_VERSION = '1.9.32'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -5309,6 +5309,7 @@ function App() {
                   <h2>{formatUiDate(selectedDate)}</h2>
                   <button className="date-action-button" type="button" onClick={() => openAnniversaryEditor()} aria-label="添加纪念日" title="添加纪念日">＋</button>
                 </div>
+<div className="drawer-date-meta-row">
                 <span className="drawer-lunar-date">
                   农历 {lunarFullLabel(selectedDate)}
                   {(()=>{
@@ -5318,6 +5319,28 @@ function App() {
                       : null
                   })()}
                 </span>
+                {!selectedIsFuture && <div className="journal-environment-strip drawer-environment-strip">
+                  <button type="button" className={`journal-location-choice${selectedEnvironment?.locationCity?' selected':''}`} onClick={handleEnvironmentLocation}>
+                    {selectedEnvironment?.locationCity ? `📍 ${selectedEnvironment.locationCity}` : '地点'}
+                  </button>
+                  <span className="journal-environment-separator" aria-hidden="true">｜</span>
+                  <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.weatherOptionId?' selected':''}`}>
+                    <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.weatherOptionId ? (()=>{const item=weatherOptions.find(row=>row.id===selectedEnvironment.weatherOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'天气'})() : '天气'}</span>
+                    <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
+                      <option value="">天气</option>
+                      {weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                    </select>
+                  </label>
+                  <span className="journal-environment-separator" aria-hidden="true">｜</span>
+                  <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.thermalOptionId?' selected':''}`}>
+                    <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.thermalOptionId ? (()=>{const item=thermalOptions.find(row=>row.id===selectedEnvironment.thermalOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'体感'})() : '体感'}</span>
+                    <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
+                      <option value="">体感</option>
+                      {thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                    </select>
+                  </label>
+                </div>}
+              </div>
               </div>
               <button className="close-button" type="button" onClick={closeDayDetail} aria-label="关闭">×</button>
             </div>
@@ -5466,27 +5489,6 @@ function App() {
               
                 {selectedJournalEntries.length > 0 && <span>{selectedJournalEntries.length}</span>}
                 {selectedJournalEntries.length > 0 && <strong className={`impact-total ${selectedImpactTotal > 0 ? 'positive' : selectedImpactTotal < 0 ? 'negative' : ''}`}>事件合计 {selectedImpactTotal > 0 ? '+' : ''}{selectedImpactTotal}</strong>}
-              </div>
-              <div className="journal-environment-strip">
-                <button type="button" className={`journal-location-choice${selectedEnvironment?.locationCity?' selected':''}`} onClick={handleEnvironmentLocation}>
-                  {selectedEnvironment?.locationCity ? `📍 ${selectedEnvironment.locationCity}` : '地点'}
-                </button>
-                <span className="journal-environment-separator" aria-hidden="true">｜</span>
-                <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.weatherOptionId?' selected':''}`}>
-                  <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.weatherOptionId ? (()=>{const item=weatherOptions.find(row=>row.id===selectedEnvironment.weatherOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'天气'})() : '天气'}</span>
-                  <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
-                    <option value="">天气</option>
-                    {weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
-                  </select>
-                </label>
-                <span className="journal-environment-separator" aria-hidden="true">｜</span>
-                <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.thermalOptionId?' selected':''}`}>
-                  <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.thermalOptionId ? (()=>{const item=thermalOptions.find(row=>row.id===selectedEnvironment.thermalOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'体感'})() : '体感'}</span>
-                  <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
-                    <option value="">体感</option>
-                    {thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
-                  </select>
-                </label>
               </div>
               {selectedJournalEntries.length === 0 ? <p className="empty-state">暂无记录</p> : (
                 <div className="journal-list">

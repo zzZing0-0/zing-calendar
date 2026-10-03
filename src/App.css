@@ -4654,3 +4654,77 @@ button {
 .journal-section > .journal-environment-strip .journal-environment-text-select{position:relative;display:inline-flex;align-items:center;width:max-content;min-width:0;flex:0 0 auto;padding:0 4px;font:inherit;color:inherit}
 .journal-section > .journal-environment-strip .journal-environment-visible{display:inline-block;width:max-content;white-space:nowrap;font:inherit;color:inherit}
 .journal-section > .journal-environment-strip .journal-environment-text-select > select{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;cursor:pointer;appearance:auto;-webkit-appearance:menulist;font:inherit}
+
+/* v1.9.32 — daily environment is date-level metadata in the Day Detail header */
+.drawer-header > div:first-child{min-width:0;flex:1 1 auto}
+.drawer-date-meta-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-width:0;
+  margin-top:3px;
+}
+.drawer-date-meta-row .drawer-lunar-date{margin-top:0;flex:0 1 auto;white-space:nowrap}
+.drawer-environment-strip{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:2px;
+  flex:0 1 auto;
+  min-width:0;
+  margin:0;
+  flex-wrap:nowrap;
+  font-family:inherit;
+  font-size:11px;
+  font-weight:500;
+  line-height:1.2;
+}
+.drawer-environment-strip .journal-location-choice,
+.drawer-environment-strip .journal-environment-choice,
+.drawer-environment-strip .journal-environment-choice select,
+.drawer-environment-strip .journal-environment-separator{
+  font-family:inherit;
+  font-size:inherit;
+  font-weight:inherit;
+  line-height:inherit;
+}
+.drawer-environment-strip .journal-location-choice{
+  padding:0 3px;
+  border:0;
+  background:transparent;
+  white-space:nowrap;
+  max-width:110px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.drawer-environment-strip .journal-environment-choice{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  min-width:0;
+  flex:0 0 auto;
+  padding:0 3px;
+  color:inherit;
+}
+.drawer-environment-strip .journal-environment-visible{display:inline-block;width:max-content;white-space:nowrap;font:inherit;color:inherit}
+.drawer-environment-strip .journal-environment-choice > select{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  margin:0;
+  padding:0;
+  border:0;
+  opacity:0;
+  cursor:pointer;
+}
+.drawer-environment-strip .journal-environment-separator{flex:0 0 auto}
+@media(max-width:700px){
+  .drawer-date-meta-row{gap:6px}
+  .drawer-environment-strip{gap:1px;font-size:10px}
+  .drawer-environment-strip .journal-location-choice{max-width:78px;padding-inline:2px}
+  .drawer-environment-strip .journal-environment-choice{padding-inline:2px}
+  .drawer-environment-strip .journal-environment-separator{font-size:9px}
+}
