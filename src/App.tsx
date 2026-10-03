@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.19'
+const APP_VERSION = '1.9.20'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1260,7 +1260,7 @@ function App() {
   const [mobileActiveMonth, setMobileActiveMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [mobileMonths, setMobileMonths] = useState(() => Array.from({length:7}, (_,index) => new Date(today.getFullYear(), today.getMonth() + index - 3, 1)))
   const continuousCalendarRef = useRef<HTMLDivElement | null>(null)
-  const pendingCalendarScrollRef = useRef<string | null>(null)
+  const pendingCalendarScrollRef = useRef<string | null>(isMobileCalendar ? `date:${toDateKey(today)}` : null)
   const pendingPrependAnchorRef = useRef<{key:string; top:number} | null>(null)
   const dayDetailOriginScrollRef = useRef<number | null>(null)
   const [dayDetailClosing, setDayDetailClosing] = useState(false)
@@ -2164,16 +2164,22 @@ function App() {
 
   // v1.2.0: mobile continuous calendar is a single stream of unique weeks.
   // A cross-month week exists exactly once; month labels are markers, not separate grids.
-  const renderCalendarWeek = (weekDays: CalendarDay[]) => {
+  const renderCalendarWeek = (weekDays: CalendarDay[], preparedTasks?: Task[], preparedAnniversaries?: Map<string,{anniversary:Anniversary;occurrence:Date}[]>) => {
     const rangeStart=toDateKey(weekDays[0].date), rangeEnd=toDateKey(weekDays[6].date)
-    const displayTasks=(()=>{const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
+    // The continuous mobile calendar prepares recurring tasks once for its whole
+    // loaded window. A single-week fallback is retained for non-prepared callers.
+    const displayTasks=preparedTasks
+      ? preparedTasks.filter(task=>task.date<=rangeEnd&&taskEndDate(task)>=rangeStart)
+      : (()=>{const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
     const tasksByDate=new Map<string,Task[]>()
     displayTasks.filter(task=>!isMultiDayTask(task)).forEach(task=>{const current=tasksByDate.get(task.date)??[];current.push(task);current.sort(taskSort);tasksByDate.set(task.date,current)})
     const segments=buildMultiDaySegments(displayTasks,weekDays)
     const occupied=weekDays.map((_,column)=>new Set(segments.filter(segment=>segment.week===0&&column>=segment.startColumn&&column<segment.startColumn+segment.span).map(segment=>segment.lane).filter(lane=>lane>=0&&lane<5)))
-    const anniversaryMap=new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
-    const years=Array.from(new Set(weekDays.map(day=>day.date.getFullYear())))
-    activeAnniversaries.forEach(anniversary=>years.forEach(year=>{const occurrence=anniversaryOccurrence(anniversary,year);if(!occurrence)return;const key=toDateKey(occurrence);if(key<rangeStart||key>rangeEnd)return;const rows=anniversaryMap.get(key)??[];rows.push({anniversary,occurrence});anniversaryMap.set(key,rows)}))
+    const anniversaryMap=preparedAnniversaries ?? new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
+    if (!preparedAnniversaries) {
+      const years=Array.from(new Set(weekDays.map(day=>day.date.getFullYear())))
+      activeAnniversaries.forEach(anniversary=>years.forEach(year=>{const occurrence=anniversaryOccurrence(anniversary,year);if(!occurrence)return;const key=toDateKey(occurrence);if(key<rangeStart||key>rangeEnd)return;const rows=anniversaryMap.get(key)??[];rows.push({anniversary,occurrence});anniversaryMap.set(key,rows)}))
+    }
     return <div className="calendar-grid continuous-week-grid">
       {weekDays.map(({date},dayIndex)=>{
         const isToday=sameDay(date,today), key=toDateKey(date), dayTasks=tasksByDate.get(key)??[], occupiedLanes=occupied[dayIndex]
@@ -2228,9 +2234,18 @@ function App() {
     if (!selectedDate || dayDetailClosing) return
     const origin = dayDetailOriginScrollRef.current
     setDayDetailClosing(true)
-    if (isMobileCalendar && origin !== null) window.scrollTo({top:origin,behavior:'auto'})
     window.setTimeout(() => {
-      setSelectedDate(null); setDayDetailClosing(false); dayDetailOriginScrollRef.current=null
+      // Finish the sheet transition before restoring the document position. Doing
+      // both at once forces Safari to animate a transformed overlay while the
+      // calendar underneath jumps, which is the visible hitch on mobile.
+      setSelectedDate(null)
+      setDayDetailClosing(false)
+      dayDetailOriginScrollRef.current=null
+      if (isMobileCalendar && origin !== null) {
+        window.requestAnimationFrame(() => {
+          if (Math.abs(window.scrollY-origin) > 1) window.scrollTo({top:origin,behavior:'auto'})
+        })
+      }
     }, 260)
   }
 
@@ -2285,6 +2300,21 @@ function App() {
     const firstGrid=buildMonth(firstMonth.getFullYear(),firstMonth.getMonth(),weekStartsMonday)
     const lastGrid=buildMonth(lastMonth.getFullYear(),lastMonth.getMonth(),weekStartsMonday)
     const start=new Date(firstGrid[0].date), end=new Date(lastGrid[lastGrid.length-1].date)
+    const rangeStart=toDateKey(start), rangeEnd=toDateKey(end)
+    // Expand recurrence once for the entire loaded mobile window instead of once
+    // per visible week. This is the main hot path when the continuous calendar
+    // grows in either direction.
+    const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks)
+    const preparedTasks=showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')
+    const preparedAnniversaries=new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
+    const startYear=start.getFullYear(), endYear=end.getFullYear()
+    activeAnniversaries.forEach(anniversary=>{
+      for(let year=startYear;year<=endYear;year+=1){
+        const occurrence=anniversaryOccurrence(anniversary,year); if(!occurrence) continue
+        const key=toDateKey(occurrence); if(key<rangeStart||key>rangeEnd) continue
+        const rows=preparedAnniversaries.get(key)??[]; rows.push({anniversary,occurrence}); preparedAnniversaries.set(key,rows)
+      }
+    })
     const weeks:{days:CalendarDay[];key:string;activeMonth:Date}[]=[]
     for(let cursor=new Date(start);cursor<=end;cursor.setDate(cursor.getDate()+7)){
       const days=Array.from({length:7},(_,index)=>{const date=new Date(cursor);date.setDate(cursor.getDate()+index);return {date,inCurrentMonth:true}})
@@ -2295,7 +2325,7 @@ function App() {
     return weeks.map(week=>{
       const activeKey=`${week.activeMonth.getFullYear()}-${week.activeMonth.getMonth()}`
       return <section className="continuous-week-section" key={week.key} data-week-key={week.key} data-year={week.activeMonth.getFullYear()} data-month={week.activeMonth.getMonth()}>
-        <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days)}</div>
+        <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days,preparedTasks,preparedAnniversaries)}</div>
       </section>
     })
   }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar])
