@@ -1315,6 +1315,7 @@ function App() {
   const [mobileCalendarPositionReady, setMobileCalendarPositionReady] = useState(() => !isMobileCalendar)
   const pendingPrependAnchorRef = useRef<{key:string; top:number} | null>(null)
   const dayDetailOriginScrollRef = useRef<number | null>(null)
+  const openDayRef = useRef<(date: Date) => void>(() => {})
   const [dayDetailClosing, setDayDetailClosing] = useState(false)
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
@@ -1638,11 +1639,12 @@ function App() {
         const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${dateKey}"]`)
         const sticky = document.querySelector<HTMLElement>('.calendar-sticky-header')
         const bottomNav = document.querySelector<HTMLElement>('.bottom-nav')
-        if (target && sticky && bottomNav) {
+        const dayDrawer = document.querySelector<HTMLElement>('.day-drawer')
+        if (target && sticky) {
           const rect = target.getBoundingClientRect()
           const stickyBottom = sticky.getBoundingClientRect().bottom
-          const bottomNavTop = bottomNav.getBoundingClientRect().top
-          const usableCenter = stickyBottom + Math.max(0, bottomNavTop - stickyBottom) / 2
+          const lowerBoundary = dayDrawer?.getBoundingClientRect().top ?? bottomNav?.getBoundingClientRect().top ?? window.innerHeight
+          const usableCenter = stickyBottom + Math.max(0, lowerBoundary - stickyBottom) / 2
           const delta = rect.top + rect.height / 2 - usableCenter
           if (Math.abs(delta) > 1) window.scrollBy({top:delta, behavior:'auto'})
           pendingCalendarScrollRef.current = null
@@ -2457,7 +2459,7 @@ function App() {
         </button>
       })}
       <div className="multi-day-layer">{monthSegments.map(segment=><button key={`${segment.task.id}-${segment.week}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:segment.week+1,'--lane-offset':`${segment.lane*26}px`} as CSSProperties} onClick={event=>{
-        event.stopPropagation(); const rect=event.currentTarget.getBoundingClientRect(); const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left)); const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span))); const dayIndex=segment.week*7+segment.startColumn+columnOffset; const clickedDay=monthDays[dayIndex]?.date; if(clickedDay)openDay(clickedDay)
+        event.stopPropagation(); const rect=event.currentTarget.getBoundingClientRect(); const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left)); const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span))); const dayIndex=segment.week*7+segment.startColumn+columnOffset; const clickedDay=monthDays[dayIndex]?.date; if(clickedDay)openDayRef.current(clickedDay)
       }} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
     </div>
   }
@@ -2494,7 +2496,7 @@ function App() {
           {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
         </button>
       })}
-      <div className="multi-day-layer">{segments.filter(segment=>segment.week===0).map(segment=><button key={`${segment.task.id}-${rangeStart}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:1,'--lane-offset':`${segment.lane*19}px`} as CSSProperties} onClick={event=>{event.stopPropagation();const rect=event.currentTarget.getBoundingClientRect();const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left));const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span)));const clickedDay=weekDays[segment.startColumn+columnOffset]?.date;if(clickedDay)openDay(clickedDay)}} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
+      <div className="multi-day-layer">{segments.filter(segment=>segment.week===0).map(segment=><button key={`${segment.task.id}-${rangeStart}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:1,'--lane-offset':`${segment.lane*19}px`} as CSSProperties} onClick={event=>{event.stopPropagation();const rect=event.currentTarget.getBoundingClientRect();const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left));const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span)));const clickedDay=weekDays[segment.startColumn+columnOffset]?.date;if(clickedDay)openDayRef.current(clickedDay)}} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
     </div>
   }
 
@@ -2586,6 +2588,8 @@ function App() {
     }
   }
 
+  openDayRef.current = openDay
+
 
   // v1.2.0: derive one unique week stream from the loaded month window.
   const continuousCalendarContent = useMemo(() => {
@@ -2622,7 +2626,7 @@ function App() {
         <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days,preparedTasks,preparedAnniversaries)}</div>
       </section>
     })
-  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar,selectedDate,dayDetailOpen,dayDetailClosing])
+  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar,selectedDate])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
