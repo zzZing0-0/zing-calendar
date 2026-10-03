@@ -4523,3 +4523,19 @@ button {
 .environment-option-row .environment-option-name.editable{font-weight:650}
 .environment-option-row .environment-option-actions.compact{margin-left:auto}
 .environment-option-row.builtin .readonly{cursor:default}
+
+/* v1.9.29 — daily context sits below the Record heading */
+.journal-section>.journal-environment-strip{margin-top:10px;margin-bottom:14px}
+.journal-location-choice{appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:999px;padding:7px 12px;font:inherit;font-size:13px;line-height:1.2;cursor:pointer}
+.journal-location-choice.selected{font-weight:650}
+@media(max-width:700px){.journal-section>.journal-environment-strip{margin-top:8px;margin-bottom:12px}.journal-location-choice{padding:7px 10px;font-size:12px}}
+
+/* v1.9.29 build fix — daily context must remain visually subordinate to the Record heading */
+.journal-location-choice,
+.journal-environment-choice select{font-size:12px;line-height:1.15;font-weight:500}
+.journal-location-choice.selected,
+.journal-environment-choice.selected select{font-weight:600}
+@media(max-width:700px){
+  .journal-location-choice,
+  .journal-environment-choice select{font-size:11px}
+}

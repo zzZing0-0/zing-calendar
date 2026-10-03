@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.28'
+const APP_VERSION = '1.9.29'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -85,6 +85,8 @@ type DailyEnvironment = {
   date: string
   weatherOptionId?: string
   thermalOptionId?: string
+  locationCity?: string
+  locationCountry?: string
   updatedAt: string
 }
 type MenstrualDayLog = {
@@ -198,22 +200,27 @@ const ENERGIES: { value: EnergyLevel; label: string }[] = [
 ]
 const ENVIRONMENT_OPTIONS_AT = '2026-10-03T00:00:00.000Z'
 const DEFAULT_WEATHER_OPTIONS: EnvironmentOption[] = [
-  ['weather:sunny','晴','☀️'],['weather:partly-cloudy','晴间多云','🌤️'],['weather:cloudy','多云','☁️'],['weather:overcast','阴','☁️'],
-  ['weather:light-rain','小雨','🌦️'],['weather:moderate-rain','中雨','🌧️'],['weather:heavy-rain','大雨','🌧️'],['weather:storm-rain','暴雨','⛈️'],
+  ['weather:sunny','晴','☀️'],['weather:partly-cloudy','晴间多云','🌤️'],['weather:cloudy','多云','⛅'],['weather:overcast','阴','☁️'],
+  ['weather:light-rain','小雨','🌦️'],['weather:moderate-rain','中雨','🌧️'],['weather:heavy-rain','大雨','☔'],
   ['weather:thunderstorm','雷暴','⛈️'],['weather:hail','冰雹','🧊'],['weather:typhoon','台风','🌀'],['weather:fog','雾','🌫️'],
-  ['weather:light-snow','小雪','🌨️'],['weather:moderate-snow','中雪','❄️'],['weather:heavy-snow','大雪','❄️']
+  ['weather:rainbow','雨后天晴','🌈'],['weather:light-snow','小雪','🌨️'],['weather:moderate-snow','中雪','❄️'],['weather:heavy-snow','大雪','☃️']
 ].map(([id,name,emoji],order)=>({id,name,emoji,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
 const DEFAULT_THERMAL_OPTIONS: EnvironmentOption[] = [
-  ['thermal:cold','寒冷','🥶'],['thermal:cool','偏冷','🧥'],['thermal:comfortable','舒适','🌿'],['thermal:warm','偏热','🌤️'],
-  ['thermal:hot','炎热','🥵'],['thermal:humid','潮湿','💦'],['thermal:muggy','闷热','🫠'],['thermal:dry','干燥','🏜️']
+  ['thermal:cold','寒冷','🥶'],['thermal:cool','偏冷','🤧'],['thermal:comfortable','舒适','🌿'],['thermal:warm','偏热','😥'],
+  ['thermal:hot','炎热','🥵'],['thermal:humid','潮湿','💧'],['thermal:muggy','闷热','🥴'],['thermal:dry','干燥','🍂']
 ].map(([id,name,emoji],order)=>({id,name,emoji,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
     const rows=JSON.parse(localStorage.getItem(key)||'[]')
-    if(Array.isArray(rows)&&rows.length) return (rows as EnvironmentOption[]).map(item=>{
-      const builtin=defaults.find(base=>base.id===item.id)
-      return item.emoji ? item : {...item,emoji:builtin?.emoji}
-    })
+    if(Array.isArray(rows)&&rows.length) {
+      const saved=rows as EnvironmentOption[]
+      const merged=defaults.map(base=>{
+        const existing=saved.find(item=>item.id===base.id)
+        return existing ? {...existing,name:base.name,emoji:base.emoji,builtin:true,deletedAt:undefined,archived:false} : {...base}
+      })
+      const custom=saved.filter(item=>!item.builtin&&!defaults.some(base=>base.id===item.id))
+      return [...merged,...custom].map((item,index)=>({...item,order:index}))
+    }
   } catch {}
   return defaults.map(item=>({...item}))
 }
@@ -1743,12 +1750,71 @@ function App() {
     const date=toDateKey(selectedDate), now=new Date().toISOString()
     setDailyEnvironment(current=>{
       const existing=current.find(row=>row.date===date)
-      const next:DailyEnvironment={date,weatherOptionId:existing?.weatherOptionId,thermalOptionId:existing?.thermalOptionId,updatedAt:now}
+      const next:DailyEnvironment={date,weatherOptionId:existing?.weatherOptionId,thermalOptionId:existing?.thermalOptionId,locationCity:existing?.locationCity,locationCountry:existing?.locationCountry,updatedAt:now}
       if(kind==='weather') next.weatherOptionId=optionId||undefined
       else next.thermalOptionId=optionId||undefined
-      if(!next.weatherOptionId&&!next.thermalOptionId) return current.filter(row=>row.date!==date)
+      if(!next.weatherOptionId&&!next.thermalOptionId&&!next.locationCity) return current.filter(row=>row.date!==date)
       return existing?current.map(row=>row.date===date?next:row):[...current,next]
     })
+  }
+
+  const saveEnvironmentLocation = (city:string, country?:string) => {
+    if(!selectedDate) return
+    const date=toDateKey(selectedDate), now=new Date().toISOString()
+    setDailyEnvironment(current=>{
+      const existing=current.find(row=>row.date===date)
+      const next:DailyEnvironment={date,weatherOptionId:existing?.weatherOptionId,thermalOptionId:existing?.thermalOptionId,locationCity:city.trim()||undefined,locationCountry:country?.trim()||undefined,updatedAt:now}
+      if(!next.weatherOptionId&&!next.thermalOptionId&&!next.locationCity) return current.filter(row=>row.date!==date)
+      return existing?current.map(row=>row.date===date?next:row):[...current,next]
+    })
+  }
+
+  const editPastEnvironmentLocation = () => {
+    const city=window.prompt('补录当天所在城市',selectedEnvironment?.locationCity||'')
+    if(city===null) return
+    const trimmed=city.trim()
+    if(!trimmed){saveEnvironmentLocation('');return}
+    const country=window.prompt('国家 / 地区（可留空）',selectedEnvironment?.locationCountry||'')
+    if(country===null) return
+    saveEnvironmentLocation(trimmed,country)
+  }
+
+  const locateTodayEnvironment = () => {
+    if(!selectedDate || toDateKey(selectedDate)!==toDateKey(new Date())) return
+    if(!navigator.geolocation){window.alert('当前浏览器不支持定位');return}
+    navigator.geolocation.getCurrentPosition(async position=>{
+      try{
+        const {latitude,longitude}=position.coords
+        const response=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}&zoom=10&addressdetails=1`,{headers:{'Accept':'application/json'}})
+        if(!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data=await response.json() as {address?:Record<string,string>}
+        const address=data.address||{}
+        const city=address.city||address.town||address.village||address.municipality||address.county
+        const country=address.country
+        if(!city) throw new Error('未识别到城市')
+        saveEnvironmentLocation(city,country)
+      }catch(error){
+        console.error('Failed to resolve location',error)
+        window.alert('已获取位置，但没有识别到城市。')
+      }
+    },error=>{
+      console.error('Failed to get location',error)
+      window.alert(error.code===1?'没有获得定位权限。':'暂时无法获取当前位置。')
+    },{enableHighAccuracy:false,timeout:10000,maximumAge:300000})
+  }
+
+  const handleEnvironmentLocation = () => {
+    if(!selectedDate) return
+    const date=toDateKey(selectedDate)
+    if(date===toDateKey(new Date())){
+      if(selectedEnvironment?.locationCity){
+        const action=window.confirm(`当前记录：${selectedEnvironment.locationCity}${selectedEnvironment.locationCountry?` · ${selectedEnvironment.locationCountry}`:''}\n\n确定要用当前位置重新定位吗？`)
+        if(!action) return
+      }
+      locateTodayEnvironment()
+      return
+    }
+    editPastEnvironmentLocation()
   }
 
   const environmentOptionUsed = (kind:'weather'|'thermal', id:string) => dailyEnvironment.some(row=>kind==='weather'?row.weatherOptionId===id:row.thermalOptionId===id)
@@ -5387,7 +5453,11 @@ function App() {
             <section className="detail-section journal-section">
               <div className="section-heading journal-heading">
                 <h3>记录</h3>
-                <div className="journal-environment-strip">
+                
+              <div className="journal-environment-strip">
+                <button type="button" className={`journal-location-choice${selectedEnvironment?.locationCity?' selected':''}`} onClick={handleEnvironmentLocation}>
+                  {selectedEnvironment?.locationCity ? `📍 ${selectedEnvironment.locationCity}` : '地点'}
+                </button>
                 <label className={`journal-environment-choice${selectedEnvironment?.weatherOptionId?' selected':''}`}>
                   <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
                     <option value="">天气</option>
