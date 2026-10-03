@@ -4457,10 +4457,14 @@ button {
 @media(max-width:640px){.archived-tag-row{align-items:flex-start}.archived-tag-actions{gap:6px}}
 
 
-/* v1.9.23 — lightweight checklist controls inside task notes */
+/* v1.9.24 — checklist controls, including explicit mobile layout */
 .task-notes-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .task-notes-tools{display:flex;align-items:center;gap:6px}
 .task-notes-tools button{border:1px solid #d9e0dc;background:#f8faf9;color:#65736c;border-radius:8px;padding:5px 8px;font:inherit;font-size:11px;line-height:1;cursor:pointer}
 .task-notes-tools button:hover{background:#f0f4f2;border-color:#cbd6d0}
 .task-notes-tools button:active{transform:translateY(1px)}
-@media(max-width:700px){.task-notes-tools button{padding:6px 8px}.task-notes-heading{min-height:30px}}
+@media(max-width:700px){
+  .task-notes-heading{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-height:0;width:100%}
+  .task-notes-tools{display:flex!important;align-items:center;gap:8px;width:100%;visibility:visible!important}
+  .task-notes-tools button{display:inline-flex!important;align-items:center;justify-content:center;visibility:visible!important;padding:7px 10px;min-height:32px;font-size:12px}
+}
