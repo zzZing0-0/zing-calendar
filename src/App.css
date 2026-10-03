@@ -4474,3 +4474,33 @@ button {
 .max-focus-hours-control input{width:64px;text-align:center}
 .max-focus-hours-control b{font-size:12px;font-weight:600;color:var(--muted)}
 @media(max-width:620px){.max-focus-hours-control input{width:58px}}
+
+/* v1.9.26 — daily weather / thermal feeling */
+.environment-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.environment-field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line,#d9dedb);border-radius:12px;background:var(--surface,#fff)}
+.environment-field>span{font-size:13px;font-weight:700;white-space:nowrap}
+.environment-field select{min-width:0;max-width:170px;border:0;background:transparent;font:inherit;color:inherit;text-align:right;outline:none}
+.environment-manager{width:min(620px,calc(100vw - 24px));max-height:min(82vh,760px)}
+.environment-manager-body{display:grid;gap:22px}
+.environment-option-group{display:grid;gap:10px}
+.environment-option-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.environment-option-heading>div{display:grid;gap:2px}
+.environment-option-heading small{font-size:11px;color:var(--muted,#7f8a84)}
+.environment-option-list{display:grid;gap:7px}
+.environment-option-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border:1px solid var(--line,#d9dedb);border-radius:10px}
+.environment-option-row.archived{opacity:.62}
+.environment-option-row>span{display:flex;align-items:center;gap:7px;min-width:0;font-weight:650}
+.environment-option-row>span small{font-size:10px;font-weight:600;color:var(--muted,#7f8a84)}
+.environment-option-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.environment-option-actions button{border:1px solid var(--line,#d9dedb);background:transparent;border-radius:8px;padding:5px 7px;font-size:11px;color:inherit}
+.environment-option-actions button:disabled{opacity:.3}
+.environment-option-actions .danger-text{color:#b34b4b}
+.save-button.compact{padding:7px 11px;min-height:0}
+@media(max-width:700px){
+  .environment-fields{grid-template-columns:1fr}
+  .environment-field{padding:10px 11px}
+  .environment-field select{max-width:60%}
+  .environment-manager{width:calc(100vw - 14px);max-height:88vh}
+  .environment-option-row{align-items:flex-start;flex-direction:column}
+  .environment-option-actions{width:100%;justify-content:flex-start}
+}

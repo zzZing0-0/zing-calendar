@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, KeyboardEvent } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.25'
+const APP_VERSION = '1.9.26'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -69,6 +69,21 @@ type EnergyLevel = 1 | 2 | 3 | 4 | 5
 type DailyEnergy = {
   date: string
   level: EnergyLevel
+  updatedAt: string
+}
+type EnvironmentOption = {
+  id: string
+  name: string
+  order: number
+  builtin?: boolean
+  archived?: boolean
+  updatedAt: string
+  deletedAt?: string
+}
+type DailyEnvironment = {
+  date: string
+  weatherOptionId?: string
+  thermalOptionId?: string
   updatedAt: string
 }
 type MenstrualDayLog = {
@@ -180,6 +195,20 @@ const ENERGIES: { value: EnergyLevel; label: string }[] = [
   { value: 4, label: '精力充沛' },
   { value: 5, label: '能量满满' },
 ]
+const ENVIRONMENT_OPTIONS_AT = '2026-10-03T00:00:00.000Z'
+const DEFAULT_WEATHER_OPTIONS: EnvironmentOption[] = [
+  ['weather:sunny','晴'],['weather:partly-cloudy','晴间多云'],['weather:cloudy','多云'],['weather:overcast','阴'],['weather:light-rain','小雨'],['weather:moderate-rain','中雨'],['weather:heavy-rain','大雨'],['weather:rainstorm','暴雨'],['weather:thunderstorm','雷暴'],['weather:hail','冰雹'],['weather:typhoon','台风'],['weather:fog','雾'],['weather:light-snow','小雪'],['weather:moderate-snow','中雪'],['weather:heavy-snow','大雪']
+].map(([id,name],order)=>({id,name,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
+const DEFAULT_THERMAL_OPTIONS: EnvironmentOption[] = [
+  ['thermal:cold','寒冷'],['thermal:cool','偏冷'],['thermal:comfortable','舒适'],['thermal:warm','偏热'],['thermal:hot','炎热'],['thermal:humid','潮湿'],['thermal:muggy','闷热'],['thermal:dry','干燥']
+].map(([id,name],order)=>({id,name,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
+function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
+  try {
+    const rows=JSON.parse(localStorage.getItem(key)||'[]')
+    if(Array.isArray(rows)&&rows.length) return rows as EnvironmentOption[]
+  } catch {}
+  return defaults.map(item=>({...item}))
+}
 const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
 const LEGACY_TAG_MIGRATION_AT = '2026-09-23T00:00:00.000Z'
@@ -1047,6 +1076,8 @@ type SyncedUserSettings = {
   encouragementMessages?: EncouragementMessage[]
   encouragementStyle?: EncouragementStyle
   maxFocusHours?: number
+  weatherOptions?: EnvironmentOption[]
+  thermalOptions?: EnvironmentOption[]
 }
 
 type BackupPreview = {
@@ -1056,11 +1087,12 @@ type BackupPreview = {
   journals: JournalEntry[]
   moods: DailyMood[]
   energies: DailyEnergy[]
+  environments: DailyEnvironment[]
   periods: MenstrualPeriod[]
   tags: Tag[]
   anniversaries: Anniversary[]
   focusSessions: FocusSession[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[]; encouragementMessages?:EncouragementMessage[]; encouragementStyle?:EncouragementStyle; maxFocusHours?:number }
+  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[]; encouragementMessages?:EncouragementMessage[]; encouragementStyle?:EncouragementStyle; maxFocusHours?:number; weatherOptions?:EnvironmentOption[]; thermalOptions?:EnvironmentOption[] }
   attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
 }
 function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
@@ -1224,7 +1256,7 @@ function syncEntityKey(entityType: SyncEntityType, entityId: string) {
 }
 
 function rowSyncId(entityType: SyncEntityType, row: any): string {
-  return entityType === 'mood' || entityType === 'energy' ? String(row.date) : String(row.id)
+  return entityType === 'mood' || entityType === 'energy' || entityType === 'environment' ? String(row.date) : String(row.id)
 }
 
 async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], nextRows: any[]) {
@@ -1277,6 +1309,9 @@ function App() {
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
   const [excludeDefaultFocusStats, setExcludeDefaultFocusStats] = useState(() => localStorage.getItem('zing:excludeDefaultFocusStats') === 'true')
   const [maxFocusHours, setMaxFocusHours] = useState(() => { const value=Number.parseInt(localStorage.getItem('zing:maxFocusHours') || '2',10); return Math.min(12,Math.max(2,Number.isFinite(value)?value:2)) })
+  const [weatherOptions, setWeatherOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:weatherOptions', DEFAULT_WEATHER_OPTIONS))
+  const [thermalOptions, setThermalOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:thermalOptions', DEFAULT_THERMAL_OPTIONS))
+  const [environmentManagerOpen, setEnvironmentManagerOpen] = useState(false)
   const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
@@ -1419,12 +1454,16 @@ function App() {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
   const [dailyEnergy, setDailyEnergy] = useState<DailyEnergy[]>([])
+  const [dailyEnvironment, setDailyEnvironment] = useState<DailyEnvironment[]>([])
   const [menstrualPeriods, setMenstrualPeriods] = useState<MenstrualPeriod[]>([])
   const [energyHydrated, setEnergyHydrated] = useState(false)
+  const [environmentHydrated, setEnvironmentHydrated] = useState(false)
   const [periodsHydrated, setPeriodsHydrated] = useState(false)
   const [statusCalendarMode, setStatusCalendarMode] = useState<'mood'|'energy'>('mood')
   const energyByDate = useMemo(() => new Map(dailyEnergy.map(row => [row.date,row])), [dailyEnergy])
   const selectedEnergy = selectedDate ? energyByDate.get(toDateKey(selectedDate)) : undefined
+  const environmentByDate = useMemo(() => new Map(dailyEnvironment.map(row => [row.date,row])), [dailyEnvironment])
+  const selectedEnvironment = selectedDate ? environmentByDate.get(toDateKey(selectedDate)) : undefined
   const menstrualPrediction = useMemo(() => {
     const sorted=[...menstrualPeriods].sort((x,y)=>x.startDate.localeCompare(y.startDate))
     const latest=sorted.at(-1); if(!latest) return null
@@ -1477,8 +1516,8 @@ function App() {
   const [journalDraft, setJournalDraft] = useState<JournalDraft>(() => emptyJournalDraft(today))
   const [tags, setTags] = useState<Tag[]>([DEFAULT_TAG])
   const [tagsHydrated, setTagsHydrated] = useState(false)
-  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], period: [], tag: [], anniversary: [], focus: [], settings: [] })
-  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, period: false, tag: false, anniversary: false, focus: false, settings: false })
+  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], environment: [], period: [], tag: [], anniversary: [], focus: [], settings: [] })
+  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, environment: false, period: false, tag: false, anniversary: false, focus: false, settings: false })
   const settingsSyncReadyRef = useRef(false)
   const suppressNextSettingsSyncRef = useRef(false)
   const settingsWordClockRef = useRef<{added:Record<string,string>;removed:Record<string,string>}>({added:{},removed:{}})
@@ -1691,6 +1730,55 @@ function App() {
     })
   }
 
+  const setEnvironmentChoice = (kind:'weather'|'thermal', optionId:string) => {
+    if (!selectedDate) return
+    const date=toDateKey(selectedDate), now=new Date().toISOString()
+    setDailyEnvironment(current=>{
+      const existing=current.find(row=>row.date===date)
+      const next:DailyEnvironment={date,weatherOptionId:existing?.weatherOptionId,thermalOptionId:existing?.thermalOptionId,updatedAt:now}
+      if(kind==='weather') next.weatherOptionId=optionId||undefined
+      else next.thermalOptionId=optionId||undefined
+      if(!next.weatherOptionId&&!next.thermalOptionId) return current.filter(row=>row.date!==date)
+      return existing?current.map(row=>row.date===date?next:row):[...current,next]
+    })
+  }
+
+  const environmentOptionUsed = (kind:'weather'|'thermal', id:string) => dailyEnvironment.some(row=>kind==='weather'?row.weatherOptionId===id:row.thermalOptionId===id)
+  const updateEnvironmentOptions = (kind:'weather'|'thermal', updater:(rows:EnvironmentOption[])=>EnvironmentOption[]) => {
+    if(kind==='weather') setWeatherOptions(updater)
+    else setThermalOptions(updater)
+  }
+  const addEnvironmentOption = (kind:'weather'|'thermal') => {
+    const label=kind==='weather'?'天气':'体感'
+    const name=window.prompt(`添加${label}选项`)?.trim()
+    if(!name) return
+    const rows=kind==='weather'?weatherOptions:thermalOptions
+    if(rows.some(item=>!item.deletedAt&&item.name===name)){window.alert('已经有同名选项了');return}
+    const now=new Date().toISOString(), order=Math.max(-1,...rows.filter(item=>!item.deletedAt).map(item=>item.order))+1
+    updateEnvironmentOptions(kind,current=>[...current,{id:`${kind}:${crypto.randomUUID()}`,name,order,updatedAt:now}])
+  }
+  const renameEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => {
+    const name=window.prompt('修改名称',item.name)?.trim()
+    if(!name||name===item.name) return
+    const rows=kind==='weather'?weatherOptions:thermalOptions
+    if(rows.some(other=>other.id!==item.id&&!other.deletedAt&&other.name===name)){window.alert('已经有同名选项了');return}
+    updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,name,updatedAt:new Date().toISOString()}:row))
+  }
+  const toggleArchiveEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,archived:!row.archived,updatedAt:new Date().toISOString()}:row))
+  const deleteEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => {
+    if(item.builtin||environmentOptionUsed(kind,item.id)) return
+    if(!window.confirm(`彻底删除“${item.name}”？`)) return
+    updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,deletedAt:new Date().toISOString(),updatedAt:new Date().toISOString()}:row))
+  }
+  const moveEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption, direction:-1|1) => {
+    updateEnvironmentOptions(kind,current=>{
+      const active=current.filter(row=>!row.deletedAt).sort((a,b)=>a.order-b.order), index=active.findIndex(row=>row.id===item.id), target=index+direction
+      if(index<0||target<0||target>=active.length) return current
+      const other=active[target], now=new Date().toISOString(), aOrder=item.order, bOrder=other.order
+      return current.map(row=>row.id===item.id?{...row,order:bOrder,updatedAt:now}:row.id===other.id?{...row,order:aOrder,updatedAt:now}:row)
+    })
+  }
+
   const periodForDate = (key:string) => menstrualPeriods.find(period => key >= period.startDate && key <= (period.endDate ?? toDateKey(today)))
   const startPeriod = () => {
     if (!selectedDate) return
@@ -1887,6 +1975,10 @@ function App() {
       if (!active) return
       setDailyEnergy(rows); setEnergyHydrated(true)
     }).catch(error => { console.error('Failed to load daily energy',error); if(active)setEnergyHydrated(true) })
+    loadDailyEnvironment<DailyEnvironment>().then(rows => {
+      if (!active) return
+      setDailyEnvironment(rows); setEnvironmentHydrated(true)
+    }).catch(error => { console.error('Failed to load daily environment',error); if(active)setEnvironmentHydrated(true) })
     loadMenstrualPeriods<MenstrualPeriod>().then(rows => {
       if (!active) return
       setMenstrualPeriods(rows); setPeriodsHydrated(true)
@@ -1971,6 +2063,13 @@ function App() {
   }, [dailyEnergy,energyHydrated])
 
   useEffect(() => {
+    if (!environmentHydrated) return
+    saveDailyEnvironment(dailyEnvironment).catch(error => console.error('Failed to save daily environment',error))
+    if (!syncSnapshotReadyRef.current.environment) { syncSnapshotsRef.current.environment=dailyEnvironment; syncSnapshotReadyRef.current.environment=true }
+    else { const previous=syncSnapshotsRef.current.environment; syncSnapshotsRef.current.environment=dailyEnvironment; void recordSyncDiff('environment',previous,dailyEnvironment).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}) }
+  }, [dailyEnvironment,environmentHydrated])
+
+  useEffect(() => {
     if (!periodsHydrated) return
     saveMenstrualPeriods(menstrualPeriods).catch(error => console.error('Failed to save menstrual periods',error))
     if (!syncSnapshotReadyRef.current.period) { syncSnapshotsRef.current.period=menstrualPeriods; syncSnapshotReadyRef.current.period=true }
@@ -1990,6 +2089,8 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:showAllRecurringTasks', String(showAllRecurringTasks)) }, [showAllRecurringTasks])
   useEffect(() => { localStorage.setItem('zing:excludeDefaultFocusStats', String(excludeDefaultFocusStats)) }, [excludeDefaultFocusStats])
   useEffect(() => { localStorage.setItem('zing:maxFocusHours', String(maxFocusHours)) }, [maxFocusHours])
+  useEffect(() => { localStorage.setItem('zing:weatherOptions', JSON.stringify(weatherOptions)) }, [weatherOptions])
+  useEffect(() => { localStorage.setItem('zing:thermalOptions', JSON.stringify(thermalOptions)) }, [thermalOptions])
   useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
@@ -2005,7 +2106,7 @@ function App() {
       weekStart:weekStartsMonday?'monday':'sunday', dateFormat, defaultPriority, showEndedTasks,
       showAllRecurringTasks, excludeDefaultFocusStats, wordCloudIgnored:[...wordSet],
       wordCloudIgnoredAddedAt:{...clocks.added}, wordCloudIgnoredRemovedAt:{...clocks.removed},
-      encouragementMessages, encouragementStyle, maxFocusHours,
+      encouragementMessages, encouragementStyle, maxFocusHours, weatherOptions, thermalOptions,
     }
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -2034,7 +2135,7 @@ function App() {
     if (beforeComparable && JSON.stringify(beforeComparable) === JSON.stringify(comparable)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -3918,10 +4019,10 @@ function App() {
       // Clear user data and create sync tombstones in one IndexedDB transaction.
       // This makes “清空所有数据” a real cross-device deletion on the next GitHub sync.
       await clearZingUserDataWithSync(REQUIRED_SYSTEM_TAGS)
-      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], mood:[], energy:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
+      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], mood:[], energy:[], environment:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
       syncSnapshotsRef.current = cleared
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
-      setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
+      setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
       setLocalWriteRevision(value=>value+1)
       setSelectedDate(today); setSearchQuery('')
       setResetDataConfirm(false)
@@ -4007,11 +4108,12 @@ function App() {
         {path:'data/journals.json',bytes:json(journalEntries)},
         {path:'data/moods.json',bytes:json(dailyMoods)},
         {path:'data/energy.json',bytes:json(dailyEnergy)},
+        {path:'data/environment.json',bytes:json(dailyEnvironment)},
         {path:'data/periods.json',bytes:json(menstrualPeriods)},
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -4024,7 +4126,7 @@ function App() {
         attachmentRows.push({storageKey:attachment.storageKey,path,filename:attachment.filename,mimeType:attachment.mimeType,size:blob.size,type:attachment.type,duration:attachment.duration,createdAt:attachment.createdAt})
       }
       const manifest={format:'zing-calendar-backup',schemaVersion:1,appVersion:APP_VERSION,exportedAt,
-        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,energies:dailyEnergy.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,focusSessions:focusSessions.length,attachments:attachmentRows.length},
+        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,energies:dailyEnergy.length,environments:dailyEnvironment.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,focusSessions:focusSessions.length,attachments:attachmentRows.length},
         attachments:attachmentRows}
       entries.unshift({path:'manifest.json',bytes:json(manifest)})
       setBackupMessage('正在生成 ZIP…')
@@ -4050,12 +4152,13 @@ function App() {
       const journals=decodeBackupJson<JournalEntry[]>(entries,'data/journals.json')
       const moods=decodeBackupJson<DailyMood[]>(entries,'data/moods.json')
       const energies=entries.has('data/energy.json')?decodeBackupJson<DailyEnergy[]>(entries,'data/energy.json'):[]
+      const environments=entries.has('data/environment.json')?decodeBackupJson<DailyEnvironment[]>(entries,'data/environment.json'):[]
       const periods=entries.has('data/periods.json')?decodeBackupJson<MenstrualPeriod[]>(entries,'data/periods.json'):[]
       const restoredTags=decodeBackupJson<Tag[]>(entries,'data/tags.json')
       const restoredAnniversaries=decodeBackupJson<Anniversary[]>(entries,'data/anniversaries.json')
       const restoredFocusSessions=entries.has('data/focus.json')?decodeBackupJson<FocusSession[]>(entries,'data/focus.json'):[]
       const settings=decodeBackupJson<BackupPreview['settings']>(entries,'data/settings.json')
-      if (![tasks,journals,moods,energies,periods,restoredTags,restoredAnniversaries,restoredFocusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
+      if (![tasks,journals,moods,energies,environments,periods,restoredTags,restoredAnniversaries,restoredFocusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
       const rows=Array.isArray(manifest.attachments)?manifest.attachments:[]
       const attachments=rows.map((row:any)=>{
         if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
@@ -4065,11 +4168,11 @@ function App() {
       })
       const expected=manifest.counts ?? {}
       if ((expected.tasks??tasks.length)!==tasks.length || (expected.journals??journals.length)!==journals.length ||
-          (expected.moods??moods.length)!==moods.length || (expected.energies??energies.length)!==energies.length || (expected.periods??periods.length)!==periods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
+          (expected.moods??moods.length)!==moods.length || (expected.energies??energies.length)!==energies.length || (expected.environments??environments.length)!==environments.length || (expected.periods??periods.length)!==periods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
           (expected.anniversaries??restoredAnniversaries.length)!==restoredAnniversaries.length ||
           (expected.focusSessions??restoredFocusSessions.length)!==restoredFocusSessions.length ||
           (expected.attachments??attachments.length)!==attachments.length) throw new Error('备份数量校验失败')
-      setBackupPreview({file,manifest,tasks,journals,moods,energies,periods,tags:restoredTags,anniversaries:restoredAnniversaries,focusSessions:restoredFocusSessions,settings,attachments})
+      setBackupPreview({file,manifest,tasks,journals,moods,energies,environments,periods,tags:restoredTags,anniversaries:restoredAnniversaries,focusSessions:restoredFocusSessions,settings,attachments})
       setBackupMessage('')
     } catch(error) {
       console.error('Failed to inspect backup',error)
@@ -4085,7 +4188,7 @@ function App() {
     try {
       // The archive is fully parsed and validated before any local write begins.
       await replaceZingData({
-        tasks:backupPreview.tasks,journals:backupPreview.journals,moods:backupPreview.moods,energies:backupPreview.energies,periods:backupPreview.periods,
+        tasks:backupPreview.tasks,journals:backupPreview.journals,moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
         tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,
         attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
           const copy = new Uint8Array(item.bytes.byteLength)
@@ -4105,6 +4208,8 @@ function App() {
       if (Array.isArray(s.encouragementMessages)) localStorage.setItem('zing:encouragementMessages',JSON.stringify(s.encouragementMessages))
       if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') localStorage.setItem('zing:encouragementStyle',s.encouragementStyle)
       if (typeof s.maxFocusHours==='number') localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,Math.round(s.maxFocusHours)))))
+      if (Array.isArray(s.weatherOptions)) localStorage.setItem('zing:weatherOptions',JSON.stringify(s.weatherOptions))
+      if (Array.isArray(s.thermalOptions)) localStorage.setItem('zing:thermalOptions',JSON.stringify(s.thermalOptions))
       // Restore is device-local by design. Persist restored settings locally too, but do
       // not create sync changes/tombstones that could roll the cloud back.
       const restoredAt=new Date().toISOString()
@@ -4118,12 +4223,13 @@ function App() {
         encouragementMessages:Array.isArray(s.encouragementMessages)?s.encouragementMessages:encouragementMessages,
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
         maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
+        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions,
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
-      syncSnapshotsRef.current = { task:backupPreview.tasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
+      syncSnapshotsRef.current = { task:backupPreview.tasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
-      setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setMenstrualPeriods(backupPreview.periods)
+      setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
       suppressNextSettingsSyncRef.current = true
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
@@ -4137,6 +4243,8 @@ function App() {
       if (Array.isArray(s.encouragementMessages)) setEncouragementMessages(s.encouragementMessages)
       if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') setEncouragementStyle(s.encouragementStyle)
       if (typeof s.maxFocusHours==='number') setMaxFocusHours(Math.min(12,Math.max(2,Math.round(s.maxFocusHours))))
+      if (Array.isArray(s.weatherOptions)) setWeatherOptions(s.weatherOptions)
+      if (Array.isArray(s.thermalOptions)) setThermalOptions(s.thermalOptions)
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
     } catch(error) {
@@ -4180,8 +4288,8 @@ function App() {
           : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
-      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings] = await Promise.all([
-        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>()
+      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextEnvironment,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings] = await Promise.all([
+        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadDailyEnvironment<DailyEnvironment>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>()
       ])
       const normalizedNextTags = normalizeTags(nextTags)
       const hydratedTags = ensureRequiredSystemTags(normalizedNextTags)
@@ -4199,14 +4307,15 @@ function App() {
         journal: nextJournals,
         mood: nextMoods,
         energy: nextEnergy,
+        environment: nextEnvironment,
         period: nextPeriods,
         tag: hydratedTags,
         anniversary: nextAnniversaries,
         focus: nextFocusSessions,
         settings: nextSettings,
       }
-      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, period:true, tag:true, anniversary:true, focus:true, settings:true }
-      setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setMenstrualPeriods(nextPeriods)
+      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, settings:true }
+      setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setDailyEnvironment(nextEnvironment); setMenstrualPeriods(nextPeriods)
       setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
       setFocusSessions(nextFocusSessions)
@@ -4229,7 +4338,7 @@ function App() {
         localStorage.setItem('zing:encouragementMessages',JSON.stringify(syncedSettings.encouragementMessages ?? []))
         localStorage.setItem('zing:encouragementStyle',syncedSettings.encouragementStyle ?? 'random')
         localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))))
-        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random'); setMaxFocusHours(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2)))
+        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random'); setMaxFocusHours(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))); setWeatherOptions(syncedSettings.weatherOptions?.length?syncedSettings.weatherOptions:DEFAULT_WEATHER_OPTIONS); setThermalOptions(syncedSettings.thermalOptions?.length?syncedSettings.thermalOptions:DEFAULT_THERMAL_OPTIONS)
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -4668,6 +4777,11 @@ function App() {
           </div>
 
           <div className="settings-group">
+            <div className="settings-group-title"><h3>天气与体感</h3></div>
+            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerOpen(true)}><span><strong>管理天气与体感</strong><small>分别管理每日可选的天气和体感；归档不会影响历史记录。</small></span><b>›</b></button>
+          </div>
+
+          <div className="settings-group">
             <div className="settings-group-title"><h3>标签</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务、记录与专注共用的标签。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setArchivedTagsOpen(true)}><span><strong>已归档</strong><small>{archivedTags.length ? `${archivedTags.length} 个已归档标签` : '暂无已归档标签'}</small></span><b>›</b></button>
@@ -4786,7 +4900,7 @@ function App() {
             <div className="editor-body">
               <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
               {(() => {
-                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',period:'月经',tag:'标签',anniversary:'纪念日',focus:'专注',settings:'设置',trash:'回收站'}
+                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',environment:'天气/体感',period:'月经',tag:'标签',anniversary:'纪念日',focus:'专注',settings:'设置',trash:'回收站'}
                 const changedRows=githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount)
                 return changedRows.length ? <>
                   <div className="sync-summary-grid">
@@ -4805,6 +4919,32 @@ function App() {
                 <button type="button" className="secondary-button" onClick={()=>setGithubSyncPreview(null)}>取消</button>
                 <button type="button" className="github-sync-now" onClick={()=>{setGithubSyncPreview(null);void executeGithubSync(false)}}>确认同步</button>
               </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {environmentManagerOpen && (
+        <div className="modal-layer environment-manager-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭天气与体感管理" onClick={()=>setEnvironmentManagerOpen(false)} />
+          <section className="task-editor environment-manager" role="dialog" aria-modal="true" aria-label="天气与体感管理">
+            <div className="editor-header"><div><span className="eyebrow">ENVIRONMENT</span><h2>天气与体感</h2></div><button className="close-button" type="button" onClick={()=>setEnvironmentManagerOpen(false)}>×</button></div>
+            <div className="editor-body environment-manager-body">
+              {([['weather','天气',weatherOptions],['thermal','体感',thermalOptions]] as const).map(([kind,label,rows])=><section className="environment-option-group" key={kind}>
+                <div className="environment-option-heading"><div><strong>{label}</strong><small>每日单选 · 可不记录</small></div><button type="button" className="save-button compact" onClick={()=>addEnvironmentOption(kind)}>＋ 添加</button></div>
+                <div className="environment-option-list">
+                  {rows.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map((item,index,shown)=><div className={`environment-option-row${item.archived?' archived':''}`} key={item.id}>
+                    <span>{item.name}{item.builtin?<small>内置</small>:null}{item.archived?<small>已归档</small>:null}</span>
+                    <div className="environment-option-actions">
+                      <button type="button" onClick={()=>moveEnvironmentOption(kind,item,-1)} disabled={index===0} aria-label="上移">↑</button>
+                      <button type="button" onClick={()=>moveEnvironmentOption(kind,item,1)} disabled={index===shown.length-1} aria-label="下移">↓</button>
+                      <button type="button" onClick={()=>renameEnvironmentOption(kind,item)}>编辑</button>
+                      <button type="button" onClick={()=>toggleArchiveEnvironmentOption(kind,item)}>{item.archived?'恢复':'归档'}</button>
+                      {!item.builtin&&!environmentOptionUsed(kind,item.id)&&<button type="button" className="danger-text" onClick={()=>deleteEnvironmentOption(kind,item)}>删除</button>}
+                    </div>
+                  </div>)}
+                </div>
+              </section>)}
             </div>
           </section>
         </div>
@@ -5009,7 +5149,7 @@ function App() {
             <p className="backup-restore-date">{new Date(backupPreview.manifest.exportedAt).toLocaleString()}</p>
             <div className="backup-summary-grid">
               <span>任务 <b>{backupPreview.tasks.length}</b></span><span>记录 <b>{backupPreview.journals.length}</b></span>
-              <span>心情 <b>{backupPreview.moods.length}</b></span><span>精力 <b>{backupPreview.energies.length}</b></span>
+              <span>心情 <b>{backupPreview.moods.length}</b></span><span>精力 <b>{backupPreview.energies.length}</b></span><span>天气/体感 <b>{backupPreview.environments.length}</b></span>
               <span>经期 <b>{backupPreview.periods.length}</b></span><span>标签 <b>{backupPreview.tags.length}</b></span>
               <span>纪念日 <b>{backupPreview.anniversaries.length}</b></span><span>专注 <b>{backupPreview.focusSessions.length}</b></span>
               <span>附件 <b>{backupPreview.attachments.length}</b></span>
@@ -5162,6 +5302,14 @@ function App() {
             </section>
 
 
+
+            <section className="detail-section environment-section">
+              <div className="section-heading"><h3>天气与体感</h3></div>
+              <div className="environment-fields">
+                <label className="environment-field"><span>🌦️ 天气</span><select value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}><option value="">未记录</option>{weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.name}{item.archived?'（已归档）':''}</option>)}</select></label>
+                <label className="environment-field"><span>🌡️ 体感</span><select value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}><option value="">未记录</option>{thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.name}{item.archived?'（已归档）':''}</option>)}</select></label>
+              </div>
+            </section>
 
                         </>}
 
