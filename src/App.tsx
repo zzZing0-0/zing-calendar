@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.37'
+const APP_VERSION = '1.9.38'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2622,7 +2622,7 @@ function App() {
         <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days,preparedTasks,preparedAnniversaries)}</div>
       </section>
     })
-  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar,selectedDate])
+  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar,selectedDate,dayDetailOpen,dayDetailClosing])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
