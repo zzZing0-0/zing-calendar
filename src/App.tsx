@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.30'
+const APP_VERSION = '1.9.31'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -209,20 +209,23 @@ const DEFAULT_THERMAL_OPTIONS: EnvironmentOption[] = [
   ['thermal:cold','寒冷','🥶'],['thermal:cool','偏冷','🤧'],['thermal:comfortable','舒适','🌿'],['thermal:warm','偏热','😥'],
   ['thermal:hot','炎热','🥵'],['thermal:humid','潮湿','💧'],['thermal:muggy','闷热','🥴'],['thermal:dry','干燥','🍂']
 ].map(([id,name,emoji],order)=>({id,name,emoji,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
+function normalizeEnvironmentOptions(rows:EnvironmentOption[]|undefined, defaults:EnvironmentOption[]) {
+  if(Array.isArray(rows)&&rows.length) {
+    const merged=defaults.map(base=>{
+      const existing=rows.find(item=>item.id===base.id)
+      return existing ? {...existing,name:base.name,emoji:base.emoji,builtin:true,deletedAt:undefined,archived:false} : {...base}
+    })
+    const custom=rows.filter(item=>!item.builtin&&!defaults.some(base=>base.id===item.id))
+    return [...merged,...custom].map((item,index)=>({...item,order:index}))
+  }
+  return defaults.map(item=>({...item}))
+}
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
     const rows=JSON.parse(localStorage.getItem(key)||'[]')
-    if(Array.isArray(rows)&&rows.length) {
-      const saved=rows as EnvironmentOption[]
-      const merged=defaults.map(base=>{
-        const existing=saved.find(item=>item.id===base.id)
-        return existing ? {...existing,name:base.name,emoji:base.emoji,builtin:true,deletedAt:undefined,archived:false} : {...base}
-      })
-      const custom=saved.filter(item=>!item.builtin&&!defaults.some(base=>base.id===item.id))
-      return [...merged,...custom].map((item,index)=>({...item,order:index}))
-    }
+    if(Array.isArray(rows)) return normalizeEnvironmentOptions(rows as EnvironmentOption[],defaults)
   } catch {}
-  return defaults.map(item=>({...item}))
+  return normalizeEnvironmentOptions(undefined,defaults)
 }
 const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 const DEFAULT_TAG_ID = 'default'
@@ -4329,8 +4332,8 @@ function App() {
       if (Array.isArray(s.encouragementMessages)) setEncouragementMessages(s.encouragementMessages)
       if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') setEncouragementStyle(s.encouragementStyle)
       if (typeof s.maxFocusHours==='number') setMaxFocusHours(Math.min(12,Math.max(2,Math.round(s.maxFocusHours))))
-      if (Array.isArray(s.weatherOptions)) setWeatherOptions(s.weatherOptions)
-      if (Array.isArray(s.thermalOptions)) setThermalOptions(s.thermalOptions)
+      if (Array.isArray(s.weatherOptions)) setWeatherOptions(normalizeEnvironmentOptions(s.weatherOptions,DEFAULT_WEATHER_OPTIONS))
+      if (Array.isArray(s.thermalOptions)) setThermalOptions(normalizeEnvironmentOptions(s.thermalOptions,DEFAULT_THERMAL_OPTIONS))
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
     } catch(error) {
@@ -4424,7 +4427,7 @@ function App() {
         localStorage.setItem('zing:encouragementMessages',JSON.stringify(syncedSettings.encouragementMessages ?? []))
         localStorage.setItem('zing:encouragementStyle',syncedSettings.encouragementStyle ?? 'random')
         localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))))
-        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random'); setMaxFocusHours(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))); setWeatherOptions(syncedSettings.weatherOptions?.length?syncedSettings.weatherOptions:DEFAULT_WEATHER_OPTIONS); setThermalOptions(syncedSettings.thermalOptions?.length?syncedSettings.thermalOptions:DEFAULT_THERMAL_OPTIONS)
+        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random'); setMaxFocusHours(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))); setWeatherOptions(normalizeEnvironmentOptions(syncedSettings.weatherOptions,DEFAULT_WEATHER_OPTIONS)); setThermalOptions(normalizeEnvironmentOptions(syncedSettings.thermalOptions,DEFAULT_THERMAL_OPTIONS))
       }
     } catch (error) {
       setGithubSyncMessageKind('error')

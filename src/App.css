@@ -4501,8 +4501,11 @@ button {
   .environment-field{padding:10px 11px}
   .environment-field select{max-width:60%}
   .environment-manager{width:calc(100vw - 14px);max-height:88vh}
-  .environment-option-row{align-items:flex-start;flex-direction:column}
-  .environment-option-actions{width:100%;justify-content:flex-start}
+  .environment-option-row{align-items:center;flex-direction:row;gap:8px;padding:8px 9px}
+  .environment-option-row .environment-option-emoji{width:2rem;flex:0 0 2rem}
+  .environment-option-row .environment-option-name{flex:1 1 auto}
+  .environment-option-actions{width:auto;justify-content:flex-end;margin-left:auto;flex-wrap:nowrap}
+  .environment-option-actions button{padding:5px 6px}
 }
 
 /* v1.9.27 — weather/thermal controls integrated with records */
