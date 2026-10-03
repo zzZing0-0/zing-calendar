@@ -4444,3 +4444,14 @@ button {
 .encouragement-reward{animation:encouragementRewardIn .2s ease-out}
 @keyframes encouragementRewardIn{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
 @media(max-width:620px){.encouragement-style-setting{display:grid;padding:13px 16px}.encouragement-style-setting .setting-segment{width:100%;grid-template-columns:repeat(3,1fr)}}
+
+/* v1.9.19 archived tag management */
+.archived-tag-list{display:grid;gap:10px}
+.archived-tag-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid #edf0ee}
+.archived-tag-row:last-child{border-bottom:0}
+.archived-tag-info{min-width:0;display:grid;gap:4px}
+.archived-tag-info>span{display:flex;align-items:center;gap:8px;color:#3d4a43;font-size:13px;font-weight:600}
+.archived-tag-info i{width:11px;height:11px;border-radius:50%;flex:0 0 11px}
+.archived-tag-info small{color:#929b96;font-size:10px}
+.archived-tag-actions{display:flex;gap:8px;flex:0 0 auto}
+@media(max-width:640px){.archived-tag-row{align-items:flex-start}.archived-tag-actions{gap:6px}}

@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.18'
+const APP_VERSION = '1.9.19'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1411,6 +1411,7 @@ function App() {
   const suppressNextSettingsSyncRef = useRef(false)
   const settingsWordClockRef = useRef<{added:Record<string,string>;removed:Record<string,string>}>({added:{},removed:{}})
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
+  const [archivedTagsOpen, setArchivedTagsOpen] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
   const [newTagScope, setNewTagScope] = useState<TagScope>('both')
@@ -2879,14 +2880,36 @@ function App() {
   }
 
   const deleteTag = (id: string) => {
-    if (id === DEFAULT_TAG_ID || tags.find(tag=>tag.id===id)?.system) return
-    setTags(current => current.filter(tag => tag.id !== id))
-    const clean = (ids?: string[]) => {
-      const next = (ids ?? []).filter(tagId => tagId !== id && tagId !== DEFAULT_TAG_ID)
-      return next.length ? next : [DEFAULT_TAG_ID]
+    const tag = tags.find(item=>item.id===id)
+    if (id === DEFAULT_TAG_ID || tag?.system) return
+    const taskCount = tasks.filter(task => (task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => (exception.tagIds ?? []).includes(id))).length
+    const focusCount = focusSessions.filter(session => (session.tagIds ?? []).includes(id)).length
+    const journalCount = journalEntries.filter(entry => (entry.tagIds ?? []).includes(id)).length
+    const linked = taskCount + focusCount + journalCount
+    if (linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？\n\n关联任务 ${taskCount} 条 · 专注 ${focusCount} 条 · 记录 ${journalCount} 条\n关联内容会保留。`)) return
+    if (!linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？`)) return
+    const now = new Date().toISOString()
+    const cleanSingleOrdinary = (ids?: string[]) => {
+      const sourceIds = (ids ?? []).filter(tagId => isImportSourceTagId(tagId))
+      const ordinaryIds = (ids ?? []).filter(tagId => tagId !== id && tagId !== DEFAULT_TAG_ID && !isImportSourceTagId(tagId))
+      return ordinaryIds.length ? [ordinaryIds[0], ...sourceIds] : [DEFAULT_TAG_ID, ...sourceIds]
     }
-    setTasks(current => current.map(task => ({ ...task, tagIds: clean(task.tagIds) })))
-    setJournalEntries(current => current.map(entry => ({ ...entry, tagIds: clean(entry.tagIds) })))
+    const cleanJournal = (ids?: string[]) => {
+      const sourceIds = (ids ?? []).filter(tagId => isImportSourceTagId(tagId))
+      const ordinaryIds = (ids ?? []).filter(tagId => tagId !== id && tagId !== DEFAULT_TAG_ID && !isImportSourceTagId(tagId))
+      return ordinaryIds.length ? [...ordinaryIds, ...sourceIds] : [DEFAULT_TAG_ID, ...sourceIds]
+    }
+    setTags(current => current.filter(item => item.id !== id))
+    setTasks(current => current.map(task => ({
+      ...task,
+      tagIds: (task.tagIds ?? []).includes(id) ? cleanSingleOrdinary(task.tagIds) : task.tagIds,
+      recurrenceExceptions: task.recurrenceExceptions ? Object.fromEntries(Object.entries(task.recurrenceExceptions).map(([key,exception]) => [key, (exception.tagIds ?? []).includes(id) ? {...exception,tagIds:cleanSingleOrdinary(exception.tagIds),updatedAt:now} : exception])) : task.recurrenceExceptions,
+      updatedAt: (task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => (exception.tagIds ?? []).includes(id)) ? now : task.updatedAt
+    })))
+    setFocusSessions(current => current.map(session => (session.tagIds ?? []).includes(id) ? {...session,tagIds:cleanSingleOrdinary(session.tagIds),updatedAt:now} : session))
+    setJournalEntries(current => current.map(entry => (entry.tagIds ?? []).includes(id) ? {...entry,tagIds:cleanJournal(entry.tagIds),updatedAt:now} : entry))
+    setSelectedTagManageId(null)
+    setAutoSyncToast(`✓ #${tag?.name ?? '标签'} 已删除`)
   }
 
   const tagColorRank = (color: string) => {
@@ -2920,6 +2943,9 @@ function App() {
         return (a.sortOrder ?? tags.indexOf(a)) - (b.sortOrder ?? tags.indexOf(b))
       })
   }, [tags])
+
+  const activeManagedTags = useMemo(() => managedTags.filter(tag => !tag.archived), [managedTags])
+  const archivedTags = useMemo(() => sortTagsByColor(tags.filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag) && tag.archived)), [tags])
 
   const tagDateFromKey = (key:string) => {
     const [year,month,day] = key.split('-').map(Number)
@@ -4479,6 +4505,7 @@ function App() {
           <div className="settings-group">
             <div className="settings-group-title"><h3>标签</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务、记录与专注共用的标签。</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setArchivedTagsOpen(true)}><span><strong>已归档</strong><small>{archivedTags.length ? `${archivedTags.length} 个已归档标签` : '暂无已归档标签'}</small></span><b>›</b></button>
           </div>
 
           <div className="settings-group">
@@ -4823,7 +4850,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><span>🎂</span>纪念日</button>
@@ -5232,7 +5259,7 @@ function App() {
             <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => setTagManagerOpen(false)}>×</button></div>
             <div className="editor-body">
               <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
-                {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{managedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
+                {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
               </div>
 
               <div className="compact-tag-create">
@@ -5241,14 +5268,14 @@ function App() {
               </div>
 
               <div className="compact-tag-list">
-                {managedTags.filter(tag=>tag.scope===newTagScope).map(tag=><button key={tag.id} type="button" className={`compact-tag-chip${tag.archived?' archived':''}${selectedTagManageId===tag.id?' active':''}`} onClick={()=>setSelectedTagManageId(current=>current===tag.id?null:tag.id)}>
-                  <i style={{background:tag.color}} /><span>{tag.name}</span>{tag.archived&&<small>已归档</small>}
+                {activeManagedTags.filter(tag=>tag.scope===newTagScope).map(tag=><button key={tag.id} type="button" className={`compact-tag-chip${selectedTagManageId===tag.id?' active':''}`} onClick={()=>setSelectedTagManageId(current=>current===tag.id?null:tag.id)}>
+                  <i style={{background:tag.color}} /><span>{tag.name}</span>
                 </button>)}
-                {managedTags.every(tag=>tag.scope!==newTagScope)&&<p className="page-empty compact">这里还没有{tagScopeLabel(newTagScope)}。</p>}
+                {activeManagedTags.every(tag=>tag.scope!==newTagScope)&&<p className="page-empty compact">这里还没有{tagScopeLabel(newTagScope)}。</p>}
               </div>
 
               {selectedTagManageId && (() => {
-                const tag=managedTags.find(item=>item.id===selectedTagManageId)
+                const tag=activeManagedTags.find(item=>item.id===selectedTagManageId)
                 if(!tag) return null
                 return <div className="compact-tag-detail">
                   <div className="compact-tag-detail-heading"><i style={{background:tag.color}} /><strong>编辑标签</strong></div>
@@ -5257,9 +5284,29 @@ function App() {
                   <div className="field"><span>分类</span><div className="tag-detail-scope">
                     {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={tag.scope===scope?'active':''} onClick={()=>{setTags(current=>current.map(item=>item.id===tag.id?{...item,scope,updatedAt:new Date().toISOString()}:item));setNewTagScope(scope)}}>{label}</button>)}
                   </div></div>
-                  <div className="compact-tag-detail-actions"><button type="button" className="archive-button" onClick={()=>setTagArchived(tag.id,!tag.archived)}>{tag.archived?'取消归档':'归档'}</button><button type="button" className="delete-button compact-delete" onClick={()=>{deleteTag(tag.id);setSelectedTagManageId(null)}}>删除</button></div>
+                  <div className="compact-tag-detail-actions"><button type="button" className="archive-button" onClick={()=>{setTagArchived(tag.id,true);setSelectedTagManageId(null)}}>归档</button><button type="button" className="delete-button compact-delete" onClick={()=>deleteTag(tag.id)}>删除</button></div>
                 </div>
               })()}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {archivedTagsOpen && (
+        <div className="modal-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭已归档标签" onClick={() => setArchivedTagsOpen(false)} />
+          <section className="task-editor tag-manager compact-tag-manager" role="dialog" aria-modal="true" aria-labelledby="archived-tags-title">
+            <div className="editor-header"><div><span className="eyebrow">ARCHIVED TAGS</span><h2 id="archived-tags-title">已归档</h2></div><button className="close-button" type="button" onClick={() => setArchivedTagsOpen(false)}>×</button></div>
+            <div className="editor-body">
+              {archivedTags.length ? <div className="archived-tag-list">{archivedTags.map(tag=>{
+                const taskCount=tasks.filter(task=>(task.tagIds??[]).includes(tag.id)||Object.values(task.recurrenceExceptions??{}).some(exception=>(exception.tagIds??[]).includes(tag.id))).length
+                const focusCount=focusSessions.filter(session=>(session.tagIds??[]).includes(tag.id)).length
+                const journalCount=journalEntries.filter(entry=>(entry.tagIds??[]).includes(tag.id)).length
+                return <div className="archived-tag-row" key={tag.id}>
+                  <div className="archived-tag-info"><span><i style={{background:tag.color}} />{tag.name}</span><small>任务 {taskCount} · 专注 {focusCount} · 记录 {journalCount}</small></div>
+                  <div className="archived-tag-actions"><button type="button" className="archive-button" onClick={()=>setTagArchived(tag.id,false)}>恢复</button><button type="button" className="delete-button compact-delete" onClick={()=>deleteTag(tag.id)}>删除</button></div>
+                </div>
+              })}</div> : <p className="page-empty compact">暂无已归档标签。</p>}
             </div>
           </section>
         </div>
