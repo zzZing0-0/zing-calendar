@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.36'
+const APP_VERSION = '1.9.37'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -4550,7 +4550,7 @@ function App() {
         </div>
       </header>
 
-      {mainView === 'calendar' && <section className={`calendar-card${isMobileCalendar && selectedDate ? ' day-detail-open' : ''}`} aria-label="月历">
+      {mainView === 'calendar' && <section className={`calendar-card${isMobileCalendar && dayDetailOpen ? ' day-detail-open' : ''}`} aria-label="月历">
         <div className="calendar-sticky-header">
         <div className="calendar-toolbar">
           <div className="month-navigation">
@@ -5277,7 +5277,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !selectedDate && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><span>🎂</span>纪念日</button>
