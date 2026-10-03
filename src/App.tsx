@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.35'
+const APP_VERSION = '1.9.36'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1323,7 +1323,7 @@ function App() {
   const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'anniversary'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [lastViewedDate, setLastViewedDate] = useState<Date | null>(null)
+  const [dayDetailOpen, setDayDetailOpen] = useState(false)
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
   const [excludeDefaultFocusStats, setExcludeDefaultFocusStats] = useState(() => localStorage.getItem('zing:excludeDefaultFocusStats') === 'true')
@@ -1670,7 +1670,7 @@ function App() {
   }, [visibleMonth, isMobileCalendar, mainView, continuousMonths])
 
   useEffect(() => {
-    if (!isMobileCalendar || mainView !== 'calendar' || selectedDate || !mobileCalendarPositionReady) return
+    if (!isMobileCalendar || mainView !== 'calendar' || dayDetailOpen || !mobileCalendarPositionReady) return
     const nodes = Array.from(continuousCalendarRef.current?.querySelectorAll<HTMLElement>('.continuous-week-section') ?? [])
     if (!nodes.length) return
     const observer = new IntersectionObserver(entries => {
@@ -1705,7 +1705,7 @@ function App() {
     }, {root:null, rootMargin:'-150px 0px -55% 0px', threshold:[0,.01,.2]})
     nodes.forEach(node => observer.observe(node))
     return () => observer.disconnect()
-  }, [continuousMonths, isMobileCalendar, mainView, selectedDate, mobileCalendarPositionReady])
+  }, [continuousMonths, isMobileCalendar, mainView, dayDetailOpen, mobileCalendarPositionReady])
 
   // Keep the mini mood calendar anchored to the day currently opened in Day Detail.
   // It can still be browsed independently afterwards with its own month arrows.
@@ -1878,7 +1878,7 @@ function App() {
       .sort((a,b)=>b.startDate.localeCompare(a.startDate))[0]
     if(activePeriod){
       const goToPrevious=window.confirm(`上一次月经（${activePeriod.startDate} 开始）还没有结束。\n\n请先回到上一次月经记录并标记结束，再开始新的月经。\n\n点击“确定”查看上一次月经。`)
-      if(goToPrevious) setSelectedDate(fromDateKey(activePeriod.startDate))
+      if(goToPrevious){ setSelectedDate(fromDateKey(activePeriod.startDate)); setDayDetailOpen(true) }
       return
     }
     const now=new Date().toISOString()
@@ -2442,7 +2442,7 @@ function App() {
     }))
     return <div className="calendar-grid">
       {monthDays.map(({date,inCurrentMonth},dayIndex)=>{
-        const isToday=sameDay(date,today), isSelected=lastViewedDate?sameDay(date,lastViewedDate):false, key=toDateKey(date)
+        const isToday=sameDay(date,today), isSelected=selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date)
         const dayTasks=monthTasksByDate.get(key)??[], occupiedLanes=monthOccupied[dayIndex]
         const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot))
         const visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
@@ -2483,7 +2483,7 @@ function App() {
     }
     return <div className="calendar-grid continuous-week-grid">
       {weekDays.map(({date},dayIndex)=>{
-        const isToday=sameDay(date,today), isSelected=lastViewedDate?sameDay(date,lastViewedDate):false, key=toDateKey(date), dayTasks=tasksByDate.get(key)??[], occupiedLanes=occupied[dayIndex]
+        const isToday=sameDay(date,today), isSelected=selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date), dayTasks=tasksByDate.get(key)??[], occupiedLanes=occupied[dayIndex]
         const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot)), visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
         const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length), hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
         const anns=anniversaryMap.get(key)??[]
@@ -2524,7 +2524,8 @@ function App() {
     if (isMobileCalendar) {
       pendingCalendarScrollRef.current=`date:${toDateKey(now)}`
       setVisibleMonth(month); setMobileActiveMonth(month)
-      setSelectedDate(null)
+      setSelectedDate(now)
+      setDayDetailOpen(false)
       return
     }
     setVisibleMonth(month)
@@ -2532,13 +2533,10 @@ function App() {
   }
 
   const closeDayDetail = () => {
-    if (!selectedDate || dayDetailClosing) return
+    if (!dayDetailOpen || dayDetailClosing) return
     setDayDetailClosing(true)
     window.setTimeout(() => {
-      // Finish the sheet transition before restoring the document position. Doing
-      // both at once forces Safari to animate a transformed overlay while the
-      // calendar underneath jumps, which is the visible hitch on mobile.
-      setSelectedDate(null)
+      setDayDetailOpen(false)
       setDayDetailClosing(false)
       dayDetailOriginScrollRef.current=null
     }, 260)
@@ -2546,11 +2544,9 @@ function App() {
 
   const openDay = (date: Date) => {
     const isMobile = window.matchMedia('(max-width: 760px)').matches
-    setLastViewedDate(date)
 
-    // v1.1.3: while Day Detail is already open, tapping another visible day should
-    // switch the detail immediately. Never close/reopen the sheet just to change date.
-    if (isMobile && document.querySelector('.day-drawer')) {
+    // While Day Detail is open, another day changes the single selected date in place.
+    if (isMobile && dayDetailOpen) {
       if (dayDetailClosing) return
       if (selectedDate && sameDay(selectedDate,date)) {
         closeDayDetail()
@@ -2563,6 +2559,7 @@ function App() {
     if (isMobile) {
       dayDetailOriginScrollRef.current=window.scrollY
       setSelectedDate(date)
+      setDayDetailOpen(true)
 
       // Let React paint the sheet first so the tap gets immediate visual feedback.
       // Then move the real week row into position; CSS blocks user panning while the
@@ -2583,6 +2580,7 @@ function App() {
     }
 
     setSelectedDate(date)
+    setDayDetailOpen(true)
     if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
       setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
     }
@@ -2624,7 +2622,7 @@ function App() {
         <div data-active-month-key={activeKey}>{renderCalendarWeek(week.days,preparedTasks,preparedAnniversaries)}</div>
       </section>
     })
-  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar])
+  }, [continuousMonths,tasks,showEndedTasks,showAllRecurringTasks,activeAnniversaries,menstrualPeriods,menstrualPrediction,weekStartsMonday,today,isMobileCalendar,selectedDate])
 
   const openAnniversaryEditor = (anniversary?: Anniversary) => {
     if (anniversary) {
@@ -3430,12 +3428,27 @@ function App() {
     return <span className="search-anniversary-marker">{anniversaryIcon(result.item.type)}</span>
   }
 
+  const navigateToCalendarDate = (date:Date, openDetail=true) => {
+    const targetMonth=new Date(date.getFullYear(),date.getMonth(),1)
+    const dateKey=toDateKey(date)
+    setMainView('calendar')
+    setVisibleMonth(targetMonth)
+    setSelectedDate(date)
+    if(isMobileCalendar){
+      pendingPrependAnchorRef.current=null
+      pendingCalendarScrollRef.current=`date:${dateKey}`
+      setMobileCalendarPositionReady(false)
+      setMobileActiveMonth(targetMonth)
+      setMobileMonths(Array.from({length:7},(_,index)=>new Date(date.getFullYear(),date.getMonth()+index-3,1)))
+      dayDetailOriginScrollRef.current=null
+    }
+    if(openDetail) setDayDetailOpen(true)
+  }
+
   const openTaskAtItsDay = (task:Task) => {
     const [year,month,day]=task.date.split('-').map(Number)
     const date=new Date(year,month-1,day)
-    setMainView('calendar')
-    setVisibleMonth(new Date(year,month-1,1))
-    setSelectedDate(date)
+    navigateToCalendarDate(date)
     setOverdueInboxOpen(false)
     window.setTimeout(()=>openTaskDetail(task),0)
   }
@@ -3448,19 +3461,7 @@ function App() {
       const dateKey=result.kind==='task' ? result.item.date : result.item.date
       const [year,month,day]=dateKey.split('-').map(Number)
       const date=new Date(year,month-1,day)
-      setMainView('calendar')
-      const targetMonth=new Date(date.getFullYear(),date.getMonth(),1)
-      setVisibleMonth(targetMonth)
-      setLastViewedDate(date)
-      if(isMobileCalendar){
-        pendingPrependAnchorRef.current=null
-        pendingCalendarScrollRef.current=`date:${dateKey}`
-        setMobileCalendarPositionReady(false)
-        setMobileActiveMonth(targetMonth)
-        setMobileMonths(Array.from({length:7},(_,index)=>new Date(date.getFullYear(),date.getMonth()+index-3,1)))
-        dayDetailOriginScrollRef.current=null
-      }
-      setSelectedDate(date)
+      navigateToCalendarDate(date)
       window.setTimeout(()=>{
         if(result.kind==='task') openTaskDetail(result.item)
         else setViewingJournalId(result.id)
@@ -4128,7 +4129,7 @@ function App() {
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
       setLocalWriteRevision(value=>value+1)
-      setSelectedDate(today); setSearchQuery('')
+      setSelectedDate(today); setDayDetailOpen(false); setSearchQuery('')
       setResetDataConfirm(false)
       setStorageStats(await getStorageStats())
       setBackupMessage('数据已清空 · 删除将在下次 GitHub 同步传播 · 应用设置已保留')
@@ -5313,7 +5314,7 @@ function App() {
         <span className="status-version">Zing Calendar · v{APP_VERSION}</span>
       </footer>
 
-      {selectedDate && (
+      {selectedDate && dayDetailOpen && (
         <>
           <button className="drawer-backdrop" type="button" aria-label="关闭日期详情" onClick={closeDayDetail} />
           <aside className={`day-drawer${dayDetailClosing?' closing':''}`} aria-label={`${formatUiDate(selectedDate)} 日期详情`}>
@@ -5484,6 +5485,7 @@ function App() {
                         const nextDate = new Date(date)
                         const nextMonth = new Date(date.getFullYear(), date.getMonth(), 1)
                         setSelectedDate(nextDate)
+                        setDayDetailOpen(true)
                         setMoodMonth(nextMonth)
                         setVisibleMonth(nextMonth)
                       }}
@@ -5583,7 +5585,7 @@ function App() {
                 return <div className="focus-history-item" key={record.id}>
                   <div className="focus-history-main"><strong>{record.title}</strong><div className="focus-history-tags">{record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}<small>{formatFocusDuration(record.seconds)}</small></div></div>
                   {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} /> 分钟</label><div className="focus-history-edit-tags">{tagsFor('task').map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
-                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);setSelectedDate(null);setViewingTask(record.task)}}}>更改</button>
+                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);setDayDetailOpen(false);setViewingTask(record.task)}}}>更改</button>
                     <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session)setFocusSessions(cur=>cur.filter(item=>item.id!==record.session!.id));else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
                   </div>}
                 </div>})}</div>}
