@@ -4728,3 +4728,9 @@ button {
   .drawer-environment-strip .journal-environment-choice{padding-inline:2px}
   .drawer-environment-strip .journal-environment-separator{font-size:9px}
 }
+
+/* v1.9.33 — full-width metadata row beneath the date/close-button row */
+.drawer-header > .drawer-header-main{min-width:0;flex:1 1 100%;width:100%}
+.drawer-header-top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;width:100%}
+.drawer-header-top > div:first-child{min-width:0}
+.drawer-header .drawer-date-meta-row{width:100%}

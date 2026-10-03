@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.32'
+const APP_VERSION = '1.9.33'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -5303,13 +5303,18 @@ function App() {
           <button className="drawer-backdrop" type="button" aria-label="关闭日期详情" onClick={closeDayDetail} />
           <aside className={`day-drawer${dayDetailClosing?' closing':''}`} aria-label={`${formatUiDate(selectedDate)} 日期详情`}>
             <div className="drawer-header">
-              <div>
-                <span className="eyebrow">DAY DETAIL</span>
-                <div className="drawer-date-line">
-                  <h2>{formatUiDate(selectedDate)}</h2>
-                  <button className="date-action-button" type="button" onClick={() => openAnniversaryEditor()} aria-label="添加纪念日" title="添加纪念日">＋</button>
+              <div className="drawer-header-main">
+                <div className="drawer-header-top">
+                  <div>
+                    <span className="eyebrow">DAY DETAIL</span>
+                    <div className="drawer-date-line">
+                      <h2>{formatUiDate(selectedDate)}</h2>
+                      <button className="date-action-button" type="button" onClick={() => openAnniversaryEditor()} aria-label="添加纪念日" title="添加纪念日">＋</button>
+                    </div>
+                  </div>
+                  <button className="close-button" type="button" onClick={closeDayDetail} aria-label="关闭">×</button>
                 </div>
-<div className="drawer-date-meta-row">
+                <div className="drawer-date-meta-row">
                 <span className="drawer-lunar-date">
                   农历 {lunarFullLabel(selectedDate)}
                   {(()=>{
@@ -5342,7 +5347,6 @@ function App() {
                 </div>}
               </div>
               </div>
-              <button className="close-button" type="button" onClick={closeDayDetail} aria-label="关闭">×</button>
             </div>
 
             {selectedAnniversaries.length > 0 && (
