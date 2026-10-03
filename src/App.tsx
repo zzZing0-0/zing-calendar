@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.34'
+const APP_VERSION = '1.9.35'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1323,6 +1323,7 @@ function App() {
   const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'anniversary'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [lastViewedDate, setLastViewedDate] = useState<Date | null>(null)
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
   const [excludeDefaultFocusStats, setExcludeDefaultFocusStats] = useState(() => localStorage.getItem('zing:excludeDefaultFocusStats') === 'true')
@@ -2441,7 +2442,7 @@ function App() {
     }))
     return <div className="calendar-grid">
       {monthDays.map(({date,inCurrentMonth},dayIndex)=>{
-        const isToday=sameDay(date,today), isSelected=!isMobileCalendar && selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date)
+        const isToday=sameDay(date,today), isSelected=lastViewedDate?sameDay(date,lastViewedDate):false, key=toDateKey(date)
         const dayTasks=monthTasksByDate.get(key)??[], occupiedLanes=monthOccupied[dayIndex]
         const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot))
         const visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
@@ -2482,11 +2483,11 @@ function App() {
     }
     return <div className="calendar-grid continuous-week-grid">
       {weekDays.map(({date},dayIndex)=>{
-        const isToday=sameDay(date,today), key=toDateKey(date), dayTasks=tasksByDate.get(key)??[], occupiedLanes=occupied[dayIndex]
+        const isToday=sameDay(date,today), isSelected=lastViewedDate?sameDay(date,lastViewedDate):false, key=toDateKey(date), dayTasks=tasksByDate.get(key)??[], occupiedLanes=occupied[dayIndex]
         const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot)), visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
         const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length), hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
         const anns=anniversaryMap.get(key)??[]
-        return <button key={key} type="button" className={`day-cell${isToday?' today':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
+        return <button key={key} type="button" className={`day-cell${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
           <span className={`day-number${menstrualVisualForDate(key) ? ` menstrual-${menstrualVisualForDate(key)}` : ""}`} data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()===1?`${date.getMonth()+1}月`:date.getDate()}</span>
           {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
           {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
@@ -2532,7 +2533,6 @@ function App() {
 
   const closeDayDetail = () => {
     if (!selectedDate || dayDetailClosing) return
-    const origin = dayDetailOriginScrollRef.current
     setDayDetailClosing(true)
     window.setTimeout(() => {
       // Finish the sheet transition before restoring the document position. Doing
@@ -2541,16 +2541,12 @@ function App() {
       setSelectedDate(null)
       setDayDetailClosing(false)
       dayDetailOriginScrollRef.current=null
-      if (isMobileCalendar && origin !== null) {
-        window.requestAnimationFrame(() => {
-          if (Math.abs(window.scrollY-origin) > 1) window.scrollTo({top:origin,behavior:'auto'})
-        })
-      }
     }, 260)
   }
 
   const openDay = (date: Date) => {
     const isMobile = window.matchMedia('(max-width: 760px)').matches
+    setLastViewedDate(date)
 
     // v1.1.3: while Day Detail is already open, tapping another visible day should
     // switch the detail immediately. Never close/reopen the sheet just to change date.
@@ -3453,7 +3449,17 @@ function App() {
       const [year,month,day]=dateKey.split('-').map(Number)
       const date=new Date(year,month-1,day)
       setMainView('calendar')
-      setVisibleMonth(new Date(date.getFullYear(),date.getMonth(),1))
+      const targetMonth=new Date(date.getFullYear(),date.getMonth(),1)
+      setVisibleMonth(targetMonth)
+      setLastViewedDate(date)
+      if(isMobileCalendar){
+        pendingPrependAnchorRef.current=null
+        pendingCalendarScrollRef.current=`date:${dateKey}`
+        setMobileCalendarPositionReady(false)
+        setMobileActiveMonth(targetMonth)
+        setMobileMonths(Array.from({length:7},(_,index)=>new Date(date.getFullYear(),date.getMonth()+index-3,1)))
+        dayDetailOriginScrollRef.current=null
+      }
       setSelectedDate(date)
       window.setTimeout(()=>{
         if(result.kind==='task') openTaskDetail(result.item)

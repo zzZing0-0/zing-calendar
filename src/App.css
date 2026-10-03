@@ -342,8 +342,8 @@ button {
 
 /* Task interaction prototype */
 .day-cell.selected {
-  background: #f7faf8;
-  box-shadow: inset 0 0 0 2px rgba(112, 143, 127, 0.28);
+  background: #eef4f0;
+  box-shadow: inset 0 0 0 2px rgba(112, 143, 127, 0.34);
 }
 
 .task-preview-list {
