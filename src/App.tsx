@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.20'
+const APP_VERSION = '1.9.21'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1489,26 +1489,52 @@ function App() {
 
   useLayoutEffect(() => {
     if (!isMobileCalendar || mainView !== 'calendar') return
-    const pending = pendingCalendarScrollRef.current
-    const targetKey = pending ?? `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`
-    if (targetKey.startsWith('date:')) {
-      const dateKey = targetKey.slice(5)
-      const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${dateKey}"]`)
-      const sticky = document.querySelector<HTMLElement>('.calendar-sticky-header')
-      if (!target || !sticky) return
-      const rect = target.getBoundingClientRect()
-      const stickyBottom = sticky.getBoundingClientRect().bottom
-      const bottomNavTop = document.querySelector<HTMLElement>('.bottom-nav')?.getBoundingClientRect().top ?? window.innerHeight
-      const usableCenter = stickyBottom + Math.max(0, bottomNavTop - stickyBottom) / 2
-      const delta = rect.top + rect.height / 2 - usableCenter
-      if (Math.abs(delta) > 1) window.scrollBy({top:delta, behavior:'auto'})
-      pendingCalendarScrollRef.current = null
-      return
+
+    // The first mobile-calendar layout can run before the day cells / sticky
+    // chrome are measurable. Keep the pending target alive and retry on the
+    // next animation frames; only consume it after a real scroll succeeds.
+    // This also makes initial entry use the exact same positioning path as the
+    // Today button without introducing scroll-driven React state.
+    let frame = 0
+    let attempts = 0
+    const maxAttempts = 24
+
+    const positionPendingTarget = () => {
+      const pending = pendingCalendarScrollRef.current
+      if (!pending) return
+
+      if (pending.startsWith('date:')) {
+        const dateKey = pending.slice(5)
+        const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`.day-cell[data-date-key="${dateKey}"]`)
+        const sticky = document.querySelector<HTMLElement>('.calendar-sticky-header')
+        const bottomNav = document.querySelector<HTMLElement>('.bottom-nav')
+        if (target && sticky && bottomNav) {
+          const rect = target.getBoundingClientRect()
+          const stickyBottom = sticky.getBoundingClientRect().bottom
+          const bottomNavTop = bottomNav.getBoundingClientRect().top
+          const usableCenter = stickyBottom + Math.max(0, bottomNavTop - stickyBottom) / 2
+          const delta = rect.top + rect.height / 2 - usableCenter
+          if (Math.abs(delta) > 1) window.scrollBy({top:delta, behavior:'auto'})
+          pendingCalendarScrollRef.current = null
+          return
+        }
+      } else {
+        const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`[data-month-key="${pending}"]`)
+        if (target) {
+          target.scrollIntoView({block:'start', behavior:'auto'})
+          pendingCalendarScrollRef.current = null
+          return
+        }
+      }
+
+      attempts += 1
+      if (attempts < maxAttempts) frame = window.requestAnimationFrame(positionPendingTarget)
     }
-    const target = continuousCalendarRef.current?.querySelector<HTMLElement>(`[data-month-key="${targetKey}"]`)
-    if (!target) return
-    target.scrollIntoView({block:'start', behavior:'auto'})
-    pendingCalendarScrollRef.current = null
+
+    // Start after one painted frame so the mobile calendar and sticky controls
+    // have completed their initial geometry.
+    frame = window.requestAnimationFrame(positionPendingTarget)
+    return () => window.cancelAnimationFrame(frame)
   }, [visibleMonth, isMobileCalendar, mainView, continuousMonths])
 
   useEffect(() => {
