@@ -4539,3 +4539,115 @@ button {
   .journal-location-choice,
   .journal-environment-choice select{font-size:11px}
 }
+
+/* v1.9.30 — Record title stays alone; daily context is a separate row below */
+.journal-section > .journal-heading{
+  display:flex;
+  align-items:center;
+  width:100%;
+}
+.journal-section > .journal-environment-strip{
+  display:flex;
+  align-items:center;
+  gap:24px;
+  flex-wrap:wrap;
+  margin-top:12px;
+  margin-bottom:18px;
+}
+.journal-section > .journal-environment-strip .journal-location-choice,
+.journal-section > .journal-environment-strip .journal-environment-choice select{
+  font-size:12px;
+  line-height:1.2;
+  font-weight:500;
+}
+@media(max-width:700px){
+  .journal-section > .journal-environment-strip{
+    gap:18px;
+    margin-top:10px;
+    margin-bottom:16px;
+  }
+  .journal-section > .journal-environment-strip .journal-location-choice,
+  .journal-section > .journal-environment-strip .journal-environment-choice select{
+    font-size:11px;
+  }
+}
+
+/* v1.9.30 refinement — compact daily context metadata */
+.journal-section > .journal-environment-strip{
+  gap:4px;
+  justify-content:flex-start;
+  flex-wrap:wrap;
+}
+.journal-environment-separator{
+  color:var(--muted);
+  opacity:.55;
+  font-size:11px;
+  line-height:1;
+  user-select:none;
+}
+.journal-section > .journal-environment-strip .journal-location-choice,
+.journal-section > .journal-environment-strip .journal-environment-choice select{
+  padding-left:4px;
+  padding-right:4px;
+}
+@media(max-width:700px){
+  .journal-section > .journal-environment-strip{gap:2px}
+  .journal-environment-separator{font-size:10px}
+}
+
+/* v1.9.30 QA fix — weather/thermal controls size to their selected content */
+.journal-section > .journal-environment-strip .journal-environment-choice{
+  display:inline-flex;
+  flex:0 0 auto;
+  width:auto;
+  min-width:0;
+}
+.journal-section > .journal-environment-strip .journal-environment-choice select{
+  width:auto;
+  min-width:0;
+  max-width:none;
+  field-sizing:content;
+  flex:0 0 auto;
+}
+
+/* v1.9.30 QA fix — unify daily-context typography and protect CJK glyph edges */
+.journal-section > .journal-environment-strip{
+  font-family:inherit;
+  font-size:12px;
+  font-weight:500;
+  line-height:1.25;
+}
+.journal-section > .journal-environment-strip .journal-location-choice,
+.journal-section > .journal-environment-strip .journal-environment-choice,
+.journal-section > .journal-environment-strip .journal-environment-choice select,
+.journal-section > .journal-environment-strip .journal-environment-separator{
+  font-family:inherit;
+  font-size:inherit;
+  font-weight:inherit;
+  line-height:inherit;
+}
+.journal-section > .journal-environment-strip .journal-location-choice,
+.journal-section > .journal-environment-strip .journal-environment-choice select{
+  box-sizing:content-box;
+}
+.journal-section > .journal-environment-strip .journal-environment-choice select{
+  padding-left:4px;
+  padding-right:7px;
+  overflow:visible;
+}
+.journal-section > .journal-environment-strip .journal-location-choice{
+  padding-left:4px;
+  padding-right:4px;
+}
+@media(max-width:700px){
+  .journal-section > .journal-environment-strip{
+    font-size:11px;
+    font-weight:500;
+    line-height:1.25;
+  }
+}
+
+/* v1.9.30 QA: normal text renders labels; transparent native select handles interaction */
+.journal-section > .journal-environment-strip .journal-environment-text-select{position:relative;display:inline-flex;align-items:center;width:max-content;min-width:0;flex:0 0 auto;padding:0 4px;font:inherit;color:inherit}
+.journal-section > .journal-environment-strip .journal-environment-visible{display:inline-block;width:max-content;white-space:nowrap;font:inherit;color:inherit}
+.journal-section > .journal-environment-strip .journal-environment-text-select > select{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;cursor:pointer;appearance:auto;-webkit-appearance:menulist;font:inherit}

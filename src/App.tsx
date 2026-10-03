@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.29'
+const APP_VERSION = '1.9.30'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1789,10 +1789,16 @@ function App() {
         if(!response.ok) throw new Error(`HTTP ${response.status}`)
         const data=await response.json() as {address?:Record<string,string>}
         const address=data.address||{}
-        const city=address.city||address.town||address.village||address.municipality||address.county
         const country=address.country
-        if(!city) throw new Error('未识别到城市')
-        saveEnvironmentLocation(city,country)
+        const municipalityNames=['北京','上海','天津','重庆']
+        const normalizePlace=(value?:string)=>value?.replace(/(特别行政区|市)$/,'').trim()
+        const candidates=[address.city,address.municipality,address.state,address.region,address.province].map(normalizePlace).filter((value):value is string=>Boolean(value))
+        const municipality=candidates.find(value=>municipalityNames.includes(value))
+        const district=normalizePlace(address.city_district||address.district||address.county)
+        const primary=municipality||candidates[0]||normalizePlace(address.town)||normalizePlace(address.village)||district
+        if(!primary) throw new Error('未识别到城市')
+        const locationName=municipality&&district&&district!==municipality ? `${municipality} · ${district}` : primary
+        saveEnvironmentLocation(locationName,country)
       }catch(error){
         console.error('Failed to resolve location',error)
         window.alert('已获取位置，但没有识别到城市。')
@@ -5454,25 +5460,30 @@ function App() {
               <div className="section-heading journal-heading">
                 <h3>记录</h3>
                 
+              
+                {selectedJournalEntries.length > 0 && <span>{selectedJournalEntries.length}</span>}
+                {selectedJournalEntries.length > 0 && <strong className={`impact-total ${selectedImpactTotal > 0 ? 'positive' : selectedImpactTotal < 0 ? 'negative' : ''}`}>事件合计 {selectedImpactTotal > 0 ? '+' : ''}{selectedImpactTotal}</strong>}
+              </div>
               <div className="journal-environment-strip">
                 <button type="button" className={`journal-location-choice${selectedEnvironment?.locationCity?' selected':''}`} onClick={handleEnvironmentLocation}>
                   {selectedEnvironment?.locationCity ? `📍 ${selectedEnvironment.locationCity}` : '地点'}
                 </button>
-                <label className={`journal-environment-choice${selectedEnvironment?.weatherOptionId?' selected':''}`}>
+                <span className="journal-environment-separator" aria-hidden="true">｜</span>
+                <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.weatherOptionId?' selected':''}`}>
+                  <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.weatherOptionId ? (()=>{const item=weatherOptions.find(row=>row.id===selectedEnvironment.weatherOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'天气'})() : '天气'}</span>
                   <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
                     <option value="">天气</option>
                     {weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
                   </select>
                 </label>
-                <label className={`journal-environment-choice${selectedEnvironment?.thermalOptionId?' selected':''}`}>
+                <span className="journal-environment-separator" aria-hidden="true">｜</span>
+                <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.thermalOptionId?' selected':''}`}>
+                  <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.thermalOptionId ? (()=>{const item=thermalOptions.find(row=>row.id===selectedEnvironment.thermalOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'体感'})() : '体感'}</span>
                   <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
                     <option value="">体感</option>
                     {thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
                   </select>
                 </label>
-              </div>
-                {selectedJournalEntries.length > 0 && <span>{selectedJournalEntries.length}</span>}
-                {selectedJournalEntries.length > 0 && <strong className={`impact-total ${selectedImpactTotal > 0 ? 'positive' : selectedImpactTotal < 0 ? 'negative' : ''}`}>事件合计 {selectedImpactTotal > 0 ? '+' : ''}{selectedImpactTotal}</strong>}
               </div>
               {selectedJournalEntries.length === 0 ? <p className="empty-state">暂无记录</p> : (
                 <div className="journal-list">
