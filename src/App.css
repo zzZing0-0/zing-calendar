@@ -4512,3 +4512,14 @@ button {
 .journal-environment-choice.selected select{font-weight:650}
 .environment-option-row .environment-option-emoji{width:2em;flex:0 0 2em;text-align:center;font-size:18px}
 @media(max-width:700px){.journal-environment-strip{gap:6px;margin:0 0 8px}.journal-environment-choice select{max-width:145px;padding:7px 10px;font-size:12px}}
+
+/* v1.9.28 — compact environment option manager */
+.environment-option-row.builtin{grid-template-columns:2.5rem minmax(0,1fr)}
+.environment-option-row .environment-option-name{min-width:0}
+.environment-option-row button.environment-option-emoji.editable,
+.environment-option-row button.environment-option-name.editable{border:0;background:transparent;color:inherit;font:inherit;text-align:left;padding:4px 6px;border-radius:8px;cursor:pointer}
+.environment-option-row button.environment-option-emoji.editable:hover,
+.environment-option-row button.environment-option-name.editable:hover{background:var(--surface-soft)}
+.environment-option-row .environment-option-name.editable{font-weight:650}
+.environment-option-row .environment-option-actions.compact{margin-left:auto}
+.environment-option-row.builtin .readonly{cursor:default}

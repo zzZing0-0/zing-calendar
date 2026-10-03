@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.27'
+const APP_VERSION = '1.9.28'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -4951,17 +4951,20 @@ function App() {
               <section className="environment-option-group">
                 <div className="environment-option-heading"><div><strong>{label}</strong><small>每日单选 · 可不记录</small></div><button type="button" className="save-button compact" onClick={()=>addEnvironmentOption(kind)}>＋ 添加</button></div>
                 <div className="environment-option-list">
-                  {rows.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map((item,index,shown)=><div className={`environment-option-row${item.archived?' archived':''}`} key={item.id}>
-                    <span className="environment-option-emoji">{item.emoji||'—'}</span>
-                    <span>{item.name}{item.archived?'（已归档）':''}</span>
-                    <div className="environment-option-actions">
-                      <button type="button" onClick={()=>editEnvironmentEmoji(kind,item)}>Emoji</button>
-                      <button type="button" onClick={()=>renameEnvironmentOption(kind,item)}>改名</button>
-                      <button type="button" disabled={index===0} onClick={()=>moveEnvironmentOption(kind,item,-1)}>↑</button>
-                      <button type="button" disabled={index===shown.length-1} onClick={()=>moveEnvironmentOption(kind,item,1)}>↓</button>
-                      <button type="button" onClick={()=>toggleArchiveEnvironmentOption(kind,item)}>{item.archived?'恢复':'归档'}</button>
-                      {!item.builtin&&!environmentOptionUsed(kind,item.id)&&<button type="button" className="danger-text" onClick={()=>deleteEnvironmentOption(kind,item)}>删除</button>}
-                    </div>
+                  {rows.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map((item,index,shown)=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}>
+                    {item.builtin
+                      ? <><span className="environment-option-emoji readonly">{item.emoji||'—'}</span><span className="environment-option-name readonly">{item.name}</span></>
+                      : <>
+                          <button type="button" className="environment-option-emoji editable" title="修改 Emoji" onClick={()=>editEnvironmentEmoji(kind,item)}>{item.emoji||'＋'}</button>
+                          <button type="button" className="environment-option-name editable" title="修改名称" onClick={()=>renameEnvironmentOption(kind,item)}>{item.name}</button>
+                          <div className="environment-option-actions compact">
+                            <button type="button" disabled={index===0} onClick={()=>moveEnvironmentOption(kind,item,-1)} aria-label="上移">↑</button>
+                            <button type="button" disabled={index===shown.length-1} onClick={()=>moveEnvironmentOption(kind,item,1)} aria-label="下移">↓</button>
+                            <button type="button" onClick={()=>toggleArchiveEnvironmentOption(kind,item)}>{item.archived?'恢复':'归档'}</button>
+                            {!environmentOptionUsed(kind,item.id)&&<button type="button" className="danger-text" onClick={()=>deleteEnvironmentOption(kind,item)}>删除</button>}
+                          </div>
+                        </>
+                    }
                   </div>)}
                 </div>
               </section>
@@ -5323,20 +5326,7 @@ function App() {
 
 
 
-            <div className="journal-environment-strip">
-                <label className={`journal-environment-choice${selectedEnvironment?.weatherOptionId?' selected':''}`}>
-                  <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
-                    <option value="">天气</option>
-                    {weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
-                  </select>
-                </label>
-                <label className={`journal-environment-choice${selectedEnvironment?.thermalOptionId?' selected':''}`}>
-                  <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
-                    <option value="">体感</option>
-                    {thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
-                  </select>
-                </label>
-              </div>
+            
 
                         </>}
 
@@ -5397,6 +5387,20 @@ function App() {
             <section className="detail-section journal-section">
               <div className="section-heading journal-heading">
                 <h3>记录</h3>
+                <div className="journal-environment-strip">
+                <label className={`journal-environment-choice${selectedEnvironment?.weatherOptionId?' selected':''}`}>
+                  <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
+                    <option value="">天气</option>
+                    {weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                  </select>
+                </label>
+                <label className={`journal-environment-choice${selectedEnvironment?.thermalOptionId?' selected':''}`}>
+                  <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
+                    <option value="">体感</option>
+                    {thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                  </select>
+                </label>
+              </div>
                 {selectedJournalEntries.length > 0 && <span>{selectedJournalEntries.length}</span>}
                 {selectedJournalEntries.length > 0 && <strong className={`impact-total ${selectedImpactTotal > 0 ? 'positive' : selectedImpactTotal < 0 ? 'negative' : ''}`}>事件合计 {selectedImpactTotal > 0 ? '+' : ''}{selectedImpactTotal}</strong>}
               </div>
