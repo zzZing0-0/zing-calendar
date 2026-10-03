@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.33'
+const APP_VERSION = '1.9.34'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -1871,7 +1871,16 @@ function App() {
   const periodForDate = (key:string) => menstrualPeriods.find(period => key >= period.startDate && key <= (period.endDate ?? toDateKey(today)))
   const startPeriod = () => {
     if (!selectedDate) return
-    const key=toDateKey(selectedDate), now=new Date().toISOString()
+    const key=toDateKey(selectedDate)
+    const activePeriod=menstrualPeriods
+      .filter(period=>!period.endDate)
+      .sort((a,b)=>b.startDate.localeCompare(a.startDate))[0]
+    if(activePeriod){
+      const goToPrevious=window.confirm(`上一次月经（${activePeriod.startDate} 开始）还没有结束。\n\n请先回到上一次月经记录并标记结束，再开始新的月经。\n\n点击“确定”查看上一次月经。`)
+      if(goToPrevious) setSelectedDate(fromDateKey(activePeriod.startDate))
+      return
+    }
+    const now=new Date().toISOString()
     setMenstrualPeriods(current => [...current, { id:crypto.randomUUID(), startDate:key, dayLogs:[], createdAt:now, updatedAt:now }])
   }
   const updatePeriod = (periodId:string, updater:(period:MenstrualPeriod)=>MenstrualPeriod) => {
