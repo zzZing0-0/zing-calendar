@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.26'
+const APP_VERSION = '1.9.27'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -74,6 +74,7 @@ type DailyEnergy = {
 type EnvironmentOption = {
   id: string
   name: string
+  emoji?: string
   order: number
   builtin?: boolean
   archived?: boolean
@@ -197,15 +198,22 @@ const ENERGIES: { value: EnergyLevel; label: string }[] = [
 ]
 const ENVIRONMENT_OPTIONS_AT = '2026-10-03T00:00:00.000Z'
 const DEFAULT_WEATHER_OPTIONS: EnvironmentOption[] = [
-  ['weather:sunny','晴'],['weather:partly-cloudy','晴间多云'],['weather:cloudy','多云'],['weather:overcast','阴'],['weather:light-rain','小雨'],['weather:moderate-rain','中雨'],['weather:heavy-rain','大雨'],['weather:rainstorm','暴雨'],['weather:thunderstorm','雷暴'],['weather:hail','冰雹'],['weather:typhoon','台风'],['weather:fog','雾'],['weather:light-snow','小雪'],['weather:moderate-snow','中雪'],['weather:heavy-snow','大雪']
-].map(([id,name],order)=>({id,name,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
+  ['weather:sunny','晴','☀️'],['weather:partly-cloudy','晴间多云','🌤️'],['weather:cloudy','多云','☁️'],['weather:overcast','阴','☁️'],
+  ['weather:light-rain','小雨','🌦️'],['weather:moderate-rain','中雨','🌧️'],['weather:heavy-rain','大雨','🌧️'],['weather:storm-rain','暴雨','⛈️'],
+  ['weather:thunderstorm','雷暴','⛈️'],['weather:hail','冰雹','🧊'],['weather:typhoon','台风','🌀'],['weather:fog','雾','🌫️'],
+  ['weather:light-snow','小雪','🌨️'],['weather:moderate-snow','中雪','❄️'],['weather:heavy-snow','大雪','❄️']
+].map(([id,name,emoji],order)=>({id,name,emoji,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
 const DEFAULT_THERMAL_OPTIONS: EnvironmentOption[] = [
-  ['thermal:cold','寒冷'],['thermal:cool','偏冷'],['thermal:comfortable','舒适'],['thermal:warm','偏热'],['thermal:hot','炎热'],['thermal:humid','潮湿'],['thermal:muggy','闷热'],['thermal:dry','干燥']
-].map(([id,name],order)=>({id,name,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
+  ['thermal:cold','寒冷','🥶'],['thermal:cool','偏冷','🧥'],['thermal:comfortable','舒适','🌿'],['thermal:warm','偏热','🌤️'],
+  ['thermal:hot','炎热','🥵'],['thermal:humid','潮湿','💦'],['thermal:muggy','闷热','🫠'],['thermal:dry','干燥','🏜️']
+].map(([id,name,emoji],order)=>({id,name,emoji,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
     const rows=JSON.parse(localStorage.getItem(key)||'[]')
-    if(Array.isArray(rows)&&rows.length) return rows as EnvironmentOption[]
+    if(Array.isArray(rows)&&rows.length) return (rows as EnvironmentOption[]).map(item=>{
+      const builtin=defaults.find(base=>base.id===item.id)
+      return item.emoji ? item : {...item,emoji:builtin?.emoji}
+    })
   } catch {}
   return defaults.map(item=>({...item}))
 }
@@ -1311,7 +1319,7 @@ function App() {
   const [maxFocusHours, setMaxFocusHours] = useState(() => { const value=Number.parseInt(localStorage.getItem('zing:maxFocusHours') || '2',10); return Math.min(12,Math.max(2,Number.isFinite(value)?value:2)) })
   const [weatherOptions, setWeatherOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:weatherOptions', DEFAULT_WEATHER_OPTIONS))
   const [thermalOptions, setThermalOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:thermalOptions', DEFAULT_THERMAL_OPTIONS))
-  const [environmentManagerOpen, setEnvironmentManagerOpen] = useState(false)
+  const [environmentManagerKind, setEnvironmentManagerKind] = useState<'weather'|'thermal'|null>(null)
   const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
@@ -1752,10 +1760,16 @@ function App() {
     const label=kind==='weather'?'天气':'体感'
     const name=window.prompt(`添加${label}选项`)?.trim()
     if(!name) return
+    const emoji=window.prompt(`给「${name}」设置 Emoji（可留空）`,'')?.trim()||undefined
     const rows=kind==='weather'?weatherOptions:thermalOptions
     if(rows.some(item=>!item.deletedAt&&item.name===name)){window.alert('已经有同名选项了');return}
     const now=new Date().toISOString(), order=Math.max(-1,...rows.filter(item=>!item.deletedAt).map(item=>item.order))+1
-    updateEnvironmentOptions(kind,current=>[...current,{id:`${kind}:${crypto.randomUUID()}`,name,order,updatedAt:now}])
+    updateEnvironmentOptions(kind,current=>[...current,{id:`${kind}:${crypto.randomUUID()}`,name,emoji,order,updatedAt:now}])
+  }
+  const editEnvironmentEmoji = (kind:'weather'|'thermal', item:EnvironmentOption) => {
+    const emoji=window.prompt(`修改「${item.name}」的 Emoji（留空则不显示）`,item.emoji||'')
+    if(emoji===null) return
+    updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,emoji:emoji.trim()||undefined,updatedAt:new Date().toISOString()}:row))
   }
   const renameEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => {
     const name=window.prompt('修改名称',item.name)?.trim()
@@ -4778,7 +4792,8 @@ function App() {
 
           <div className="settings-group">
             <div className="settings-group-title"><h3>天气与体感</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerOpen(true)}><span><strong>管理天气与体感</strong><small>分别管理每日可选的天气和体感；归档不会影响历史记录。</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('weather')}><span><strong>管理天气</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('thermal')}><span><strong>管理体感</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
           </div>
 
           <div className="settings-group">
@@ -4924,31 +4939,36 @@ function App() {
         </div>
       )}
 
-      {environmentManagerOpen && (
-        <div className="modal-layer environment-manager-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭天气与体感管理" onClick={()=>setEnvironmentManagerOpen(false)} />
-          <section className="task-editor environment-manager" role="dialog" aria-modal="true" aria-label="天气与体感管理">
-            <div className="editor-header"><div><span className="eyebrow">ENVIRONMENT</span><h2>天气与体感</h2></div><button className="close-button" type="button" onClick={()=>setEnvironmentManagerOpen(false)}>×</button></div>
+      {environmentManagerKind && (()=> {
+        const kind=environmentManagerKind
+        const label=kind==='weather'?'天气':'体感'
+        const rows=kind==='weather'?weatherOptions:thermalOptions
+        return <div className="modal-layer environment-manager-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label={`关闭${label}管理`} onClick={()=>setEnvironmentManagerKind(null)} />
+          <section className="task-editor environment-manager" role="dialog" aria-modal="true" aria-label={`管理${label}`}>
+            <div className="editor-header"><div><span className="eyebrow">ENVIRONMENT</span><h2>管理{label}</h2></div><button className="close-button" type="button" onClick={()=>setEnvironmentManagerKind(null)}>×</button></div>
             <div className="editor-body environment-manager-body">
-              {([['weather','天气',weatherOptions],['thermal','体感',thermalOptions]] as const).map(([kind,label,rows])=><section className="environment-option-group" key={kind}>
+              <section className="environment-option-group">
                 <div className="environment-option-heading"><div><strong>{label}</strong><small>每日单选 · 可不记录</small></div><button type="button" className="save-button compact" onClick={()=>addEnvironmentOption(kind)}>＋ 添加</button></div>
                 <div className="environment-option-list">
                   {rows.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map((item,index,shown)=><div className={`environment-option-row${item.archived?' archived':''}`} key={item.id}>
-                    <span>{item.name}{item.builtin?<small>内置</small>:null}{item.archived?<small>已归档</small>:null}</span>
+                    <span className="environment-option-emoji">{item.emoji||'—'}</span>
+                    <span>{item.name}{item.archived?'（已归档）':''}</span>
                     <div className="environment-option-actions">
-                      <button type="button" onClick={()=>moveEnvironmentOption(kind,item,-1)} disabled={index===0} aria-label="上移">↑</button>
-                      <button type="button" onClick={()=>moveEnvironmentOption(kind,item,1)} disabled={index===shown.length-1} aria-label="下移">↓</button>
-                      <button type="button" onClick={()=>renameEnvironmentOption(kind,item)}>编辑</button>
+                      <button type="button" onClick={()=>editEnvironmentEmoji(kind,item)}>Emoji</button>
+                      <button type="button" onClick={()=>renameEnvironmentOption(kind,item)}>改名</button>
+                      <button type="button" disabled={index===0} onClick={()=>moveEnvironmentOption(kind,item,-1)}>↑</button>
+                      <button type="button" disabled={index===shown.length-1} onClick={()=>moveEnvironmentOption(kind,item,1)}>↓</button>
                       <button type="button" onClick={()=>toggleArchiveEnvironmentOption(kind,item)}>{item.archived?'恢复':'归档'}</button>
                       {!item.builtin&&!environmentOptionUsed(kind,item.id)&&<button type="button" className="danger-text" onClick={()=>deleteEnvironmentOption(kind,item)}>删除</button>}
                     </div>
                   </div>)}
                 </div>
-              </section>)}
+              </section>
             </div>
           </section>
         </div>
-      )}
+      })()}
 
       {encouragementManagerOpen && (
         <div className="modal-layer encouragement-layer" role="presentation">
@@ -5303,13 +5323,20 @@ function App() {
 
 
 
-            <section className="detail-section environment-section">
-              <div className="section-heading"><h3>天气与体感</h3></div>
-              <div className="environment-fields">
-                <label className="environment-field"><span>🌦️ 天气</span><select value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}><option value="">未记录</option>{weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.name}{item.archived?'（已归档）':''}</option>)}</select></label>
-                <label className="environment-field"><span>🌡️ 体感</span><select value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}><option value="">未记录</option>{thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.name}{item.archived?'（已归档）':''}</option>)}</select></label>
+            <div className="journal-environment-strip">
+                <label className={`journal-environment-choice${selectedEnvironment?.weatherOptionId?' selected':''}`}>
+                  <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
+                    <option value="">天气</option>
+                    {weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                  </select>
+                </label>
+                <label className={`journal-environment-choice${selectedEnvironment?.thermalOptionId?' selected':''}`}>
+                  <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
+                    <option value="">体感</option>
+                    {thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                  </select>
+                </label>
               </div>
-            </section>
 
                         </>}
 
