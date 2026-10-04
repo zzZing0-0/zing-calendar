@@ -59,3 +59,12 @@ For future changes: edit the relevant domain module first when the change is a b
 ## Data-safety regression tests
 
 Sync and backup are treated as high-risk data-integrity surfaces. The Playwright suite includes isolated multi-device IndexedDB sync tests, GitHub proxy/provider integration tests with a fake cloud ledger, golden heterogeneous life-data fixtures, and full-backup validation/round-trip/restore tests. New changes to sync, tombstones, merge rules, backup manifests, restore parsing, or attachment backup handling should extend these tests rather than relying on manual observation.
+
+## API security boundary (v1.10.20)
+
+- `/api/github-sync` is a narrow GitHub relay, not a general proxy. It accepts only the Contents endpoint used by the sync bundle and Git Blob reads used for large bundles, rejects path traversal/extra query parameters, validates PUT bodies, caps request/token/path/body sizes, and rejects browser cross-site requests.
+- `/api/b2-sign` signs only recognized immutable Zing attachment keys and GET/HEAD/PUT operations. Browser cross-site requests are rejected and signing failures never return server-secret/configuration details.
+- The obsolete `/api/attachments` signer was removed; there must be one B2 signing surface.
+- Long-lived B2 credentials remain server-only. GitHub tokens remain device-owned and are never logged by the relay.
+- Deployment/session authentication remains an outer security boundary. These API checks are defense-in-depth and abuse-surface reduction; same-origin headers alone are not authentication.
+- Any future API change must add/extend `security-api.spec.ts` and preserve normal GitHub/B2 regression coverage.

@@ -1,6 +1,7 @@
 // Short-lived S3-compatible presigned URLs for the private Backblaze B2 bucket.
 // Binary bytes travel browser <-> B2 directly; long-lived B2 credentials stay on Vercel.
 import crypto from 'node:crypto'
+import { PRIVATE_NO_STORE, browserRequestLooksCrossSite, safeB2Key } from '../server/api-security'
 
 const required = (name: string): string => {
   const value = process.env[name]
@@ -14,13 +15,6 @@ const hmac = (key: crypto.BinaryLike | crypto.KeyObject, value: string, encoding
 }
 const sha256 = (value: string) => crypto.createHash('sha256').update(value, 'utf8').digest('hex')
 const awsEncode = (value: string) => encodeURIComponent(value).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
-
-function safeKey(raw: string | null): string | null {
-  // New attachments use attachment:<uuid>. Keep the two legacy Journal prefixes
-  // readable/signable so existing pre-fix records can migrate to B2 without rewriting data.
-  if (!raw || !/^(?:attachment|journal|journal-audio):[0-9a-f-]{16,}$/i.test(raw)) return null
-  return raw
-}
 
 function presign({ method, key, expires = 300 }: { method: 'GET' | 'HEAD' | 'PUT'; key: string; expires?: number }) {
   const accessKey = required('B2_KEY_ID')
@@ -66,21 +60,24 @@ function presign({ method, key, expires = 300 }: { method: 'GET' | 'HEAD' | 'PUT
 
 export async function GET(request: Request): Promise<Response> {
   try {
+    if (browserRequestLooksCrossSite(request)) {
+      return Response.json({ error: 'Cross-site request rejected' }, { status: 403, headers: PRIVATE_NO_STORE })
+    }
     const url = new URL(request.url)
-    const key = safeKey(url.searchParams.get('key'))
+    const key = safeB2Key(url.searchParams.get('key'))
     const method = url.searchParams.get('method')
     if (!key || (method !== 'GET' && method !== 'HEAD' && method !== 'PUT')) {
-      return Response.json({ error: 'Invalid attachment signing request' }, { status: 400 })
+      return Response.json({ error: 'Invalid attachment signing request' }, { status: 400, headers: PRIVATE_NO_STORE })
     }
     return Response.json(
       { url: presign({ method, key }) },
-      { status: 200, headers: { 'Cache-Control': 'private, no-store' } },
+      { status: 200, headers: PRIVATE_NO_STORE },
     )
   } catch (error) {
     console.error('B2 presign error', error)
     return Response.json(
-      { error: error instanceof Error ? error.message : 'B2 presign error' },
-      { status: 500 },
+      { error: 'B2 presign failed' },
+      { status: 500, headers: PRIVATE_NO_STORE },
     )
   }
 }
