@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.10.11'
+const APP_VERSION = '1.10.15'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -33,7 +33,7 @@ import {
   isImportSourceTag, isImportSourceTagId, normalizeEnvironmentOptions, normalizeTags,
 } from './domain/preferences'
 import {
-  ANNIVERSARY_TYPES, anniversaryIcon, anniversaryMeta, anniversaryOccurrence, calendarAnnotation,
+  ANNIVERSARY_TYPES, anniversaryDistanceLabel, anniversaryIcon, anniversaryMeta, anniversaryOccurrence, buildAnniversaryPageRows, calendarAnnotation,
   emptyAnniversaryDraft, lunarCalendarLabel, lunarFullLabel,
 } from './domain/calendar'
 import { attachmentExtension, csvCell, decodeBackupJson, makeZip, readZingZip, safeBackupFilename } from './domain/backup'
@@ -49,6 +49,10 @@ import {
 } from './domain/journal'
 import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVisualForDate, patchPeriodDayLog, periodForDate as findPeriodForDate } from './domain/menstrual'
 import { buildStatistics } from './domain/statistics'
+import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
+import type { SearchFilter, SearchResult } from './domain/search'
+import { activeFocusSession as findActiveFocusSession, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock } from './domain/focus'
+import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
@@ -353,7 +357,7 @@ function App() {
   const [externalImportMessage, setExternalImportMessage] = useState('')
   const externalImportInputRef = useRef<HTMLInputElement|null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchFilter, setSearchFilter] = useState<'all' | 'task' | 'journal' | 'anniversary'>('all')
+  const [searchFilter, setSearchFilter] = useState<SearchFilter>('all')
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileSearchVisible, setMobileSearchVisible] = useState(false)
   const searchWrapRef = useRef<HTMLDivElement | null>(null)
@@ -449,7 +453,7 @@ function App() {
   const [statusCalendarMode, setStatusCalendarMode] = useState<'mood'|'energy'>('mood')
   const energyByDate = useMemo(() => energyMap(dailyEnergy), [dailyEnergy])
   const selectedEnergy = selectedDate ? energyByDate.get(toDateKey(selectedDate)) : undefined
-  const environmentByDate = useMemo(() => new Map(dailyEnvironment.map(row => [row.date,row])), [dailyEnvironment])
+  const environmentByDate = useMemo(() => buildEnvironmentByDate(dailyEnvironment), [dailyEnvironment])
   const selectedEnvironment = selectedDate ? environmentByDate.get(toDateKey(selectedDate)) : undefined
   const menstrualPrediction = useMemo(() => calculateMenstrualPrediction(menstrualPeriods), [menstrualPeriods])
   const menstrualVisualForDate = (key:string) => getMenstrualVisualForDate(key, menstrualPeriods, menstrualPrediction)
@@ -698,25 +702,13 @@ function App() {
   const setEnvironmentChoice = (kind:'weather'|'thermal', optionId:string) => {
     if (!selectedDate) return
     const date=toDateKey(selectedDate), now=new Date().toISOString()
-    setDailyEnvironment(current=>{
-      const existing=current.find(row=>row.date===date)
-      const next:DailyEnvironment={date,weatherOptionId:existing?.weatherOptionId,thermalOptionId:existing?.thermalOptionId,locationCity:existing?.locationCity,locationCountry:existing?.locationCountry,updatedAt:now}
-      if(kind==='weather') next.weatherOptionId=optionId||undefined
-      else next.thermalOptionId=optionId||undefined
-      if(!next.weatherOptionId&&!next.thermalOptionId&&!next.locationCity) return current.filter(row=>row.date!==date)
-      return existing?current.map(row=>row.date===date?next:row):[...current,next]
-    })
+    setDailyEnvironment(current=>patchEnvironmentChoice(current,date,kind,optionId,now))
   }
 
   const saveEnvironmentLocation = (city:string, country?:string) => {
     if(!selectedDate) return
     const date=toDateKey(selectedDate), now=new Date().toISOString()
-    setDailyEnvironment(current=>{
-      const existing=current.find(row=>row.date===date)
-      const next:DailyEnvironment={date,weatherOptionId:existing?.weatherOptionId,thermalOptionId:existing?.thermalOptionId,locationCity:city.trim()||undefined,locationCountry:country?.trim()||undefined,updatedAt:now}
-      if(!next.weatherOptionId&&!next.thermalOptionId&&!next.locationCity) return current.filter(row=>row.date!==date)
-      return existing?current.map(row=>row.date===date?next:row):[...current,next]
-    })
+    setDailyEnvironment(current=>patchEnvironmentLocation(current,date,city,country,now))
   }
 
   const editPastEnvironmentLocation = () => {
@@ -773,7 +765,7 @@ function App() {
     editPastEnvironmentLocation()
   }
 
-  const environmentOptionUsed = (kind:'weather'|'thermal', id:string) => dailyEnvironment.some(row=>kind==='weather'?row.weatherOptionId===id:row.thermalOptionId===id)
+  const environmentOptionUsed = (kind:'weather'|'thermal', id:string) => isEnvironmentOptionUsed(dailyEnvironment,kind,id)
   const updateEnvironmentOptions = (kind:'weather'|'thermal', updater:(rows:EnvironmentOption[])=>EnvironmentOption[]) => {
     if(kind==='weather') setWeatherOptions(updater)
     else setThermalOptions(updater)
@@ -784,35 +776,31 @@ function App() {
     if(!name) return
     const emoji=window.prompt(`给「${name}」设置 Emoji（可留空）`,'')?.trim()||undefined
     const rows=kind==='weather'?weatherOptions:thermalOptions
-    if(rows.some(item=>!item.deletedAt&&item.name===name)){window.alert('已经有同名选项了');return}
-    const now=new Date().toISOString(), order=Math.max(-1,...rows.filter(item=>!item.deletedAt).map(item=>item.order))+1
-    updateEnvironmentOptions(kind,current=>[...current,{id:`${kind}:${crypto.randomUUID()}`,name,emoji,order,updatedAt:now}])
+    if(environmentOptionNameTaken(rows,name)){window.alert('已经有同名选项了');return}
+    const now=new Date().toISOString()
+    updateEnvironmentOptions(kind,current=>createEnvironmentOption(current,kind,crypto.randomUUID(),name,emoji,now))
   }
   const editEnvironmentEmoji = (kind:'weather'|'thermal', item:EnvironmentOption) => {
     const emoji=window.prompt(`修改「${item.name}」的 Emoji（留空则不显示）`,item.emoji||'')
     if(emoji===null) return
-    updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,emoji:emoji.trim()||undefined,updatedAt:new Date().toISOString()}:row))
+    updateEnvironmentOptions(kind,current=>patchEnvironmentOption(current,item.id,{emoji:emoji.trim()||undefined},new Date().toISOString()))
   }
   const renameEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => {
     const name=window.prompt('修改名称',item.name)?.trim()
     if(!name||name===item.name) return
     const rows=kind==='weather'?weatherOptions:thermalOptions
-    if(rows.some(other=>other.id!==item.id&&!other.deletedAt&&other.name===name)){window.alert('已经有同名选项了');return}
-    updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,name,updatedAt:new Date().toISOString()}:row))
+    if(environmentOptionNameTaken(rows,name,item.id)){window.alert('已经有同名选项了');return}
+    updateEnvironmentOptions(kind,current=>patchEnvironmentOption(current,item.id,{name},new Date().toISOString()))
   }
-  const toggleArchiveEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,archived:!row.archived,updatedAt:new Date().toISOString()}:row))
+  const toggleArchiveEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => updateEnvironmentOptions(kind,current=>patchEnvironmentOption(current,item.id,{archived:!item.archived},new Date().toISOString()))
   const deleteEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption) => {
     if(item.builtin||environmentOptionUsed(kind,item.id)) return
     if(!window.confirm(`彻底删除“${item.name}”？`)) return
-    updateEnvironmentOptions(kind,current=>current.map(row=>row.id===item.id?{...row,deletedAt:new Date().toISOString(),updatedAt:new Date().toISOString()}:row))
+    const now=new Date().toISOString()
+    updateEnvironmentOptions(kind,current=>markEnvironmentOptionDeleted(current,item.id,now))
   }
   const moveEnvironmentOption = (kind:'weather'|'thermal', item:EnvironmentOption, direction:-1|1) => {
-    updateEnvironmentOptions(kind,current=>{
-      const active=current.filter(row=>!row.deletedAt).sort((a,b)=>a.order-b.order), index=active.findIndex(row=>row.id===item.id), target=index+direction
-      if(index<0||target<0||target>=active.length) return current
-      const other=active[target], now=new Date().toISOString(), aOrder=item.order, bOrder=other.order
-      return current.map(row=>row.id===item.id?{...row,order:bOrder,updatedAt:now}:row.id===other.id?{...row,order:aOrder,updatedAt:now}:row)
-    })
+    updateEnvironmentOptions(kind,current=>reorderEnvironmentOption(current,item.id,direction,new Date().toISOString()))
   }
 
   const periodForDate = (key:string) => findPeriodForDate(menstrualPeriods, key, toDateKey(today))
@@ -1266,32 +1254,8 @@ function App() {
   }, [selectedDate, activeTasks, focusSessions, timerNow])
 
   const focusHistoryRecords = useMemo(() => {
-    if (!focusHistoryDate) return [] as Array<{id:string;kind:'task'|'direct';title:string;seconds:number;tagIds:string[];task?:Task;session?:FocusSession}>
-    const rows:Array<{id:string;kind:'task'|'direct';title:string;seconds:number;tagIds:string[];task?:Task;session?:FocusSession}>=[]
-    activeTasks.forEach(task=>{
-      if(!task.recurrence){
-        const seconds=Math.max(0,Number(task.actualDurationMinutes??0)*60)
-        if(task.date===focusHistoryDate&&seconds>0) rows.push({id:`task:${task.id}`,kind:'task',title:task.title,seconds,tagIds:task.tagIds??[],task})
-        return
-      }
-      const exception=task.recurrenceExceptions?.[focusHistoryDate]
-      if(!exception||exception.deleted||exception.trashedAt) return
-      const seconds=Math.max(0,Number(exception.actualDurationMinutes??0)*60)
-      if(seconds<=0) return
-      const occurrence=materializeOccurrence(task,focusHistoryDate)
-      if(occurrence) rows.push({id:`task:${task.id}:${focusHistoryDate}`,kind:'task',title:occurrence.title,seconds,tagIds:occurrence.tagIds??[],task:occurrence})
-    })
-    const dayStart=new Date(`${focusHistoryDate}T00:00:00`).getTime(), dayEnd=new Date(`${focusHistoryDate}T23:59:59.999`).getTime()+1
-    focusSessions.forEach(session=>{
-      const start=new Date(session.startedAt).getTime()
-      if(!Number.isFinite(start)) return
-      const rawEnd=session.endedAt?new Date(session.endedAt).getTime():timerNow
-      const plannedEnd=session.mode==='countdown'&&session.plannedSeconds?start+session.plannedSeconds*1000:rawEnd
-      const end=Math.min(rawEnd,plannedEnd)
-      const overlap=Math.max(0,Math.min(end,dayEnd)-Math.max(start,dayStart))
-      if(overlap>0) rows.push({id:`direct:${session.id}`,kind:'direct',title:'自由专注',seconds:Math.round(overlap/1000),tagIds:session.tagIds,session})
-    })
-    return rows.sort((a,b)=>{const at=a.session?.startedAt??'',bt=b.session?.startedAt??'';return bt.localeCompare(at)})
+    if (!focusHistoryDate) return []
+    return focusHistoryForDate(activeTasks, focusSessions, focusHistoryDate, timerNow)
   },[focusHistoryDate,activeTasks,focusSessions,timerNow])
 
   const clearTaskFocusRecord = (task:Task) => {
@@ -1598,14 +1562,12 @@ function App() {
   }
 
 
-  const activeFocusSession = useMemo(() => focusSessions.find(session=>!session.endedAt) ?? null, [focusSessions])
+  const activeFocusSession = useMemo(() => findActiveFocusSession(focusSessions), [focusSessions])
   const maxFocusSeconds = maxFocusHours * 3600
-  const activeFocusElapsed = activeFocusSession ? Math.min(maxFocusSeconds,Math.max(0,Math.floor((timerNow-new Date(activeFocusSession.startedAt).getTime())/1000))) : 0
-  const activeFocusRemaining = activeFocusSession?.mode==='countdown' ? Math.max(0,(activeFocusSession.plannedSeconds??0)-activeFocusElapsed) : 0
-  const formatClock = (seconds:number) => {
-    const safe=Math.max(0,Math.floor(seconds)), h=Math.floor(safe/3600), m=Math.floor((safe%3600)/60), sec=safe%60
-    return h>0 ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
-  }
+  const activeFocusTiming = focusTiming(activeFocusSession, timerNow, maxFocusSeconds)
+  const activeFocusElapsed = activeFocusTiming.elapsedSeconds
+  const activeFocusRemaining = activeFocusTiming.remainingSeconds
+  const formatClock = formatFocusClock
   const startDirectFocus = () => {
     if (activeTimerTask || activeFocusSession) return
     const plannedMinutes=Math.max(1,Number.parseInt(focusMinutes||'15',10)||15)
@@ -1619,13 +1581,10 @@ function App() {
     // Keep the just-finished focus tag selected when the panel returns to
     // "Start focus", matching the tag restored after closing/reopening it.
     setFocusTagIds([lastOrdinaryTagId??DEFAULT_TAG_ID])
-    const startMs=new Date(activeFocusSession.startedAt).getTime()
-    const capMs=startMs+maxFocusSeconds*1000
-    const countdownDue=activeFocusSession.mode==='countdown'&&activeFocusSession.plannedSeconds ? startMs+activeFocusSession.plannedSeconds*1000 : Number.POSITIVE_INFINITY
-    const endMs=automatic ? Math.min(capMs,countdownDue) : Math.min(Date.now(),capMs)
-    const endedAt=new Date(endMs).toISOString()
-    const durationSeconds=Math.max(0,Math.round((endMs-new Date(activeFocusSession.startedAt).getTime())/1000))
-    setFocusSessions(current=>current.map(session=>session.id===activeFocusSession.id?{...session,endedAt,durationSeconds,updatedAt:endedAt}:session))
+    const timing=focusTiming(activeFocusSession,Date.now(),maxFocusSeconds)
+    const capEnd=new Date(activeFocusSession.startedAt).getTime()+maxFocusSeconds*1000
+    const endMs=automatic ? (timing.dueAtMs??capEnd) : Math.min(Date.now(),capEnd)
+    setFocusSessions(current=>current.map(session=>session.id===activeFocusSession.id?finishedFocusSession(session,endMs):session))
   }
 
 
@@ -1651,10 +1610,8 @@ function App() {
 
   useEffect(() => {
     if (!activeFocusSession) return
-    const startMs=new Date(activeFocusSession.startedAt).getTime()
-    const capDue=startMs+maxFocusSeconds*1000
-    const countdownDue=activeFocusSession.mode==='countdown'&&activeFocusSession.plannedSeconds ? startMs+activeFocusSession.plannedSeconds*1000 : Number.POSITIVE_INFINITY
-    if(timerNow>=Math.min(capDue,countdownDue)) stopDirectFocus(true)
+    const dueAtMs=focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
+    if(dueAtMs!==null&&timerNow>=dueAtMs) stopDirectFocus(true)
   },[timerNow,activeFocusSession?.id,activeFocusSession?.plannedSeconds,maxFocusSeconds])
 
   useEffect(() => {
@@ -2213,17 +2170,7 @@ function App() {
     }
   }
 
-  const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
-
-  const searchSnippet = (text: string) => {
-    const clean = text.replace(/[#>*_`~\[\]()!-]+/g, ' ').replace(/\s+/g, ' ').trim()
-    if (!clean) return ''
-    const index = clean.toLocaleLowerCase().indexOf(normalizedSearch)
-    if (index < 0) return clean.slice(0, 100)
-    const from = Math.max(0, index - 22)
-    const to = Math.min(clean.length, index + normalizedSearch.length + 34)
-    return `${from > 0 ? '…' : ''}${clean.slice(from, to)}${to < clean.length ? '…' : ''}`
-  }
+  const normalizedSearch = normalizeSearchQuery(searchQuery)
 
   const highlightSearch = (text: string) => {
     if (!normalizedSearch) return text
@@ -2242,46 +2189,18 @@ function App() {
     return nodes
   }
 
-  type SearchResult =
-    | { kind:'task'; id:string; title:string; date:string; snippet:string; item:Task }
-    | { kind:'journal'; id:string; title:string; date:string; snippet:string; item:JournalEntry }
-    | { kind:'anniversary'; id:string; title:string; date:string; snippet:string; item:Anniversary; nextOccurrence?:Date }
-    | { kind:'tag'; id:string; title:string; date:string; snippet:string; item:Tag }
+  const { tagSearchMode } = parseTagSearch(normalizedSearch)
 
-  const tagSearchMode = normalizedSearch.startsWith('#')
-  const tagSearchTerm = tagSearchMode ? normalizedSearch.slice(1).trim() : ''
-
-  const searchResults = useMemo<SearchResult[]>(() => {
-    if (!normalizedSearch) return []
-    if (tagSearchMode) {
-      return managedTags
-        .filter(tag => !tagSearchTerm || tag.name.toLocaleLowerCase().includes(tagSearchTerm))
-        .map(tag => {
-          const usage=tagUsage.get(tag.id) ?? {tasks:0,journals:0,days:0}
-          return {kind:'tag' as const,id:tag.id,title:`#${tag.name}`,date:'',snippet:`任务 ${usage.tasks} · 记录 ${usage.journals} · ${usage.days}天`,item:tag}
-        })
-    }
-    const results: SearchResult[] = []
-    if (searchFilter === 'all' || searchFilter === 'task') activeTasks.forEach(task => {
-      const hay = `${task.title} ${task.notes ?? ''}`.toLocaleLowerCase()
-      if (hay.includes(normalizedSearch)) results.push({ kind:'task', id:task.id, title:task.title, date:task.date, snippet:searchSnippet(task.notes ?? ''), item:task })
-    })
-    if (searchFilter === 'all' || searchFilter === 'journal') activeJournalEntries.forEach(entry => {
-      const hay = `${entry.title} ${entry.content}`.toLocaleLowerCase()
-      if (hay.includes(normalizedSearch)) results.push({ kind:'journal', id:entry.id, title:entry.title, date:entry.date, snippet:searchSnippet(entry.content), item:entry })
-    })
-    if (searchFilter === 'all' || searchFilter === 'anniversary') activeAnniversaries.forEach(anniversary => {
-      const hay = `${anniversary.title} ${anniversary.notes ?? ''}`.toLocaleLowerCase()
-      if (hay.includes(normalizedSearch)) {
-        const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
-        let occurrence = anniversaryOccurrence(anniversary, candidateYear)
-        if (!occurrence || occurrence < new Date(today.getFullYear(), today.getMonth(), today.getDate())) occurrence = anniversaryOccurrence(anniversary, candidateYear+1)
-        const sortDate = occurrence ? toDateKey(occurrence) : (anniversary.year ? `${anniversary.year}-${String(anniversary.month).padStart(2,'0')}-${String(anniversary.day).padStart(2,'0')}` : '')
-        results.push({ kind:'anniversary', id:anniversary.id, title:anniversary.title, date:sortDate, snippet:searchSnippet(anniversary.notes ?? ''), item:anniversary, nextOccurrence:occurrence ?? undefined })
-      }
-    })
-    return results.sort((a,b) => b.date.localeCompare(a.date))
-  }, [normalizedSearch, tagSearchMode, tagSearchTerm, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, managedTags, tagUsage])
+  const searchResults = useMemo<SearchResult[]>(() => buildSearchResults({
+    normalizedSearch,
+    searchFilter,
+    activeTasks,
+    activeJournalEntries,
+    activeAnniversaries,
+    managedTags,
+    tagUsage,
+    today,
+  }), [normalizedSearch, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, managedTags, tagUsage])
 
   const searchDateLabel = (result: SearchResult) => {
     if (result.kind === 'tag') return ''
@@ -2376,47 +2295,7 @@ function App() {
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
   const moodStatLabels = ['','特别差','有点差','一般','还可以','很高兴']
 
-  const anniversaryPageRows = useMemo(() => {
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    return activeAnniversaries.map(anniversary => {
-      let occurrence: Date | null = null
-      if (anniversary.repeatYearly) {
-        const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
-        occurrence = anniversaryOccurrence(anniversary, candidateYear)
-        if (!occurrence || occurrence < todayStart) occurrence = anniversaryOccurrence(anniversary, candidateYear + 1)
-      } else if (anniversary.year) {
-        occurrence = anniversaryOccurrence(anniversary, anniversary.year)
-      }
-      return { anniversary, occurrence }
-    }).sort((a,b) => {
-      if (!a.occurrence) return 1
-      if (!b.occurrence) return -1
-
-      const aPastOneOff = !a.anniversary.repeatYearly && a.occurrence < todayStart
-      const bPastOneOff = !b.anniversary.repeatYearly && b.occurrence < todayStart
-
-      // Active/upcoming anniversaries always come first.
-      if (aPastOneOff !== bPastOneOff) return aPastOneOff ? 1 : -1
-
-      if (aPastOneOff && bPastOneOff) {
-        // Finished one-off dates sink to the bottom; most recently passed first.
-        return b.occurrence.getTime() - a.occurrence.getTime()
-      }
-
-      // Today/future: nearest occurrence first.
-      return a.occurrence.getTime() - b.occurrence.getTime()
-    })
-  }, [activeAnniversaries])
-
-  const anniversaryDistanceLabel = (anniversary: Anniversary, occurrence: Date | null) => {
-    if (!occurrence) return ''
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    const occurrenceStart = new Date(occurrence.getFullYear(), occurrence.getMonth(), occurrence.getDate())
-    const days = Math.round((occurrenceStart.getTime() - todayStart.getTime()) / 86400000)
-    if (days === 0) return '今天'
-    if (anniversary.repeatYearly) return `还有 ${days} 天`
-    return days > 0 ? `还有 ${days} 天` : `过去 ${Math.abs(days)} 天`
-  }
+  const anniversaryPageRows = useMemo(() => buildAnniversaryPageRows(activeAnniversaries, today), [activeAnniversaries])
 
   const allStoredAttachments = useMemo(() => {
     const seen = new Map<string, Attachment>()
@@ -3405,7 +3284,7 @@ function App() {
                     {anniversary.repeatYearly && occurrence && anniversary.year && occurrence.getFullYear() >= anniversary.year && anniversary.type === 'anniversary' && (
                       <strong>{occurrence.getFullYear() === anniversary.year ? '纪念日当天' : `${occurrence.getFullYear() - anniversary.year}周年`}</strong>
                     )}
-                    <small>{anniversaryDistanceLabel(anniversary, occurrence)}</small>
+                    <small>{anniversaryDistanceLabel(anniversary, occurrence, today)}</small>
                   </span>
                 </button>
               ))}

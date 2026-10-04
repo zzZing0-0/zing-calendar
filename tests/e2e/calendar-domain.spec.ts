@@ -2,9 +2,11 @@ import { expect, test } from '@playwright/test'
 import type { Anniversary } from '../../src/types'
 import {
   ANNIVERSARY_TYPES,
+  anniversaryDistanceLabel,
   anniversaryIcon,
   anniversaryMeta,
   anniversaryOccurrence,
+  buildAnniversaryPageRows,
   calendarFestival,
   chineseLunarDayName,
   daysInMonth,
@@ -79,4 +81,36 @@ test.describe('calendar domain regression', () => {
     expect(calendarFestival(new Date(2026, 0, 1))).toEqual({ label: '元旦', kind: 'statutory' })
     expect(calendarFestival(new Date(2026, 1, 14))).toEqual({ label: '情人节', kind: 'international' })
   })
+
+  test('anniversary page rows keep upcoming items first and sink past one-off dates newest-first', () => {
+    const today = new Date(2026, 9, 4)
+    const rows = buildAnniversaryPageRows([
+      solarAnniversary({ id:'past-old', repeatYearly:false, year:2026, month:8, day:1 }),
+      solarAnniversary({ id:'future-one', repeatYearly:false, year:2026, month:10, day:8 }),
+      solarAnniversary({ id:'yearly', year:2020, month:10, day:6 }),
+      solarAnniversary({ id:'past-new', repeatYearly:false, year:2026, month:9, day:30 }),
+    ], today)
+    expect(rows.map(row => row.anniversary.id)).toEqual(['yearly','future-one','past-new','past-old'])
+    expect(rows[0].occurrence).toEqual(new Date(2026, 9, 6))
+  })
+
+  test('anniversary page rows roll yearly dates forward but keep one-off dates in their stored year', () => {
+    const today = new Date(2026, 9, 10)
+    const yearly = solarAnniversary({ id:'yearly', year:2020, month:10, day:4 })
+    const once = solarAnniversary({ id:'once', repeatYearly:false, year:2026, month:10, day:4 })
+    const rows = buildAnniversaryPageRows([yearly, once], today)
+    expect(rows.find(row => row.anniversary.id === 'yearly')?.occurrence).toEqual(new Date(2027, 9, 4))
+    expect(rows.find(row => row.anniversary.id === 'once')?.occurrence).toEqual(new Date(2026, 9, 4))
+  })
+
+  test('anniversary distance labels distinguish today, upcoming, and passed one-off dates', () => {
+    const today = new Date(2026, 9, 4)
+    const yearly = solarAnniversary({ repeatYearly:true, month:10, day:8 })
+    const once = solarAnniversary({ repeatYearly:false, year:2026, month:10, day:1 })
+    expect(anniversaryDistanceLabel(yearly, new Date(2026, 9, 4), today)).toBe('今天')
+    expect(anniversaryDistanceLabel(yearly, new Date(2026, 9, 8), today)).toBe('还有 4 天')
+    expect(anniversaryDistanceLabel(once, new Date(2026, 9, 1), today)).toBe('过去 3 天')
+    expect(anniversaryDistanceLabel(once, null, today)).toBe('')
+  })
+
 })

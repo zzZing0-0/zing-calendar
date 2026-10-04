@@ -185,3 +185,40 @@ export function anniversaryMeta(ann: Anniversary, occurrence: Date) {
   if (ann.type==='birthday') return n>=0 ? `${n}岁` : ''
   return n>0 ? `${n}周年` : ''
 }
+
+
+export type AnniversaryPageRow = { anniversary: Anniversary; occurrence: Date | null }
+
+export function buildAnniversaryPageRows(activeAnniversaries: Anniversary[], today: Date): AnniversaryPageRow[] {
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return activeAnniversaries.map(anniversary => {
+    let occurrence: Date | null = null
+    if (anniversary.repeatYearly) {
+      const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
+      occurrence = anniversaryOccurrence(anniversary, candidateYear)
+      if (!occurrence || occurrence < todayStart) occurrence = anniversaryOccurrence(anniversary, candidateYear + 1)
+    } else if (anniversary.year) {
+      occurrence = anniversaryOccurrence(anniversary, anniversary.year)
+    }
+    return { anniversary, occurrence }
+  }).sort((a,b) => {
+    if (!a.occurrence) return 1
+    if (!b.occurrence) return -1
+
+    const aPastOneOff = !a.anniversary.repeatYearly && a.occurrence < todayStart
+    const bPastOneOff = !b.anniversary.repeatYearly && b.occurrence < todayStart
+    if (aPastOneOff !== bPastOneOff) return aPastOneOff ? 1 : -1
+    if (aPastOneOff && bPastOneOff) return b.occurrence.getTime() - a.occurrence.getTime()
+    return a.occurrence.getTime() - b.occurrence.getTime()
+  })
+}
+
+export function anniversaryDistanceLabel(anniversary: Anniversary, occurrence: Date | null, today: Date): string {
+  if (!occurrence) return ''
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const occurrenceStart = new Date(occurrence.getFullYear(), occurrence.getMonth(), occurrence.getDate())
+  const days = Math.round((occurrenceStart.getTime() - todayStart.getTime()) / 86400000)
+  if (days === 0) return '今天'
+  if (anniversary.repeatYearly) return `还有 ${days} 天`
+  return days > 0 ? `还有 ${days} 天` : `过去 ${Math.abs(days)} 天`
+}
