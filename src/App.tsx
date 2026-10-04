@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.9.39'
+const APP_VERSION = '1.9.40'
 
 type TaskPriority = 0 | 1 | 2 | 3
 type TaskStatus = 'todo' | 'completed' | 'abandoned'
@@ -2685,6 +2685,10 @@ function App() {
   }
   const stopDirectFocus = (automatic=false) => {
     if (!activeFocusSession) return
+    const lastOrdinaryTagId=activeFocusSession.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='task'))))
+    // Keep the just-finished focus tag selected when the panel returns to
+    // "Start focus", matching the tag restored after closing/reopening it.
+    setFocusTagIds([lastOrdinaryTagId??DEFAULT_TAG_ID])
     const startMs=new Date(activeFocusSession.startedAt).getTime()
     const capMs=startMs+maxFocusSeconds*1000
     const countdownDue=activeFocusSession.mode==='countdown'&&activeFocusSession.plannedSeconds ? startMs+activeFocusSession.plannedSeconds*1000 : Number.POSITIVE_INFINITY
