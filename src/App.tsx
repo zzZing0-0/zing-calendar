@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.10.20'
+const APP_VERSION = '1.10.21'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -56,6 +56,7 @@ import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOpti
 import { useAppPreferences } from './hooks/useAppPreferences'
 import { planSyncDiff, syncEntityKey } from './domain/sync'
 import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
+import { buildAttachmentLifecycle, referencedAttachmentKeys } from './domain/attachments'
 
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
@@ -304,6 +305,7 @@ function App() {
   const [wordIgnoreManagerOpen, setWordIgnoreManagerOpen] = useState(false)
   const [storageStats, setStorageStats] = useState({ total:0, images:0, audio:0, data:0, attachmentCount:0 })
   const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
+  const [orphanCleanupBusy, setOrphanCleanupBusy] = useState(false)
   const [imageLibraryTarget, setImageLibraryTarget] = useState<'task'|'journal'|null>(null)
   const [backupExporting, setBackupExporting] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
@@ -1132,14 +1134,8 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
   useEffect(() => {
     if (mainView !== 'settings' || !tasksHydrated || !journalHydrated) return
-    const referencedKeys = new Set<string>()
-    const add = (items?: Attachment[]) => (items ?? []).forEach(item => referencedKeys.add(item.storageKey))
-    tasks.forEach(task => {
-      add(task.attachments)
-      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => add(exception.attachments))
-    })
-    journalEntries.forEach(entry => add(entry.attachments))
-    cleanupOrphanAttachmentBlobs([...referencedKeys])
+    const referencedKeys = referencedAttachmentKeys(tasks, journalEntries)
+    cleanupOrphanAttachmentBlobs(referencedKeys)
       .then(() => getStorageStats())
       .then(setStorageStats)
       .catch(error => console.error('Failed to clean or calculate storage', error))
@@ -2258,21 +2254,31 @@ function App() {
 
   const anniversaryPageRows = useMemo(() => buildAnniversaryPageRows(activeAnniversaries, today), [activeAnniversaries])
 
-  const allStoredAttachments = useMemo(() => {
-    const seen = new Map<string, Attachment>()
-    const add = (items?: Attachment[]) => (items ?? []).forEach(item => seen.set(item.storageKey, item))
-    tasks.forEach(task => {
-      add(task.attachments)
-      Object.values(task.recurrenceExceptions ?? {}).forEach(exception => add(exception.attachments))
-    })
-    journalEntries.forEach(entry => add(entry.attachments))
-    return [...seen.values()].sort((a,b) => b.createdAt.localeCompare(a.createdAt))
-  }, [tasks, journalEntries])
-  const browsedAttachments = storageBrowser ? allStoredAttachments.filter(item => item.type === storageBrowser) : []
+  const attachmentLifecycle = useMemo(() => buildAttachmentLifecycle(tasks, journalEntries), [tasks, journalEntries])
+  const allStoredAttachments = useMemo(() => attachmentLifecycle.map(row => row.attachment), [attachmentLifecycle])
+  const activeStoredAttachments = useMemo(() => attachmentLifecycle.filter(row => row.state === 'active').map(row => row.attachment), [attachmentLifecycle])
+  const trashedStoredAttachments = useMemo(() => attachmentLifecycle.filter(row => row.state === 'trash').map(row => row.attachment), [attachmentLifecycle])
+  const browsedActiveAttachments = storageBrowser ? activeStoredAttachments.filter(item => item.type === storageBrowser) : []
+  const browsedTrashedAttachments = storageBrowser ? trashedStoredAttachments.filter(item => item.type === storageBrowser) : []
+  const browsedAttachments = [...browsedActiveAttachments, ...browsedTrashedAttachments]
   const libraryImages = allStoredAttachments.filter(item => item.type === 'image')
   const effectiveImageBytes = allStoredAttachments.filter(item => item.type === 'image').reduce((sum,item)=>sum+item.size,0)
   const effectiveAudioBytes = allStoredAttachments.filter(item => item.type === 'audio').reduce((sum,item)=>sum+item.size,0)
   const effectiveAttachmentBytes = effectiveImageBytes + effectiveAudioBytes
+  const cleanupB2Orphans = async () => {
+    if (orphanCleanupBusy) return
+    if (!window.confirm('清理 B2 中当前没有任何任务或记录引用的孤儿附件？建议先完成一次 GitHub 同步。此操作会永久删除孤儿文件，无法恢复。')) return
+    setOrphanCleanupBusy(true)
+    try {
+      const response = await fetch('/api/b2-gc', { method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify({ referencedKeys: referencedAttachmentKeys(tasks, journalEntries) }) })
+      const payload:any = await response.json().catch(()=>({}))
+      if (!response.ok) throw new Error(String(payload?.error || `HTTP ${response.status}`))
+      await cleanupOrphanAttachmentBlobs(referencedAttachmentKeys(tasks, journalEntries))
+      setStorageStats(await getStorageStats())
+      window.alert(payload.deleted ? `已清除 ${payload.deleted} 个 B2 孤儿附件。` : '没有发现需要清理的 B2 孤儿附件。')
+    } catch (error) { window.alert(`孤儿附件清理失败：${error instanceof Error ? error.message : String(error)}`) }
+    finally { setOrphanCleanupBusy(false) }
+  }
   const chooseLibraryImage = (source: Attachment) => {
     const linked: Attachment = { ...source, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
     if (imageLibraryTarget === 'task') {
@@ -3318,6 +3324,9 @@ function App() {
               </div>
               <small>本设备同时在 IndexedDB 保留数据与附件缓存，用于离线使用；这里显示的是当前有效内容，不代表 GitHub 仓库或 B2 桶的实际总占用。</small>
             </div>
+            <button className="settings-link-row orphan-cleanup-row" type="button" onClick={()=>void cleanupB2Orphans()} disabled={orphanCleanupBusy}>
+              <span><strong>清理 B2 孤儿附件</strong><small>仅永久删除已无任何任务或记录引用的 B2 文件；建议先同步，再手动清理。</small></span><b>{orphanCleanupBusy?'…':'清理'}</b>
+            </button>
             <div className="backup-settings-block">
               <button className="settings-link-row external-import-row" type="button" onClick={openExternalImport}>
                 <span><strong>从外部导入</strong><small>通用 CSV 或已支持来源；导入任务统一标记为“从外部导入”。</small></span><b>›</b>
@@ -3665,10 +3674,15 @@ function App() {
               <div><span className="eyebrow">STORAGE</span><h2>{storageBrowser==='image'?'所有图片':'所有录音'}</h2><small>{browsedAttachments.length} 个附件 · {formatBytes(storageBrowser==='image'?storageStats.images:storageStats.audio)}</small></div>
               <button className="close-button" type="button" onClick={()=>setStorageBrowser(null)}>×</button>
             </div>
-            {browsedAttachments.length===0 ? <p className="page-empty">还没有{storageBrowser==='image'?'图片':'录音'}。</p> :
-              storageBrowser==='image' ? <div className="storage-image-grid">{browsedAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={openImagePreview} />)}</div>
-              : <div className="storage-audio-list">{browsedAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>
-            }
+            {browsedAttachments.length===0 ? <p className="page-empty">还没有{storageBrowser==='image'?'图片':'录音'}。</p> : <>
+              {storageBrowser==='image' ? <div className="storage-image-grid">{browsedActiveAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={openImagePreview} />)}</div>
+                : <div className="storage-audio-list">{browsedActiveAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>}
+              {browsedTrashedAttachments.length>0 && <section className="storage-trash-section"><div className="storage-trash-divider"><span>回收站 · {browsedTrashedAttachments.length}</span><small>所有引用它的内容都已进入回收站</small></div>
+                {storageBrowser==='image' ? <div className="storage-image-grid">{browsedTrashedAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={openImagePreview} />)}</div>
+                  : <div className="storage-audio-list">{browsedTrashedAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>}
+              </section>}
+            </>}
+
           </section>
         </div>
       )}

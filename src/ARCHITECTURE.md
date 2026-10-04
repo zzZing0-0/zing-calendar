@@ -68,3 +68,10 @@ Sync and backup are treated as high-risk data-integrity surfaces. The Playwright
 - Long-lived B2 credentials remain server-only. GitHub tokens remain device-owned and are never logged by the relay.
 - Deployment/session authentication remains an outer security boundary. These API checks are defense-in-depth and abuse-surface reduction; same-origin headers alone are not authentication.
 - Any future API change must add/extend `security-api.spec.ts` and preserve normal GitHub/B2 regression coverage.
+
+## Attachment lifecycle (v1.10.21)
+- An attachment is **active** whenever at least one non-trashed Task/Journal reference remains.
+- It is shown in the attachment **Recycle Bin** section only when references still exist but every remaining reference is trashed. Restoring any live reference makes it active again.
+- A permanently deleted occurrence no longer keeps its attachment alive.
+- A B2 object with no structured-data reference is an **orphan**. Orphan deletion is never automatic: Settings exposes an explicit one-click cleanup, with a pre-delete confirmation and a reminder to sync first.
+- B2 garbage collection lists only allowlisted Zing attachment keys and deletes only keys absent from the client-supplied current reference set. Attachment metadata/reference rules must remain covered by regression tests.

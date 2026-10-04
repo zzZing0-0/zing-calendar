@@ -4734,3 +4734,11 @@ button {
 .drawer-header-top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;width:100%}
 .drawer-header-top > div:first-child{min-width:0}
 .drawer-header .drawer-date-meta-row{width:100%}
+
+/* v1.10.21 — attachment lifecycle */
+.storage-trash-section{margin-top:22px;padding-top:2px}
+.storage-trash-divider{display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-top:1px solid #dfe5e1;padding:15px 2px 10px;color:#68756d}
+.storage-trash-divider span{font-weight:700}
+.storage-trash-divider small{font-size:12px;color:#909a94;text-align:right}
+.orphan-cleanup-row b{font-size:13px}
+@media(max-width:620px){.storage-trash-divider{align-items:flex-start;flex-direction:column;gap:3px}.storage-trash-divider small{text-align:left}}

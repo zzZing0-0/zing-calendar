@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { POST as githubSyncPost } from '../../api/github-sync'
 import { GET as b2SignGet } from '../../api/b2-sign'
+import { POST as b2GcPost } from '../../api/b2-gc'
 import { safeB2Key, safeGitHubPath, validateGitHubPutBody } from '../../server/api-security.js'
 
 const validPutBody = JSON.stringify({ message:'sync: Zing data 2026-10-04', branch:'main', content:Buffer.from('{}').toString('base64') })
@@ -84,9 +85,29 @@ test.describe('API security boundary regression', () => {
 
 test('security API regression › Vercel function imports use deployment-safe ESM specifiers', async () => {
   const fs = await import('node:fs/promises')
-  for (const file of ['api/github-sync.ts', 'api/b2-sign.ts']) {
+  for (const file of ['api/github-sync.ts', 'api/b2-sign.ts', 'api/b2-gc.ts']) {
     const source = await fs.readFile(file, 'utf8')
     expect(source).toContain("../server/api-security.js")
     expect(source).not.toMatch(/from ['"]\.\.\/server\/api-security['"]/)
   }
+})
+
+
+test('B2 GC rejects cross-site and malformed reference sets before touching B2', async () => {
+  const cross=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json','sec-fetch-site':'cross-site'},body:JSON.stringify({referencedKeys:[]})})
+  expect((await b2GcPost(cross)).status).toBe(403)
+  const invalid=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({referencedKeys:['attachment:../../secret']})})
+  expect((await b2GcPost(invalid)).status).toBe(400)
+})
+
+test('B2 GC deletes only unreferenced allowlisted attachment objects', async () => {
+  const old={id:process.env.B2_KEY_ID,key:process.env.B2_APPLICATION_KEY,bucket:process.env.B2_BUCKET_NAME,endpoint:process.env.B2_ENDPOINT}
+  Object.assign(process.env,{B2_KEY_ID:'test-id',B2_APPLICATION_KEY:'secret',B2_BUCKET_NAME:'bucket',B2_ENDPOINT:'s3.us-west-004.backblazeb2.com'})
+  const keep='attachment:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', orphan='attachment:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+  const original=globalThis.fetch; const deleted:string[]=[]
+  globalThis.fetch=(async(input:any,init:any={})=>{ const url=String(input); if((init.method||'GET')==='DELETE'){deleted.push(decodeURIComponent(new URL(url).pathname.split('/').pop()||'')); return new Response(null,{status:204})} return new Response(`<ListBucketResult><Contents><Key>${keep}</Key></Contents><Contents><Key>${orphan}</Key></Contents><Contents><Key>unrelated.txt</Key></Contents></ListBucketResult>`,{status:200}) }) as typeof fetch
+  try{
+    const req=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({referencedKeys:[keep]})})
+    const response=await b2GcPost(req); expect(response.status).toBe(200); expect(await response.json()).toMatchObject({scanned:2,deleted:1}); expect(deleted).toEqual([orphan])
+  } finally { globalThis.fetch=original; const restore=(n:string,v:string|undefined)=>v===undefined?delete process.env[n]:process.env[n]=v; restore('B2_KEY_ID',old.id);restore('B2_APPLICATION_KEY',old.key);restore('B2_BUCKET_NAME',old.bucket);restore('B2_ENDPOINT',old.endpoint) }
 })
