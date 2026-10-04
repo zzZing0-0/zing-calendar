@@ -5,13 +5,13 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.10.3'
+const APP_VERSION = '1.10.7'
 
 import type {
-  Anniversary, AnniversaryDraft, AnniversaryType, Attachment,
+  Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
   CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EnergyLevel, EnvironmentOption, FocusSession,
   JournalDraft, JournalEntry, JournalImpact, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
-  RecurrenceEnd, RecurrenceException, RecurrenceRule, RecurrenceUnit, Tag, TagScope, Task, TaskDraft,
+  RecurrenceException, RecurrenceUnit, SyncedUserSettings, Tag, TagScope, Task, TaskDraft,
   TaskPriority, TaskStatus,
 } from './types'
 import {
@@ -22,6 +22,22 @@ import {
   recurrenceFromDraft, repeatPresetLabels, sameDay, taskCoversDate, taskEndDate,
   taskSort, toDateKey,
 } from './domain/task'
+import {
+  cleanDidaContent, didaIso, forestDate, genericDate, genericHeaderIndex, parseCsvRows, parseDidaRecurrence,
+  splitImportedTagNames, stableImportHash, zonedParts,
+} from './domain/import'
+import {
+  DEFAULT_TAG, DEFAULT_TAG_ID, DEFAULT_THERMAL_OPTIONS, DEFAULT_WEATHER_OPTIONS, DIDA_APP_SOURCE_TAG,
+  DIDA_APP_SOURCE_TAG_ID, EXTERNAL_SOURCE_TAG, EXTERNAL_SOURCE_TAG_ID, FOREST_SOURCE_TAG, FOREST_SOURCE_TAG_ID,
+  GENERIC_SOURCE_TAG, GENERIC_SOURCE_TAG_ID, REQUIRED_SYSTEM_TAGS, TAG_COLORS, ensureRequiredSystemTags,
+  isImportSourceTag, isImportSourceTagId, normalizeEnvironmentOptions, normalizeTags,
+} from './domain/preferences'
+import {
+  ANNIVERSARY_TYPES, anniversaryIcon, anniversaryMeta, anniversaryOccurrence, calendarAnnotation,
+  emptyAnniversaryDraft, lunarCalendarLabel, lunarFullLabel,
+} from './domain/calendar'
+import { attachmentExtension, csvCell, decodeBackupJson, makeZip, readZingZip, safeBackupFilename } from './domain/backup'
+import type { ZipEntry } from './domain/backup'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -39,28 +55,6 @@ const ENERGIES: { value: EnergyLevel; label: string }[] = [
   { value: 4, label: '精力充沛' },
   { value: 5, label: '能量满满' },
 ]
-const ENVIRONMENT_OPTIONS_AT = '2026-10-03T00:00:00.000Z'
-const DEFAULT_WEATHER_OPTIONS: EnvironmentOption[] = [
-  ['weather:sunny','晴','☀️'],['weather:partly-cloudy','晴间多云','🌤️'],['weather:cloudy','多云','⛅'],['weather:overcast','阴','☁️'],
-  ['weather:light-rain','小雨','🌦️'],['weather:moderate-rain','中雨','🌧️'],['weather:heavy-rain','大雨','☔'],
-  ['weather:thunderstorm','雷暴','⛈️'],['weather:hail','冰雹','🧊'],['weather:typhoon','台风','🌀'],['weather:fog','雾','🌫️'],
-  ['weather:rainbow','雨后天晴','🌈'],['weather:light-snow','小雪','🌨️'],['weather:moderate-snow','中雪','❄️'],['weather:heavy-snow','大雪','☃️']
-].map(([id,name,emoji],order)=>({id,name,emoji,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
-const DEFAULT_THERMAL_OPTIONS: EnvironmentOption[] = [
-  ['thermal:cold','寒冷','🥶'],['thermal:cool','偏冷','🤧'],['thermal:comfortable','舒适','🌿'],['thermal:warm','偏热','😥'],
-  ['thermal:hot','炎热','🥵'],['thermal:humid','潮湿','💧'],['thermal:muggy','闷热','🥴'],['thermal:dry','干燥','🍂']
-].map(([id,name,emoji],order)=>({id,name,emoji,order,builtin:true,updatedAt:ENVIRONMENT_OPTIONS_AT}))
-function normalizeEnvironmentOptions(rows:EnvironmentOption[]|undefined, defaults:EnvironmentOption[]) {
-  if(Array.isArray(rows)&&rows.length) {
-    const merged=defaults.map(base=>{
-      const existing=rows.find(item=>item.id===base.id)
-      return existing ? {...existing,name:base.name,emoji:base.emoji,builtin:true,deletedAt:undefined,archived:false} : {...base}
-    })
-    const custom=rows.filter(item=>!item.builtin&&!defaults.some(base=>base.id===item.id))
-    return [...merged,...custom].map((item,index)=>({...item,order:index}))
-  }
-  return defaults.map(item=>({...item}))
-}
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
     const rows=JSON.parse(localStorage.getItem(key)||'[]')
@@ -69,82 +63,6 @@ function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   return normalizeEnvironmentOptions(undefined,defaults)
 }
 const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
-const DEFAULT_TAG_ID = 'default'
-const LEGACY_TAG_MIGRATION_AT = '2026-09-23T00:00:00.000Z'
-const DEFAULT_TAG: Tag = { id: DEFAULT_TAG_ID, name: '默认', color: '#9aa59f', scope: 'both', system: true, systemKind: 'default', updatedAt: LEGACY_TAG_MIGRATION_AT }
-const IMPORT_SOURCE_TAG_PREFIX = 'system-import-source:'
-// Keep the legacy `...:dida` id for the umbrella tag so existing imported tasks remain compatible.
-const EXTERNAL_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida`
-const DIDA_APP_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}dida-list`
-const GENERIC_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}generic`
-const FOREST_SOURCE_TAG_ID = `${IMPORT_SOURCE_TAG_PREFIX}forest`
-const EXTERNAL_SOURCE_TAG: Tag = { id: EXTERNAL_SOURCE_TAG_ID, name: '从外部导入', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'external', updatedAt: LEGACY_TAG_MIGRATION_AT }
-const DIDA_APP_SOURCE_TAG: Tag = { id: DIDA_APP_SOURCE_TAG_ID, name: '滴答清单', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'dida', updatedAt: LEGACY_TAG_MIGRATION_AT }
-const GENERIC_SOURCE_TAG: Tag = { id: GENERIC_SOURCE_TAG_ID, name: '通用', color: '#789da3', scope: 'task', system: true, systemKind: 'import-source', sourceKey: 'generic', updatedAt: LEGACY_TAG_MIGRATION_AT }
-const FOREST_SOURCE_TAG: Tag = { id: FOREST_SOURCE_TAG_ID, name: 'Forest', color: '#789da3', scope: 'both', system: true, systemKind: 'import-source', sourceKey: 'forest', updatedAt: LEGACY_TAG_MIGRATION_AT }
-function isImportSourceTagId(id:string) { return id.startsWith(IMPORT_SOURCE_TAG_PREFIX) }
-function isImportSourceTag(tag:Tag) { return tag.systemKind === 'import-source' || isImportSourceTagId(tag.id) }
-function normalizeTags(rows: Tag[]): Tag[] { return rows.map(tag => tag.updatedAt ? tag : { ...tag, updatedAt: LEGACY_TAG_MIGRATION_AT }) }
-const REQUIRED_SYSTEM_TAGS: Tag[] = [DEFAULT_TAG, EXTERNAL_SOURCE_TAG, DIDA_APP_SOURCE_TAG, GENERIC_SOURCE_TAG, FOREST_SOURCE_TAG]
-function ensureRequiredSystemTags(rows: Tag[]): Tag[] {
-  const normalized = normalizeTags(rows)
-  const existing = new Set(normalized.map(tag => tag.id))
-  return [...REQUIRED_SYSTEM_TAGS.filter(tag => !existing.has(tag.id)), ...normalized]
-}
-const TAG_COLORS = ['#f58f7d', '#eb7258', '#df8748', '#f5a64b', '#ffc557', '#ffdc4f', '#d7df55', '#a6c35a', '#65d19b', '#79ccd4', '#58b4c7', '#7695bd', '#9183da', '#d69bae', '#b9848f']
-
-const ANNIVERSARY_TYPES: { value: AnniversaryType; label: string; icon: string }[] = [
-  { value: 'birthday', label: '生日', icon: '🎂' },
-  { value: 'anniversary', label: '纪念日', icon: '❤️' },
-  { value: 'important', label: '重要日期', icon: '⭐' },
-  { value: 'other', label: '其他', icon: '📌' },
-]
-function anniversaryIcon(type: AnniversaryType) { return ANNIVERSARY_TYPES.find(item => item.value === type)?.icon ?? '📌' }
-function emptyAnniversaryDraft(date: Date): AnniversaryDraft {
-  return { title:'', type:'birthday', calendar:'solar', year:String(date.getFullYear()), month:date.getMonth()+1, day:date.getDate(), isLeapMonth:false, repeatYearly:true, notes:'' }
-}
-function daysInMonth(year:number, month:number) { return new Date(year, month, 0).getDate() }
-function lunarOccurrence(ann: Anniversary, solarYear: number): Date | null {
-  // Find by scanning the solar year. This uses the browser's Chinese-calendar engine,
-  // avoids duplicating lunar arithmetic, and correctly sees leap-month labels.
-  const start=new Date(solarYear,0,1), end=new Date(solarYear,11,31)
-  let normalFallback: Date | null = null
-  for (let d=new Date(start); d<=end; d.setDate(d.getDate()+1)) {
-    const lunar=solarToLunar(d)
-    const monthNumber=Number.parseInt(lunar.monthText.replace(/[^0-9]/g,''),10)
-    // Intl may localize month names as Chinese words; derive month by formatter parts fallback below.
-    const rawMonth=lunar.monthText
-    const cnMonths=['正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月']
-    const clean=rawMonth.replace('闰','')
-    const m=Number.isFinite(monthNumber) ? monthNumber : cnMonths.indexOf(clean)+1
-    if (m!==ann.month || lunar.day!==ann.day) continue
-    if (ann.isLeapMonth && lunar.isLeapMonth) return new Date(d)
-    if (!ann.isLeapMonth && !lunar.isLeapMonth) return new Date(d)
-    if (ann.isLeapMonth && !lunar.isLeapMonth) normalFallback=new Date(d)
-  }
-  // Common birthday policy: leap-month birthday falls back to the ordinary month
-  // when that lunar year has no matching leap month.
-  return ann.isLeapMonth ? normalFallback : null
-}
-function anniversaryOccurrence(ann: Anniversary, solarYear:number): Date | null {
-  // A stored year is the origin year. Even a yearly recurrence must not exist before it.
-  if (ann.repeatYearly && ann.year && solarYear < ann.year) return null
-  if (ann.calendar==='solar') {
-    const year=ann.repeatYearly ? solarYear : (ann.year ?? solarYear)
-    if (!ann.repeatYearly && ann.year!==solarYear) return null
-    const max=daysInMonth(year,ann.month)
-    if (ann.day>max) return null
-    return new Date(year,ann.month-1,ann.day)
-  }
-  if (!ann.repeatYearly && ann.year && ann.year!==solarYear) return null
-  return lunarOccurrence(ann,solarYear)
-}
-function anniversaryMeta(ann: Anniversary, occurrence: Date) {
-  if (!ann.year) return ann.calendar==='lunar' ? '农历' : ''
-  const n=occurrence.getFullYear()-ann.year
-  if (ann.type==='birthday') return n>=0 ? `${n}岁` : ''
-  return n>0 ? `${n}周年` : ''
-}
 
 function MoodFace({ level }: { level: MoodLevel }) {
   const common = { viewBox: '0 0 64 64', className: `mood-face-svg mood-face-${level}`, 'aria-hidden': true } as const
@@ -295,264 +213,6 @@ function AudioAttachment({ attachment }: { attachment: Attachment }) {
   return url ? <audio className="journal-audio-player" controls src={url} /> : <span>录音加载中…</span>
 }
 
-const chineseCalendarFormatter = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', {
-  month: 'long',
-  day: 'numeric',
-})
-
-function lunarParts(date: Date) {
-  const parts = chineseCalendarFormatter.formatToParts(date)
-  const month = parts.find(part => part.type === 'month')?.value ?? ''
-  const day = parts.find(part => part.type === 'day')?.value ?? ''
-  return { month, day }
-}
-
-function lunarCalendarLabel(date: Date) {
-  const { month, day } = lunarParts(date)
-  // Keep ordinary cells quiet; on the first lunar day, show the month name.
-  return day === '1' || day === '初一' ? month : chineseLunarDayName(Number.parseInt(day, 10))
-}
-
-function chineseLunarDayName(day: number) {
-  if (!Number.isFinite(day) || day < 1 || day > 30) return ''
-  const names = ['初一','初二','初三','初四','初五','初六','初七','初八','初九','初十',
-    '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十',
-    '廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十']
-  return names[day - 1]
-}
-
-type CalendarAnnotationKind = 'statutory' | 'traditional' | 'international' | 'solar-term' | 'week'
-type CalendarAnnotation = { label: string; kind: CalendarAnnotationKind }
-
-function lunarMonthNumber(monthText: string) {
-  const clean = monthText.replace('闰', '').replace('月', '')
-  const names: Record<string, number> = {
-    '正':1,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,'十一':11,'冬':11,'十二':12,'腊':12,
-  }
-  return names[clean] ?? Number.parseInt(clean, 10)
-}
-
-function isoWeekNumber(date: Date) {
-  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const day = target.getUTCDay() || 7
-  target.setUTCDate(target.getUTCDate() + 4 - day)
-  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1))
-  return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
-}
-
-function nthWeekdayOfMonth(date: Date, weekday: number, nth: number) {
-  if (date.getDay() !== weekday) return false
-  return Math.floor((date.getDate() - 1) / 7) + 1 === nth
-}
-
-// Standard 24-solar-term approximation used for modern Gregorian years.
-// The table is minutes from the 1900 小寒 epoch; dates are resolved in China Standard Time.
-const SOLAR_TERM_NAMES = ['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至']
-const SOLAR_TERM_MINUTES = [0,21208,42467,63836,85337,107014,128867,150921,173149,195551,218072,240693,263343,285989,308563,331033,353350,375494,397447,419210,440795,462224,483532,504758]
-function solarTermForDate(date: Date) {
-  const year = date.getFullYear()
-  for (let index=0; index<24; index+=1) {
-    const utcMs = Date.UTC(1900,0,6,2,5) + 31556925974.7 * (year - 1900) + SOLAR_TERM_MINUTES[index] * 60000
-    const china = new Date(utcMs + 8 * 3600000)
-    if (china.getUTCMonth() === date.getMonth() && china.getUTCDate() === date.getDate()) return SOLAR_TERM_NAMES[index]
-  }
-  return undefined
-}
-
-function calendarFestival(date: Date): CalendarAnnotation | undefined {
-  const month = date.getMonth() + 1, day = date.getDate()
-  const lunar = solarToLunar(date)
-  const lunarMonth = lunarMonthNumber(lunar.monthText)
-  const lunarDay = lunar.day
-  const lunarKey = `${lunarMonth}-${lunarDay}`
-  const solarKey = `${month}-${day}`
-
-  const statutorySolar: Record<string,string> = {'1-1':'元旦','5-1':'劳动节','10-1':'国庆节'}
-  const statutoryLunar: Record<string,string> = {'1-1':'春节','5-5':'端午节','8-15':'中秋节'}
-  if (statutorySolar[solarKey]) return {label:statutorySolar[solarKey],kind:'statutory'}
-  if (statutoryLunar[lunarKey] && !lunar.isLeapMonth) return {label:statutoryLunar[lunarKey],kind:'statutory'}
-  if (solarTermForDate(date) === '清明') return {label:'清明节',kind:'statutory'}
-
-  const traditionalLunar: Record<string,string> = {
-    '1-15':'元宵节','2-2':'龙抬头','3-3':'上巳节','7-7':'七夕','7-15':'中元节','9-9':'重阳节','10-15':'下元节','12-8':'腊八节',
-  }
-  if (traditionalLunar[lunarKey] && !lunar.isLeapMonth) return {label:traditionalLunar[lunarKey],kind:'traditional'}
-  // 除夕 is the Gregorian day immediately before the next lunar new year.
-  const tomorrow = new Date(date.getFullYear(), date.getMonth(), date.getDate()+1)
-  const tomorrowLunar = solarToLunar(tomorrow)
-  if (lunarMonth === 12 && tomorrowLunar.day === 1 && lunarMonthNumber(tomorrowLunar.monthText) === 1) return {label:'除夕',kind:'traditional'}
-
-  const internationalFixed: Record<string,string> = {
-    '2-14':'情人节','3-8':'妇女节','3-12':'植树节','4-1':'愚人节','5-4':'青年节','6-1':'儿童节','9-10':'教师节',
-    '10-31':'万圣夜','12-24':'平安夜','12-25':'圣诞节','12-31':'跨年夜',
-  }
-  if (internationalFixed[solarKey]) return {label:internationalFixed[solarKey],kind:'international'}
-  if (month===5 && nthWeekdayOfMonth(date,0,2)) return {label:'母亲节',kind:'international'}
-  if (month===6 && nthWeekdayOfMonth(date,0,3)) return {label:'父亲节',kind:'international'}
-  if (month===11 && nthWeekdayOfMonth(date,4,4)) return {label:'感恩节',kind:'international'}
-
-  return undefined
-}
-
-function calendarAnnotation(date: Date, weekStartsMonday: boolean): CalendarAnnotation | undefined {
-  const festival = calendarFestival(date)
-  if (festival) return festival
-  const term = solarTermForDate(date)
-  if (term) return {label:term,kind:'solar-term'}
-  const firstWeekday = weekStartsMonday ? 1 : 0
-  if (date.getDay() === firstWeekday) return {label:`${isoWeekNumber(date)}周`,kind:'week'}
-  return undefined
-}
-
-function lunarFullLabel(date: Date) {
-  const { month, day } = lunarParts(date)
-  const numericDay = Number.parseInt(day, 10)
-  return `${month}${chineseLunarDayName(numericDay) || day}`
-}
-
-// Stable conversion-service boundary for the Anniversary module.
-// Solar -> lunar is implemented here; lunar -> solar will plug into the same boundary
-// when Anniversary starts storing semantic lunar dates (including leap-month policy).
-type LunarDateParts = { year: number; monthText: string; day: number; isLeapMonth: boolean }
-function solarToLunar(date: Date): LunarDateParts {
-  const full = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', {
-    year: 'numeric', month: 'long', day: 'numeric'
-  }).formatToParts(date)
-  const yearText = full.find(part => String(part.type) === 'relatedYear')?.value
-    ?? full.find(part => part.type === 'year')?.value ?? String(date.getFullYear())
-  const monthText = full.find(part => part.type === 'month')?.value ?? ''
-  const dayText = full.find(part => part.type === 'day')?.value ?? ''
-  return {
-    year: Number.parseInt(yearText, 10),
-    monthText,
-    day: Number.parseInt(dayText, 10),
-    isLeapMonth: monthText.includes('闰'),
-  }
-}
-
-
-type ZipEntry = { path: string; bytes: Uint8Array }
-
-function crc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff
-  for (const byte of bytes) {
-    crc ^= byte
-    for (let i=0;i<8;i+=1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1))
-  }
-  return (crc ^ 0xffffffff) >>> 0
-}
-function zipDateTime(date: Date) {
-  const year=Math.max(1980,date.getFullYear())
-  return { time:(date.getHours()<<11)|(date.getMinutes()<<5)|(date.getSeconds()>>1), date:((year-1980)<<9)|((date.getMonth()+1)<<5)|date.getDate() }
-}
-function concatBytes(parts: Uint8Array[]) {
-  const total=parts.reduce((sum,part)=>sum+part.length,0), out=new Uint8Array(total); let offset=0
-  parts.forEach(part=>{ out.set(part,offset); offset+=part.length }); return out
-}
-function u16(value:number) { const b=new Uint8Array(2); new DataView(b.buffer).setUint16(0,value,true); return b }
-function u32(value:number) { const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,value>>>0,true); return b }
-function makeZip(entries: ZipEntry[]): Blob {
-  const encoder=new TextEncoder(), locals:Uint8Array[]=[], centrals:Uint8Array[]=[]; let offset=0
-  const stamp=zipDateTime(new Date())
-  entries.forEach(entry=>{
-    const name=encoder.encode(entry.path), crc=crc32(entry.bytes), size=entry.bytes.length
-    const local=concatBytes([u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(stamp.time),u16(stamp.date),u32(crc),u32(size),u32(size),u16(name.length),u16(0),name,entry.bytes])
-    locals.push(local)
-    centrals.push(concatBytes([u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(stamp.time),u16(stamp.date),u32(crc),u32(size),u32(size),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset),name]))
-    offset+=local.length
-  })
-  const centralBytes=concatBytes(centrals)
-  const end=concatBytes([u32(0x06054b50),u16(0),u16(0),u16(entries.length),u16(entries.length),u32(centralBytes.length),u32(offset),u16(0)])
-  const blobParts: BlobPart[] = [...locals, centralBytes, end].map(bytes => {
-    const copy = new Uint8Array(bytes.byteLength)
-    copy.set(bytes)
-    return copy.buffer
-  })
-  return new Blob(blobParts,{type:'application/zip'})
-}
-function safeBackupFilename(name:string) { return name.replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,' ').trim() || 'attachment' }
-function attachmentExtension(attachment: Attachment) {
-  const match=attachment.filename.match(/(\.[A-Za-z0-9]{1,8})$/)
-  if (match) return match[1].toLowerCase()
-  if (attachment.mimeType==='image/webp') return '.webp'
-  if (attachment.mimeType==='image/png') return '.png'
-  if (attachment.mimeType==='image/jpeg') return '.jpg'
-  if (attachment.mimeType.includes('webm')) return '.webm'
-  if (attachment.mimeType.includes('mp4')) return '.m4a'
-  return attachment.type==='image' ? '.img' : '.audio'
-}
-
-
-type EncouragementMessage = { id:string; text:string; updatedAt:string; deletedAt?:string }
-type EncouragementStyle = 'dark'|'light'|'random'
-
-type SyncedUserSettings = {
-  id: 'settings'
-  updatedAt: string
-  greeting: string
-  weekStart: 'monday'|'sunday'
-  dateFormat: 'dmy'|'mdy'
-  defaultPriority: TaskPriority
-  showEndedTasks: boolean
-  showAllRecurringTasks: boolean
-  excludeDefaultFocusStats: boolean
-  wordCloudIgnored: string[]
-  wordCloudIgnoredAddedAt?: Record<string,string>
-  wordCloudIgnoredRemovedAt?: Record<string,string>
-  encouragementMessages?: EncouragementMessage[]
-  encouragementStyle?: EncouragementStyle
-  maxFocusHours?: number
-  weatherOptions?: EnvironmentOption[]
-  thermalOptions?: EnvironmentOption[]
-}
-
-type BackupPreview = {
-  file: File
-  manifest: any
-  tasks: Task[]
-  journals: JournalEntry[]
-  moods: DailyMood[]
-  energies: DailyEnergy[]
-  environments: DailyEnvironment[]
-  periods: MenstrualPeriod[]
-  tags: Tag[]
-  anniversaries: Anniversary[]
-  focusSessions: FocusSession[]
-  settings: { greeting?:string; weekStart?:'monday'|'sunday'; dateFormat?:'dmy'|'mdy'; defaultPriority?:TaskPriority; showEndedTasks?:boolean; showAllRecurringTasks?:boolean; excludeDefaultFocusStats?:boolean; wordCloudIgnored?:string[]; encouragementMessages?:EncouragementMessage[]; encouragementStyle?:EncouragementStyle; maxFocusHours?:number; weatherOptions?:EnvironmentOption[]; thermalOptions?:EnvironmentOption[] }
-  attachments: { storageKey:string; path:string; filename:string; mimeType:string; size:number; type:'image'|'audio'; duration?:number; createdAt:string; bytes:Uint8Array }[]
-}
-function readU16(view:DataView,offset:number){ return view.getUint16(offset,true) }
-function readU32(view:DataView,offset:number){ return view.getUint32(offset,true) }
-async function readZingZip(file:File): Promise<Map<string,Uint8Array>> {
-  const bytes=new Uint8Array(await file.arrayBuffer()), view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength)
-  const decoder=new TextDecoder(), entries=new Map<string,Uint8Array>(); let offset=0
-  while (offset+4<=bytes.length) {
-    const signature=readU32(view,offset)
-    if (signature===0x02014b50 || signature===0x06054b50) break
-    if (signature!==0x04034b50) throw new Error('ZIP 结构无法识别')
-    const flags=readU16(view,offset+6), method=readU16(view,offset+8), compressedSize=readU32(view,offset+18), uncompressedSize=readU32(view,offset+22)
-    const nameLength=readU16(view,offset+26), extraLength=readU16(view,offset+28)
-    if (flags & 0x0008) throw new Error('不支持 data descriptor ZIP')
-    if (method!==0) throw new Error('备份 ZIP 使用了不支持的压缩方式')
-    const nameStart=offset+30, dataStart=nameStart+nameLength+extraLength, dataEnd=dataStart+compressedSize
-    if (dataEnd>bytes.length) throw new Error('ZIP 文件不完整')
-    const name=decoder.decode(bytes.slice(nameStart,nameStart+nameLength))
-    const payload=bytes.slice(dataStart,dataEnd)
-    if (payload.length!==uncompressedSize) throw new Error(`文件大小异常：${name}`)
-    entries.set(name,payload); offset=dataEnd
-  }
-  return entries
-}
-function decodeBackupJson<T>(entries:Map<string,Uint8Array>,path:string):T {
-  const bytes=entries.get(path); if (!bytes) throw new Error(`缺少 ${path}`)
-  try { return JSON.parse(new TextDecoder().decode(bytes)) as T } catch { throw new Error(`${path} 无法解析`) }
-}
-
-
-function csvCell(value:unknown) {
-  const text=value==null?'':String(value)
-  return `"${text.replace(/"/g,'""')}"`
-}
 function downloadTextFile(filename:string,text:string,mimeType:string) {
   const blob=new Blob(['\ufeff',text],{type:mimeType}), url=URL.createObjectURL(blob), link=document.createElement('a')
   link.href=url; link.download=filename; document.body.appendChild(link); link.click(); link.remove()
@@ -582,101 +242,6 @@ type ForestImportPreview = {
   createdTagCount:number
   reusedTagCount:number
 }
-function stableImportHash(value:string) {
-  let a=2166136261, b=0x9e3779b9
-  for(let i=0;i<value.length;i++){
-    const code=value.charCodeAt(i)
-    a=Math.imul(a^code,16777619)>>>0
-    b=Math.imul(b^code,2246822519)>>>0
-  }
-  return `${a.toString(36)}${b.toString(36)}`
-}
-function forestDate(value:string) {
-  const normalized=value.trim().replace(/([+-]\d{2})(\d{2})$/, '$1:$2')
-  const date=new Date(normalized)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-function parseCsvRows(text:string): string[][] {
-  const rows:string[][]=[]; let row:string[]=[], field='', quoted=false
-  const pushField=()=>{ row.push(field); field='' }
-  const pushRow=()=>{ pushField(); if(row.some(cell=>cell.length>0)) rows.push(row); row=[] }
-  for(let i=0;i<text.length;i++){
-    const ch=text[i]
-    if(quoted){
-      if(ch==='"' && text[i+1]==='"'){ field+='"'; i++ }
-      else if(ch==='"') quoted=false
-      else field+=ch
-    } else {
-      if(ch==='"') quoted=true
-      else if(ch===',') pushField()
-      else if(ch==='\n') pushRow()
-      else if(ch==='\r') { if(text[i+1]==='\n') i++; pushRow() }
-      else field+=ch
-    }
-  }
-  if(field.length || row.length) pushRow()
-  return rows
-}
-function genericDate(value:string) {
-  const raw=value.trim()
-  if(!raw) return ''
-  const direct=raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/)
-  if(direct) return `${direct[1]}-${direct[2].padStart(2,'0')}-${direct[3].padStart(2,'0')}`
-  const parsed=new Date(raw)
-  if(Number.isNaN(parsed.getTime())) return ''
-  return `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}-${String(parsed.getDate()).padStart(2,'0')}`
-}
-function genericHeaderIndex(header:string[], aliases:string[]) {
-  const normalized=header.map(cell=>cell.trim().toLowerCase().replace(/[\s_-]+/g,''))
-  for(const alias of aliases){
-    const index=normalized.indexOf(alias.toLowerCase().replace(/[\s_-]+/g,''))
-    if(index>=0) return index
-  }
-  return -1
-}
-function didaIso(value:string) {
-  if(!value) return ''
-  return value.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')
-}
-function zonedParts(value:string, timeZone:string) {
-  if(!value) return null
-  const date=new Date(didaIso(value))
-  if(Number.isNaN(date.getTime())) return null
-  try {
-    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:timeZone||'UTC',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date)
-    const get=(type:string)=>parts.find(part=>part.type===type)?.value ?? ''
-    return { date:`${get('year')}-${get('month')}-${get('day')}`, time:`${get('hour')}:${get('minute')}` }
-  } catch {
-    return { date:date.toISOString().slice(0,10), time:date.toISOString().slice(11,16) }
-  }
-}
-function cleanDidaContent(value:string) {
-  const attachmentPattern=/!\[[^\]]*\]\([^)]*\)/g
-  const matches=value.match(attachmentPattern)?.length ?? 0
-  const text=value.replace(attachmentPattern,'').replace(/\r\n?/g,'\n').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim()
-  return { text, removed:matches }
-}
-function parseDidaRecurrence(value:string): RecurrenceRule | undefined {
-  if(!value) return undefined
-  const parts=Object.fromEntries(value.split(';').map(piece=>{ const [key,...rest]=piece.split('='); return [key,rest.join('=')] }))
-  const freq=(parts.FREQ||'').toUpperCase()
-  const unit:RecurrenceUnit|undefined=freq==='DAILY'?'day':freq==='WEEKLY'?'week':freq==='MONTHLY'?'month':freq==='YEARLY'?'year':undefined
-  if(!unit) return undefined
-  const count=Number.parseInt(parts.COUNT||'',10)
-  if(Number.isFinite(count) && count<=1) return undefined
-  const interval=Math.max(1,Number.parseInt(parts.INTERVAL||'1',10)||1)
-  const dayMap:Record<string,number>={MO:1,TU:2,WE:3,TH:4,FR:5,SA:6,SU:0}
-  const weekdays=parts.BYDAY?.split(',').map(day=>dayMap[day]).filter(day=>day!==undefined)
-  let end:RecurrenceEnd|undefined
-  if(Number.isFinite(count) && count>1) end={type:'count',count}
-  else if(/^\d{8}$/.test(parts.UNTIL||'')) end={type:'date',date:`${parts.UNTIL.slice(0,4)}-${parts.UNTIL.slice(4,6)}-${parts.UNTIL.slice(6,8)}`}
-  return {unit,interval,...(weekdays?.length?{weekdays}:{}),...(end?{end}:{})}
-}
-function splitImportedTagNames(value:string) {
-  return value.split(/[;,\n]+/).map(item=>item.trim()).filter(Boolean)
-}
-
-
 function syncEntityKey(entityType: SyncEntityType, entityId: string) {
   return `${entityType}:${entityId}`
 }

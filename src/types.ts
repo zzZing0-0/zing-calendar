@@ -173,3 +173,73 @@ export type TaskDraft = {
   repeatEndCount: number
 }
 
+
+
+export type EncouragementMessage = {
+  id: string
+  text: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export type EncouragementStyle = 'dark' | 'light' | 'random'
+
+export type SyncedUserSettings = {
+  id: 'settings'
+  updatedAt: string
+  greeting: string
+  weekStart: 'monday' | 'sunday'
+  dateFormat: 'dmy' | 'mdy'
+  defaultPriority: TaskPriority
+  showEndedTasks: boolean
+  showAllRecurringTasks: boolean
+  excludeDefaultFocusStats: boolean
+  wordCloudIgnored: string[]
+  wordCloudIgnoredAddedAt?: Record<string, string>
+  wordCloudIgnoredRemovedAt?: Record<string, string>
+  encouragementMessages?: EncouragementMessage[]
+  encouragementStyle?: EncouragementStyle
+  maxFocusHours?: number
+  weatherOptions?: EnvironmentOption[]
+  thermalOptions?: EnvironmentOption[]
+}
+
+export type BackupPreview = {
+  file: File
+  manifest: any
+  tasks: Task[]
+  journals: JournalEntry[]
+  moods: DailyMood[]
+  energies: DailyEnergy[]
+  environments: DailyEnvironment[]
+  periods: MenstrualPeriod[]
+  tags: Tag[]
+  anniversaries: Anniversary[]
+  focusSessions: FocusSession[]
+  settings: {
+    greeting?: string
+    weekStart?: 'monday' | 'sunday'
+    dateFormat?: 'dmy' | 'mdy'
+    defaultPriority?: TaskPriority
+    showEndedTasks?: boolean
+    showAllRecurringTasks?: boolean
+    excludeDefaultFocusStats?: boolean
+    wordCloudIgnored?: string[]
+    encouragementMessages?: EncouragementMessage[]
+    encouragementStyle?: EncouragementStyle
+    maxFocusHours?: number
+    weatherOptions?: EnvironmentOption[]
+    thermalOptions?: EnvironmentOption[]
+  }
+  attachments: {
+    storageKey: string
+    path: string
+    filename: string
+    mimeType: string
+    size: number
+    type: 'image' | 'audio'
+    duration?: number
+    createdAt: string
+    bytes: Uint8Array
+  }[]
+}
