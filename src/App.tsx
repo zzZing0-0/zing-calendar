@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.10.15'
+const APP_VERSION = '1.10.18'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -53,6 +53,9 @@ import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './doma
 import type { SearchFilter, SearchResult } from './domain/search'
 import { activeFocusSession as findActiveFocusSession, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock } from './domain/focus'
 import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
+import { useAppPreferences } from './hooks/useAppPreferences'
+import { planSyncDiff, syncEntityKey } from './domain/sync'
+import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
 
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
@@ -239,36 +242,18 @@ type ForestImportPreview = {
   createdTagCount:number
   reusedTagCount:number
 }
-function syncEntityKey(entityType: SyncEntityType, entityId: string) {
-  return `${entityType}:${entityId}`
-}
-
-function rowSyncId(entityType: SyncEntityType, row: any): string {
-  return entityType === 'mood' || entityType === 'energy' || entityType === 'environment' ? String(row.date) : String(row.id)
-}
-
 async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], nextRows: any[]) {
+  const operations = planSyncDiff(entityType, previousRows, nextRows)
+  if (!operations.length) return false
   const deviceId = getOrCreateDeviceId()
-  let changed = false
-  const previous = new Map(previousRows.map(row => [rowSyncId(entityType, row), row]))
-  const next = new Map(nextRows.map(row => [rowSyncId(entityType, row), row]))
   const now = new Date().toISOString()
-
-  for (const [id, row] of next) {
-    const before = previous.get(id)
-    if (before && JSON.stringify(before) === JSON.stringify(row)) continue
-    changed = true
-    await appendSyncChange({ entityType, entityId: id, operation: 'upsert', changedAt: now, deviceId })
+  for (const operation of operations) {
+    if (operation.operation === 'delete') {
+      await saveSyncTombstone({ key: syncEntityKey(entityType, operation.entityId), entityType, entityId: operation.entityId, deletedAt: now, deviceId })
+    }
+    await appendSyncChange({ ...operation, changedAt: now, deviceId })
   }
-
-  for (const id of previous.keys()) {
-    if (next.has(id)) continue
-    changed = true
-    const tombstone = { key: syncEntityKey(entityType, id), entityType, entityId: id, deletedAt: now, deviceId }
-    await saveSyncTombstone(tombstone)
-    await appendSyncChange({ entityType, entityId: id, operation: 'delete', changedAt: now, deviceId })
-  }
-  return changed
+  return true
 }
 
 function App() {
@@ -298,8 +283,6 @@ function App() {
   const [dayDetailOpen, setDayDetailOpen] = useState(false)
   const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
-  const [excludeDefaultFocusStats, setExcludeDefaultFocusStats] = useState(() => localStorage.getItem('zing:excludeDefaultFocusStats') === 'true')
-  const [maxFocusHours, setMaxFocusHours] = useState(() => { const value=Number.parseInt(localStorage.getItem('zing:maxFocusHours') || '2',10); return Math.min(12,Math.max(2,Number.isFinite(value)?value:2)) })
   const [weatherOptions, setWeatherOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:weatherOptions', DEFAULT_WEATHER_OPTIONS))
   const [thermalOptions, setThermalOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:thermalOptions', DEFAULT_THERMAL_OPTIONS))
   const [environmentManagerKind, setEnvironmentManagerKind] = useState<'weather'|'thermal'|null>(null)
@@ -319,11 +302,6 @@ function App() {
   const lastEncouragementIdRef = useRef<string|null>(null)
   const [wordIgnoreDraft, setWordIgnoreDraft] = useState('')
   const [wordIgnoreManagerOpen, setWordIgnoreManagerOpen] = useState(false)
-  const [greeting, setGreeting] = useState(() => localStorage.getItem('zing:greeting') || 'Hello, Zing')
-  const [weekStartsMonday, setWeekStartsMonday] = useState(() => localStorage.getItem('zing:weekStart') !== 'sunday')
-  const [dateFormat, setDateFormat] = useState<'dmy'|'mdy'>(() => localStorage.getItem('zing:dateFormat') === 'mdy' ? 'mdy' : 'dmy')
-  const [showEndedTasks, setShowEndedTasks] = useState(() => localStorage.getItem('zing:showEndedTasks') !== 'false')
-  const [showAllRecurringTasks, setShowAllRecurringTasks] = useState(() => localStorage.getItem('zing:showAllRecurringTasks') !== 'false')
   const [storageStats, setStorageStats] = useState({ total:0, images:0, audio:0, data:0, attachmentCount:0 })
   const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
   const [imageLibraryTarget, setImageLibraryTarget] = useState<'task'|'journal'|null>(null)
@@ -363,10 +341,13 @@ function App() {
   const searchWrapRef = useRef<HTMLDivElement | null>(null)
   const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
 
-  const [defaultPriority, setDefaultPriority] = useState<TaskPriority>(() => {
-    const saved = Number(localStorage.getItem('zing:defaultPriority'))
-    return ([0,1,2,3] as number[]).includes(saved) ? saved as TaskPriority : 1
-  })
+  const {
+    greeting, setGreeting, weekStartsMonday, setWeekStartsMonday, dateFormat, setDateFormat,
+    showEndedTasks, setShowEndedTasks, showAllRecurringTasks, setShowAllRecurringTasks,
+    excludeDefaultFocusStats, setExcludeDefaultFocusStats, maxFocusHours, setMaxFocusHours,
+    defaultPriority, setDefaultPriority,
+  } = useAppPreferences()
+
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksHydrated, setTasksHydrated] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
@@ -1111,42 +1092,25 @@ function App() {
     }).catch(error => console.error('Failed to load GitHub device credential', error))
   }, [])
 
-  useEffect(() => { localStorage.setItem('zing:greeting', greeting || 'Hello, Zing') }, [greeting])
-  useEffect(() => { localStorage.setItem('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
-  useEffect(() => { localStorage.setItem('zing:dateFormat', dateFormat) }, [dateFormat])
-  useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
-  useEffect(() => { localStorage.setItem('zing:showAllRecurringTasks', String(showAllRecurringTasks)) }, [showAllRecurringTasks])
-  useEffect(() => { localStorage.setItem('zing:excludeDefaultFocusStats', String(excludeDefaultFocusStats)) }, [excludeDefaultFocusStats])
-  useEffect(() => { localStorage.setItem('zing:maxFocusHours', String(maxFocusHours)) }, [maxFocusHours])
   useEffect(() => { localStorage.setItem('zing:weatherOptions', JSON.stringify(weatherOptions)) }, [weatherOptions])
   useEffect(() => { localStorage.setItem('zing:thermalOptions', JSON.stringify(thermalOptions)) }, [thermalOptions])
-  useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
   useEffect(() => { localStorage.setItem('zing:encouragementStyle', encouragementStyle) }, [encouragementStyle])
   useEffect(() => {
     const now = new Date().toISOString()
-    const wordSet = new Set(wordCloudIgnored.map(word=>word.trim().toLowerCase()).filter(Boolean))
-    const clocks = settingsWordClockRef.current
-    wordSet.forEach(word=>{ if (!clocks.added[word] || (Date.parse(clocks.removed[word]||'')||0) >= (Date.parse(clocks.added[word])||0)) clocks.added[word]=now })
-    Object.keys(clocks.added).forEach(word=>{ if (!wordSet.has(word) && (!clocks.removed[word] || (Date.parse(clocks.removed[word])||0) < (Date.parse(clocks.added[word])||0))) clocks.removed[word]=now })
-    const next: SyncedUserSettings = {
-      id:'settings', updatedAt:now, greeting:greeting || 'Hello, Zing',
-      weekStart:weekStartsMonday?'monday':'sunday', dateFormat, defaultPriority, showEndedTasks,
-      showAllRecurringTasks, excludeDefaultFocusStats, wordCloudIgnored:[...wordSet],
-      wordCloudIgnoredAddedAt:{...clocks.added}, wordCloudIgnoredRemovedAt:{...clocks.removed},
-      encouragementMessages, encouragementStyle, maxFocusHours, weatherOptions, thermalOptions,
-    }
+    const clocks = advanceWordClock(wordCloudIgnored, settingsWordClockRef.current, now)
+    settingsWordClockRef.current = clocks
+    const next = buildSyncedSettings({
+      greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
+      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, weatherOptions, thermalOptions,
+    }, clocks, now)
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
       void loadUserSettings<SyncedUserSettings>().then(async rows => {
         if (rows.length) {
           const existing=rows[0]
-          const stamp=existing.updatedAt || now
-          const added={...(existing.wordCloudIgnoredAddedAt ?? {})}
-          const removed={...(existing.wordCloudIgnoredRemovedAt ?? {})}
-          ;(existing.wordCloudIgnored ?? []).forEach(word=>{ const key=word.trim().toLowerCase(); if(key&&!added[key]&&!removed[key]) added[key]=stamp })
-          settingsWordClockRef.current={added,removed}
+          settingsWordClockRef.current=hydrateWordClock(existing, now)
           syncSnapshotsRef.current.settings = rows; syncSnapshotReadyRef.current.settings = true; return
         }
         await saveUserSettings([next])
@@ -1159,9 +1123,7 @@ function App() {
     if (suppressNextSettingsSyncRef.current) { suppressNextSettingsSyncRef.current = false; return }
     if (!syncSnapshotReadyRef.current.settings) return
     const previous = syncSnapshotsRef.current.settings
-    const comparable = { ...next, updatedAt: previous[0]?.updatedAt ?? next.updatedAt }
-    const beforeComparable = previous[0] ? { ...previous[0], updatedAt: comparable.updatedAt } : null
-    if (beforeComparable && JSON.stringify(beforeComparable) === JSON.stringify(comparable)) return
+    if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
   }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions])
@@ -1181,7 +1143,6 @@ function App() {
       .then(() => getStorageStats())
       .then(setStorageStats)
       .catch(error => console.error('Failed to clean or calculate storage', error))
-.catch(error => console.error('Failed to calculate storage', error))
   }, [mainView, tasks, journalEntries, dailyMoods, tags, anniversaries, tasksHydrated, journalHydrated])
 
   const displayWeekdays = useMemo(() => weekStartsMonday ? WEEKDAYS : [WEEKDAYS[6], ...WEEKDAYS.slice(0,6)], [weekStartsMonday])
@@ -2864,24 +2825,21 @@ function App() {
       setFocusSessions(nextFocusSessions)
       const syncedSettings = nextSettings[0]
       if (syncedSettings) {
-        const stamp=syncedSettings.updatedAt || new Date().toISOString()
-        const added={...(syncedSettings.wordCloudIgnoredAddedAt ?? {})}
-        const removed={...(syncedSettings.wordCloudIgnoredRemovedAt ?? {})}
-        ;(syncedSettings.wordCloudIgnored ?? []).forEach(word=>{ const key=word.trim().toLowerCase(); if(key&&!added[key]&&!removed[key]) added[key]=stamp })
-        settingsWordClockRef.current={added,removed}
+        settingsWordClockRef.current=hydrateWordClock(syncedSettings, new Date().toISOString())
+        const incoming=normalizedIncomingSettings(syncedSettings)
         suppressNextSettingsSyncRef.current = true
-        localStorage.setItem('zing:greeting',syncedSettings.greeting || 'Hello, Zing')
-        localStorage.setItem('zing:weekStart',syncedSettings.weekStart)
-        localStorage.setItem('zing:dateFormat',syncedSettings.dateFormat)
-        localStorage.setItem('zing:defaultPriority',String(syncedSettings.defaultPriority))
-        localStorage.setItem('zing:showEndedTasks',String(syncedSettings.showEndedTasks))
-        localStorage.setItem('zing:showAllRecurringTasks',String(syncedSettings.showAllRecurringTasks))
-        localStorage.setItem('zing:excludeDefaultFocusStats',String(syncedSettings.excludeDefaultFocusStats))
-        localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(syncedSettings.wordCloudIgnored ?? []))
-        localStorage.setItem('zing:encouragementMessages',JSON.stringify(syncedSettings.encouragementMessages ?? []))
-        localStorage.setItem('zing:encouragementStyle',syncedSettings.encouragementStyle ?? 'random')
-        localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))))
-        setGreeting(syncedSettings.greeting || 'Hello, Zing'); setWeekStartsMonday(syncedSettings.weekStart==='monday'); setDateFormat(syncedSettings.dateFormat); setDefaultPriority(syncedSettings.defaultPriority); setShowEndedTasks(syncedSettings.showEndedTasks); setShowAllRecurringTasks(syncedSettings.showAllRecurringTasks); setExcludeDefaultFocusStats(syncedSettings.excludeDefaultFocusStats); setWordCloudIgnored(syncedSettings.wordCloudIgnored ?? []); setEncouragementMessages(syncedSettings.encouragementMessages ?? []); setEncouragementStyle(syncedSettings.encouragementStyle ?? 'random'); setMaxFocusHours(Math.min(12,Math.max(2,syncedSettings.maxFocusHours ?? 2))); setWeatherOptions(normalizeEnvironmentOptions(syncedSettings.weatherOptions,DEFAULT_WEATHER_OPTIONS)); setThermalOptions(normalizeEnvironmentOptions(syncedSettings.thermalOptions,DEFAULT_THERMAL_OPTIONS))
+        localStorage.setItem('zing:greeting',incoming.greeting)
+        localStorage.setItem('zing:weekStart',incoming.weekStartsMonday?'monday':'sunday')
+        localStorage.setItem('zing:dateFormat',incoming.dateFormat)
+        localStorage.setItem('zing:defaultPriority',String(incoming.defaultPriority))
+        localStorage.setItem('zing:showEndedTasks',String(incoming.showEndedTasks))
+        localStorage.setItem('zing:showAllRecurringTasks',String(incoming.showAllRecurringTasks))
+        localStorage.setItem('zing:excludeDefaultFocusStats',String(incoming.excludeDefaultFocusStats))
+        localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(incoming.wordCloudIgnored))
+        localStorage.setItem('zing:encouragementMessages',JSON.stringify(incoming.encouragementMessages))
+        localStorage.setItem('zing:encouragementStyle',incoming.encouragementStyle)
+        localStorage.setItem('zing:maxFocusHours',String(incoming.maxFocusHours))
+        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions)
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
