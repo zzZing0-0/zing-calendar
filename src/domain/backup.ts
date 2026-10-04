@@ -1,4 +1,4 @@
-import type { Attachment } from '../types'
+import type { Attachment, Anniversary, DailyEnergy, DailyEnvironment, DailyMood, FocusSession, JournalEntry, MenstrualPeriod, Tag, Task, BackupPreview } from '../types'
 
 export type ZipEntry = { path: string; bytes: Uint8Array }
 
@@ -97,4 +97,40 @@ export function decodeBackupJson<T>(entries: Map<string, Uint8Array>, path: stri
 export function csvCell(value: unknown) {
   const text = value == null ? '' : String(value)
   return `"${text.replace(/"/g, '""')}"`
+}
+
+
+export type ParsedBackup = Omit<BackupPreview, 'file'>
+
+export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBackup {
+  const manifest = decodeBackupJson<any>(entries, 'manifest.json')
+  if (manifest?.format !== 'zing-calendar-backup' || manifest?.schemaVersion !== 1) throw new Error('这不是可识别的 Zing Backup v1')
+  const tasks = decodeBackupJson<Task[]>(entries, 'data/tasks.json')
+  const journals = decodeBackupJson<JournalEntry[]>(entries, 'data/journals.json')
+  const moods = decodeBackupJson<DailyMood[]>(entries, 'data/moods.json')
+  const energies = entries.has('data/energy.json') ? decodeBackupJson<DailyEnergy[]>(entries, 'data/energy.json') : []
+  const environments = entries.has('data/environment.json') ? decodeBackupJson<DailyEnvironment[]>(entries, 'data/environment.json') : []
+  const periods = entries.has('data/periods.json') ? decodeBackupJson<MenstrualPeriod[]>(entries, 'data/periods.json') : []
+  const tags = decodeBackupJson<Tag[]>(entries, 'data/tags.json')
+  const anniversaries = decodeBackupJson<Anniversary[]>(entries, 'data/anniversaries.json')
+  const focusSessions = entries.has('data/focus.json') ? decodeBackupJson<FocusSession[]>(entries, 'data/focus.json') : []
+  const settings = decodeBackupJson<BackupPreview['settings']>(entries, 'data/settings.json')
+  if (![tasks, journals, moods, energies, environments, periods, tags, anniversaries, focusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
+  const rows = Array.isArray(manifest.attachments) ? manifest.attachments : []
+  const attachments = rows.map((row:any) => {
+    if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
+    const bytes = entries.get(row.path)
+    if (!bytes) throw new Error(`缺少附件：${row.filename ?? row.path}`)
+    if (typeof row.size === 'number' && bytes.length !== row.size) throw new Error(`附件大小不一致：${row.filename ?? row.path}`)
+    return { ...row, bytes }
+  })
+  const expected = manifest.counts ?? {}
+  if ((expected.tasks ?? tasks.length) !== tasks.length || (expected.journals ?? journals.length) !== journals.length ||
+      (expected.moods ?? moods.length) !== moods.length || (expected.energies ?? energies.length) !== energies.length ||
+      (expected.environments ?? environments.length) !== environments.length || (expected.periods ?? periods.length) !== periods.length ||
+      (expected.tags ?? tags.length) !== tags.length || (expected.anniversaries ?? anniversaries.length) !== anniversaries.length ||
+      (expected.focusSessions ?? focusSessions.length) !== focusSessions.length || (expected.attachments ?? attachments.length) !== attachments.length) {
+    throw new Error('备份数量校验失败')
+  }
+  return { manifest, tasks, journals, moods, energies, environments, periods, tags, anniversaries, focusSessions, settings, attachments }
 }

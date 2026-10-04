@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.10.18'
+const APP_VERSION = '1.10.19'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -36,7 +36,7 @@ import {
   ANNIVERSARY_TYPES, anniversaryDistanceLabel, anniversaryIcon, anniversaryMeta, anniversaryOccurrence, buildAnniversaryPageRows, calendarAnnotation,
   emptyAnniversaryDraft, lunarCalendarLabel, lunarFullLabel,
 } from './domain/calendar'
-import { attachmentExtension, csvCell, decodeBackupJson, makeZip, readZingZip, safeBackupFilename } from './domain/backup'
+import { attachmentExtension, csvCell, makeZip, parseBackupEntries, readZingZip, safeBackupFilename } from './domain/backup'
 import type { ZipEntry } from './domain/backup'
 import {
   cleanupJournalTagIdsAfterDelete, cleanupTaskTagIdsAfterDelete, focusSelectableTags, managedTagRows,
@@ -2650,33 +2650,8 @@ function App() {
     setBackupMessage('正在验证备份…')
     try {
       const entries=await readZingZip(file)
-      const manifest=decodeBackupJson<any>(entries,'manifest.json')
-      if (manifest?.format!=='zing-calendar-backup' || manifest?.schemaVersion!==1) throw new Error('这不是可识别的 Zing Backup v1')
-      const tasks=decodeBackupJson<Task[]>(entries,'data/tasks.json')
-      const journals=decodeBackupJson<JournalEntry[]>(entries,'data/journals.json')
-      const moods=decodeBackupJson<DailyMood[]>(entries,'data/moods.json')
-      const energies=entries.has('data/energy.json')?decodeBackupJson<DailyEnergy[]>(entries,'data/energy.json'):[]
-      const environments=entries.has('data/environment.json')?decodeBackupJson<DailyEnvironment[]>(entries,'data/environment.json'):[]
-      const periods=entries.has('data/periods.json')?decodeBackupJson<MenstrualPeriod[]>(entries,'data/periods.json'):[]
-      const restoredTags=decodeBackupJson<Tag[]>(entries,'data/tags.json')
-      const restoredAnniversaries=decodeBackupJson<Anniversary[]>(entries,'data/anniversaries.json')
-      const restoredFocusSessions=entries.has('data/focus.json')?decodeBackupJson<FocusSession[]>(entries,'data/focus.json'):[]
-      const settings=decodeBackupJson<BackupPreview['settings']>(entries,'data/settings.json')
-      if (![tasks,journals,moods,energies,environments,periods,restoredTags,restoredAnniversaries,restoredFocusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
-      const rows=Array.isArray(manifest.attachments)?manifest.attachments:[]
-      const attachments=rows.map((row:any)=>{
-        if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
-        const bytes=entries.get(row.path); if (!bytes) throw new Error(`缺少附件：${row.filename ?? row.path}`)
-        if (typeof row.size==='number' && bytes.length!==row.size) throw new Error(`附件大小不一致：${row.filename ?? row.path}`)
-        return {...row,bytes}
-      })
-      const expected=manifest.counts ?? {}
-      if ((expected.tasks??tasks.length)!==tasks.length || (expected.journals??journals.length)!==journals.length ||
-          (expected.moods??moods.length)!==moods.length || (expected.energies??energies.length)!==energies.length || (expected.environments??environments.length)!==environments.length || (expected.periods??periods.length)!==periods.length || (expected.tags??restoredTags.length)!==restoredTags.length ||
-          (expected.anniversaries??restoredAnniversaries.length)!==restoredAnniversaries.length ||
-          (expected.focusSessions??restoredFocusSessions.length)!==restoredFocusSessions.length ||
-          (expected.attachments??attachments.length)!==attachments.length) throw new Error('备份数量校验失败')
-      setBackupPreview({file,manifest,tasks,journals,moods,energies,environments,periods,tags:restoredTags,anniversaries:restoredAnniversaries,focusSessions:restoredFocusSessions,settings,attachments})
+      const parsed=parseBackupEntries(entries)
+      setBackupPreview({file,...parsed})
       setBackupMessage('')
     } catch(error) {
       console.error('Failed to inspect backup',error)

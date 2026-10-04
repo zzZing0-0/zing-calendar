@@ -55,3 +55,7 @@ Focus also has a protected interaction invariant: the just-used Focus tag remain
 The v1.10 refactor deliberately stops before splitting orchestration merely to reduce `App.tsx` line count. v1.10.18 is the consolidated stabilization endpoint for this refactor line. New extraction is justified only when it creates a clear feature boundary, lowers change risk, or makes independently testable behavior explicit. Avoid a forest of tiny hooks/components with heavy parameter plumbing.
 
 For future changes: edit the relevant domain module first when the change is a business rule; edit `App.tsx` when the change is cross-feature orchestration or UI state; add/update a targeted regression test for changed invariants; then run the full build and mobile regression suite.
+
+## Data-safety regression tests
+
+Sync and backup are treated as high-risk data-integrity surfaces. The Playwright suite includes isolated multi-device IndexedDB sync tests, GitHub proxy/provider integration tests with a fake cloud ledger, golden heterogeneous life-data fixtures, and full-backup validation/round-trip/restore tests. New changes to sync, tombstones, merge rules, backup manifests, restore parsing, or attachment backup handling should extend these tests rather than relying on manual observation.

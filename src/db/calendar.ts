@@ -373,6 +373,16 @@ function entityUpdatedAt(row: any): string {
   return String(row.updatedAt ?? row.createdAt ?? '1970-01-01T00:00:00.000Z')
 }
 
+// Sync payloads are canonicalized before they leave a device. Optional attachment
+// bookkeeping must have one wire representation; otherwise a device that hydrates
+// defaults can create a cloud diff even when the user changed nothing.
+function canonicalSyncPayload(entityType: SyncEntityType, row: any): any {
+  if (entityType === 'task' || entityType === 'journal') {
+    return { ...row, attachments: Array.isArray(row.attachments) ? row.attachments : [], attachmentLinkTombstones: row.attachmentLinkTombstones ?? {} }
+  }
+  return row
+}
+
 async function pruneStaleSyncTombstones(): Promise<number> {
   const tombstones = await loadSyncTombstones()
   if (!tombstones.length) return 0
@@ -400,7 +410,7 @@ export async function createSyncBundle(): Promise<SyncBundle> {
       entityType,
       entityId: entityIdOf(entityType, row),
       updatedAt: entityUpdatedAt(row),
-      payload: row,
+      payload: canonicalSyncPayload(entityType, row),
     }))
   }
   return {
