@@ -85,3 +85,8 @@ Sync and backup are treated as high-risk data-integrity surfaces. The Playwright
 
 ### v1.10.22 overlay regression fix
 - The orphan cleanup dialog reuses the validated `storage-browser-layer` overlay stacking model so its backdrop stays below the interactive dialog. A mobile Playwright regression test verifies that the dialog close control remains clickable.
+
+### v1.10.23 Mobile presentation polish
+- Encouragement-card actions use a full-width, right-aligned action row on mobile so Edit/Delete stay aligned across message lengths.
+- Focus history treats the ordinary focus tag as the primary identity. Task/direct-focus origin is secondary metadata (`任务 · <title>` or `自由专注`) alongside duration.
+- Presentation contracts are covered by a focused regression spec.

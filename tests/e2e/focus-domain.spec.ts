@@ -45,5 +45,7 @@ test.describe('focus domain regression', () => {
     const rows = focusHistoryForDate([task({ actualDurationMinutes: 5 })], [direct], '2026-10-04', new Date('2026-10-04T13:00:00').getTime())
     expect(rows.find(row => row.kind === 'task')?.seconds).toBe(300)
     expect(rows.find(row => row.kind === 'direct')?.seconds).toBe(600)
+    expect(rows.find(row => row.kind === 'task')).toMatchObject({ kind: 'task', title: expect.any(String), tagIds: expect.any(Array) })
+    expect(rows.find(row => row.kind === 'direct')).toMatchObject({ kind: 'direct', title: '自由专注', tagIds: expect.any(Array) })
   })
 })
