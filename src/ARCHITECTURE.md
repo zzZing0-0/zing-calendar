@@ -81,3 +81,7 @@ Sync and backup are treated as high-risk data-integrity surfaces. The Playwright
 - B2 GC is now two-phase: `preview` lists currently unreferenced allowlisted attachment keys without deleting them; `delete` accepts the reviewed keys and re-computes orphan status before deletion.
 - The preview obtains short-lived GET/HEAD URLs through the existing B2 signer so recognizable images can be viewed and audio can be played before deletion; unknown objects still expose their storage key and metadata when available.
 - Delete-time revalidation prevents a file that regained a structured reference after preview from being removed.
+
+
+### v1.10.22 overlay regression fix
+- The orphan cleanup dialog reuses the validated `storage-browser-layer` overlay stacking model so its backdrop stays below the interactive dialog. A mobile Playwright regression test verifies that the dialog close control remains clickable.

@@ -3693,7 +3693,7 @@ function App() {
       )}
 
       {orphanCleanupOpen && (
-        <div className="modal-layer orphan-cleanup-layer" role="presentation">
+        <div className="modal-layer storage-browser-layer orphan-cleanup-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭孤儿附件检查" onClick={()=>setOrphanCleanupOpen(false)} />
           <section className="storage-browser orphan-cleanup-modal" role="dialog" aria-modal="true" aria-label="孤儿附件检查">
             <div className="storage-browser-header">
