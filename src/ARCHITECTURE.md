@@ -75,3 +75,9 @@ Sync and backup are treated as high-risk data-integrity surfaces. The Playwright
 - A permanently deleted occurrence no longer keeps its attachment alive.
 - A B2 object with no structured-data reference is an **orphan**. Orphan deletion is never automatic: Settings exposes an explicit one-click cleanup, with a pre-delete confirmation and a reminder to sync first.
 - B2 garbage collection lists only allowlisted Zing attachment keys and deletes only keys absent from the client-supplied current reference set. Attachment metadata/reference rules must remain covered by regression tests.
+
+### v1.10.22 — review-before-delete B2 orphan cleanup
+- Settings places **清理 B2 孤儿附件** immediately above **清空所有数据**, keeping destructive maintenance actions together.
+- B2 GC is now two-phase: `preview` lists currently unreferenced allowlisted attachment keys without deleting them; `delete` accepts the reviewed keys and re-computes orphan status before deletion.
+- The preview obtains short-lived GET/HEAD URLs through the existing B2 signer so recognizable images can be viewed and audio can be played before deletion; unknown objects still expose their storage key and metadata when available.
+- Delete-time revalidation prevents a file that regained a structured reference after preview from being removed.

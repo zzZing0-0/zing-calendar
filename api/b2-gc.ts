@@ -45,12 +45,18 @@ export async function POST(request:Request):Promise<Response>{
     if(browserRequestLooksCrossSite(request)) return Response.json({error:'Cross-site request rejected'},{status:403,headers:PRIVATE_NO_STORE})
     if(requestBodyTooLarge(request,1024*1024)) return Response.json({error:'Request too large'},{status:413,headers:PRIVATE_NO_STORE})
     if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/json')) return Response.json({error:'JSON required'},{status:415,headers:PRIVATE_NO_STORE})
-    const body:any=await request.json().catch(()=>null), raw=body?.referencedKeys
+    const body:any=await request.json().catch(()=>null), raw=body?.referencedKeys, action=body?.action??'preview'
     if(!Array.isArray(raw)||raw.length>MAX_REFERENCES) return Response.json({error:'Invalid reference set'},{status:400,headers:PRIVATE_NO_STORE})
+    if(action!=='preview'&&action!=='delete') return Response.json({error:'Invalid GC action'},{status:400,headers:PRIVATE_NO_STORE})
     const referenced=new Set<string>()
     for(const value of raw){ if(typeof value!=='string'||!safeB2Key(value)) return Response.json({error:'Invalid attachment key'},{status:400,headers:PRIVATE_NO_STORE}); referenced.add(value) }
     const remote=await listAttachmentKeys(), orphans=remote.filter(key=>!referenced.has(key))
-    for(const key of orphans) await deleteKey(key)
-    return Response.json({scanned:remote.length,deleted:orphans.length},{headers:PRIVATE_NO_STORE})
+    if(action==='preview') return Response.json({scanned:remote.length,orphans},{headers:PRIVATE_NO_STORE})
+    const requested=body?.orphanKeys
+    if(!Array.isArray(requested)||requested.length>MAX_REFERENCES) return Response.json({error:'Invalid orphan set'},{status:400,headers:PRIVATE_NO_STORE})
+    const orphanSet=new Set(orphans), deleteKeys:string[]=[]
+    for(const value of requested){ if(typeof value!=='string'||!safeB2Key(value)) return Response.json({error:'Invalid attachment key'},{status:400,headers:PRIVATE_NO_STORE}); if(orphanSet.has(value)) deleteKeys.push(value) }
+    for(const key of deleteKeys) await deleteKey(key)
+    return Response.json({scanned:remote.length,deleted:deleteKeys.length,skipped:requested.length-deleteKeys.length},{headers:PRIVATE_NO_STORE})
   }catch(error){ console.error('B2 garbage collection error',error); return Response.json({error:'B2 orphan cleanup failed'},{status:500,headers:PRIVATE_NO_STORE}) }
 }

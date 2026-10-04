@@ -4742,3 +4742,16 @@ button {
 .storage-trash-divider small{font-size:12px;color:#909a94;text-align:right}
 .orphan-cleanup-row b{font-size:13px}
 @media(max-width:620px){.storage-trash-divider{align-items:flex-start;flex-direction:column;gap:3px}.storage-trash-divider small{text-align:left}}
+
+/* v1.10.22 — review orphaned B2 attachments before destructive cleanup */
+.orphan-cleanup-layer{z-index:1220}
+.orphan-cleanup-modal{max-width:760px}
+.orphan-cleanup-note{margin:0 0 14px;color:#6f7a74;font-size:13px;line-height:1.6}
+.orphan-preview-list{display:grid;gap:12px;max-height:min(58vh,560px);overflow:auto;padding-right:2px}
+.orphan-preview-item{display:grid;grid-template-columns:140px minmax(0,1fr);gap:12px;align-items:center;border:1px solid #e0e5e2;border-radius:14px;padding:10px;background:#fff}
+.orphan-preview-media{height:96px;border-radius:10px;background:#f3f5f3;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#8a938e;font-size:12px;text-align:center}
+.orphan-preview-media img{width:100%;height:100%;object-fit:cover;display:block}
+.orphan-preview-media audio{width:100%;max-width:130px}
+.orphan-preview-meta{min-width:0;display:flex;flex-direction:column;gap:5px}.orphan-preview-meta code{font-size:11px;overflow-wrap:anywhere;color:#4f5d55}.orphan-preview-meta small{color:#8a938e}
+.orphan-cleanup-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.orphan-cleanup-actions button{border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}.orphan-cleanup-actions .danger{border-color:#d9b6b6;color:#a33;background:#fff8f8;font-weight:700}
+@media(max-width:620px){.orphan-preview-item{grid-template-columns:1fr}.orphan-preview-media{height:180px}.orphan-preview-media audio{max-width:100%}.orphan-cleanup-actions{flex-direction:column-reverse}.orphan-cleanup-actions button{width:100%}}

@@ -107,7 +107,9 @@ test('B2 GC deletes only unreferenced allowlisted attachment objects', async () 
   const original=globalThis.fetch; const deleted:string[]=[]
   globalThis.fetch=(async(input:any,init:any={})=>{ const url=String(input); if((init.method||'GET')==='DELETE'){deleted.push(decodeURIComponent(new URL(url).pathname.split('/').pop()||'')); return new Response(null,{status:204})} return new Response(`<ListBucketResult><Contents><Key>${keep}</Key></Contents><Contents><Key>${orphan}</Key></Contents><Contents><Key>unrelated.txt</Key></Contents></ListBucketResult>`,{status:200}) }) as typeof fetch
   try{
-    const req=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({referencedKeys:[keep]})})
-    const response=await b2GcPost(req); expect(response.status).toBe(200); expect(await response.json()).toMatchObject({scanned:2,deleted:1}); expect(deleted).toEqual([orphan])
+    const previewReq=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'preview',referencedKeys:[keep]})})
+    const preview=await b2GcPost(previewReq); expect(preview.status).toBe(200); expect(await preview.json()).toMatchObject({scanned:2,orphans:[orphan]}); expect(deleted).toEqual([])
+    const deleteReq=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',referencedKeys:[keep],orphanKeys:[orphan,keep]})})
+    const response=await b2GcPost(deleteReq); expect(response.status).toBe(200); expect(await response.json()).toMatchObject({scanned:2,deleted:1,skipped:1}); expect(deleted).toEqual([orphan])
   } finally { globalThis.fetch=original; const restore=(n:string,v:string|undefined)=>v===undefined?delete process.env[n]:process.env[n]=v; restore('B2_KEY_ID',old.id);restore('B2_APPLICATION_KEY',old.key);restore('B2_BUCKET_NAME',old.bucket);restore('B2_ENDPOINT',old.endpoint) }
 })

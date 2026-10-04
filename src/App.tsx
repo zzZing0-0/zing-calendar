@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.10.21'
+const APP_VERSION = '1.10.22'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -306,6 +306,8 @@ function App() {
   const [storageStats, setStorageStats] = useState({ total:0, images:0, audio:0, data:0, attachmentCount:0 })
   const [storageBrowser, setStorageBrowser] = useState<'image'|'audio'|null>(null)
   const [orphanCleanupBusy, setOrphanCleanupBusy] = useState(false)
+  const [orphanCleanupOpen, setOrphanCleanupOpen] = useState(false)
+  const [orphanAttachments, setOrphanAttachments] = useState<{key:string;url:string;contentType:string;size:number}[]>([])
   const [imageLibraryTarget, setImageLibraryTarget] = useState<'task'|'journal'|null>(null)
   const [backupExporting, setBackupExporting] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
@@ -2265,19 +2267,43 @@ function App() {
   const effectiveImageBytes = allStoredAttachments.filter(item => item.type === 'image').reduce((sum,item)=>sum+item.size,0)
   const effectiveAudioBytes = allStoredAttachments.filter(item => item.type === 'audio').reduce((sum,item)=>sum+item.size,0)
   const effectiveAttachmentBytes = effectiveImageBytes + effectiveAudioBytes
-  const cleanupB2Orphans = async () => {
+  const inspectB2Orphans = async () => {
     if (orphanCleanupBusy) return
-    if (!window.confirm('清理 B2 中当前没有任何任务或记录引用的孤儿附件？建议先完成一次 GitHub 同步。此操作会永久删除孤儿文件，无法恢复。')) return
     setOrphanCleanupBusy(true)
     try {
-      const response = await fetch('/api/b2-gc', { method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify({ referencedKeys: referencedAttachmentKeys(tasks, journalEntries) }) })
-      const payload:any = await response.json().catch(()=>({}))
-      if (!response.ok) throw new Error(String(payload?.error || `HTTP ${response.status}`))
-      await cleanupOrphanAttachmentBlobs(referencedAttachmentKeys(tasks, journalEntries))
-      setStorageStats(await getStorageStats())
-      window.alert(payload.deleted ? `已清除 ${payload.deleted} 个 B2 孤儿附件。` : '没有发现需要清理的 B2 孤儿附件。')
-    } catch (error) { window.alert(`孤儿附件清理失败：${error instanceof Error ? error.message : String(error)}`) }
-    finally { setOrphanCleanupBusy(false) }
+      const referencedKeys=referencedAttachmentKeys(tasks, journalEntries)
+      const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'preview',referencedKeys})})
+      const payload:any=await response.json().catch(()=>({}))
+      if(!response.ok) throw new Error(String(payload?.error||`HTTP ${response.status}`))
+      const keys:string[]=Array.isArray(payload.orphans)?payload.orphans:[]
+      const rows=await Promise.all(keys.map(async key=>{
+        try{
+          const signedResponse=await fetch(`/api/b2-sign?key=${encodeURIComponent(key)}&method=GET`,{headers:{Accept:'application/json'}})
+          const signed:any=await signedResponse.json().catch(()=>({}))
+          if(!signedResponse.ok||!signed.url) throw new Error('sign failed')
+          const headResponse=await fetch(`/api/b2-sign?key=${encodeURIComponent(key)}&method=HEAD`,{headers:{Accept:'application/json'}})
+          const headSigned:any=await headResponse.json().catch(()=>({}))
+          let contentType='',size=0
+          if(headResponse.ok&&headSigned.url){ const metadata=await fetch(headSigned.url,{method:'HEAD'}); if(metadata.ok){contentType=metadata.headers.get('content-type')||'';size=Number(metadata.headers.get('content-length')||0)||0} }
+          return {key,url:String(signed.url),contentType,size}
+        }catch{return {key,url:'',contentType:'',size:0}}
+      }))
+      setOrphanAttachments(rows); setOrphanCleanupOpen(true)
+    }catch(error){window.alert(`孤儿附件检查失败：${error instanceof Error?error.message:String(error)}`)}
+    finally{setOrphanCleanupBusy(false)}
+  }
+  const cleanupB2Orphans = async () => {
+    if(orphanCleanupBusy||orphanAttachments.length===0)return
+    if(!window.confirm(`永久删除这 ${orphanAttachments.length} 个孤儿附件？删除后无法恢复。`))return
+    setOrphanCleanupBusy(true)
+    try{
+      const referencedKeys=referencedAttachmentKeys(tasks,journalEntries)
+      const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'delete',referencedKeys,orphanKeys:orphanAttachments.map(item=>item.key)})})
+      const payload:any=await response.json().catch(()=>({}))
+      if(!response.ok)throw new Error(String(payload?.error||`HTTP ${response.status}`))
+      await cleanupOrphanAttachmentBlobs(referencedKeys); setStorageStats(await getStorageStats()); setOrphanAttachments([]); setOrphanCleanupOpen(false)
+      window.alert(payload.skipped?`已清除 ${payload.deleted} 个；另有 ${payload.skipped} 个因重新获得引用而跳过。`:`已清除 ${payload.deleted} 个 B2 孤儿附件。`)
+    }catch(error){window.alert(`孤儿附件清理失败：${error instanceof Error?error.message:String(error)}`)}finally{setOrphanCleanupBusy(false)}
   }
   const chooseLibraryImage = (source: Attachment) => {
     const linked: Attachment = { ...source, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
@@ -3324,9 +3350,6 @@ function App() {
               </div>
               <small>本设备同时在 IndexedDB 保留数据与附件缓存，用于离线使用；这里显示的是当前有效内容，不代表 GitHub 仓库或 B2 桶的实际总占用。</small>
             </div>
-            <button className="settings-link-row orphan-cleanup-row" type="button" onClick={()=>void cleanupB2Orphans()} disabled={orphanCleanupBusy}>
-              <span><strong>清理 B2 孤儿附件</strong><small>仅永久删除已无任何任务或记录引用的 B2 文件；建议先同步，再手动清理。</small></span><b>{orphanCleanupBusy?'…':'清理'}</b>
-            </button>
             <div className="backup-settings-block">
               <button className="settings-link-row external-import-row" type="button" onClick={openExternalImport}>
                 <span><strong>从外部导入</strong><small>通用 CSV 或已支持来源；导入任务统一标记为“从外部导入”。</small></span><b>›</b>
@@ -3342,6 +3365,9 @@ function App() {
                 <span><strong>恢复数据</strong><small>从 Zing 完整备份 ZIP 恢复；确认后替换当前设备数据。</small></span><b>↑</b>
               </button>
               <input ref={backupInputRef} className="backup-file-input" type="file" accept=".zip,application/zip" onChange={event=>{ const file=event.target.files?.[0]; if(file) void inspectBackupFile(file) }} />
+              <button className="settings-link-row orphan-cleanup-row" type="button" onClick={()=>void inspectB2Orphans()} disabled={orphanCleanupBusy}>
+                <span><strong>清理 B2 孤儿附件</strong><small>先查看当前无任何任务或记录引用的 B2 文件，确认内容后再决定是否永久删除。</small></span><b>{orphanCleanupBusy?'…':'›'}</b>
+              </button>
               <button className="settings-link-row danger-data-row" type="button" onClick={()=>setResetDataConfirm(true)}>
                 <span><strong>清空所有数据</strong><small>清空任务、记录、心情、精力、经期、纪念日、专注记录、自建标签与附件；保留应用设置。删除会在下次 GitHub 同步传播。</small></span><b>×</b>
               </button>
@@ -3657,13 +3683,33 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><span>🎂</span>纪念日</button>
         <button type="button" className={mainView==='statistics'?'active':''} onClick={() => switchMainView('statistics')}><span>⌁</span>统计</button>
         <button type="button" className={mainView==='settings'?'active':''} onClick={() => switchMainView('settings')}><span>⚙</span>设置</button>
       </nav>
+      )}
+
+      {orphanCleanupOpen && (
+        <div className="modal-layer orphan-cleanup-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭孤儿附件检查" onClick={()=>setOrphanCleanupOpen(false)} />
+          <section className="storage-browser orphan-cleanup-modal" role="dialog" aria-modal="true" aria-label="孤儿附件检查">
+            <div className="storage-browser-header">
+              <div><span className="eyebrow">B2 CLEANUP</span><h2>孤儿附件</h2><small>{orphanAttachments.length} 个文件 · 删除前可以逐个查看</small></div>
+              <button className="close-button" type="button" onClick={()=>setOrphanCleanupOpen(false)}>×</button>
+            </div>
+            {orphanAttachments.length===0 ? <p className="page-empty">没有发现孤儿附件，B2 很干净。</p> : <>
+              <p className="orphan-cleanup-note">这些文件当前没有任何任务、记录或回收站内容引用。图片可直接查看，录音可直接试听；无法识别的文件仍会显示 B2 storage key。</p>
+              <div className="orphan-preview-list">{orphanAttachments.map(item=>{const image=item.contentType.startsWith('image/'),audio=item.contentType.startsWith('audio/');return <article className="orphan-preview-item" key={item.key}>
+                <div className="orphan-preview-media">{image&&item.url?<img src={item.url} alt="孤儿附件"/>:audio&&item.url?<audio controls src={item.url}/>:<span>{item.url?'无法预览此文件':'预览链接获取失败'}</span>}</div>
+                <div className="orphan-preview-meta"><code>{item.key}</code><small>{item.contentType||'未知类型'}{item.size?` · ${formatBytes(item.size)}`:''}</small></div>
+              </article>})}</div>
+              <div className="orphan-cleanup-actions"><button type="button" onClick={()=>setOrphanCleanupOpen(false)} disabled={orphanCleanupBusy}>暂不清理</button><button className="danger" type="button" onClick={()=>void cleanupB2Orphans()} disabled={orphanCleanupBusy}>{orphanCleanupBusy?'正在清理…':`永久删除 ${orphanAttachments.length} 个`}</button></div>
+            </>}
+          </section>
+        </div>
       )}
 
       {storageBrowser && (
