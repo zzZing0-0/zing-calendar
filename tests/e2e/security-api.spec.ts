@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { POST as githubSyncPost } from '../../api/github-sync'
 import { GET as b2SignGet } from '../../api/b2-sign'
-import { safeB2Key, safeGitHubPath, validateGitHubPutBody } from '../../server/api-security'
+import { safeB2Key, safeGitHubPath, validateGitHubPutBody } from '../../server/api-security.js'
 
 const validPutBody = JSON.stringify({ message:'sync: Zing data 2026-10-04', branch:'main', content:Buffer.from('{}').toString('base64') })
 const request = (body: any, headers: Record<string,string> = {}) => new Request('https://zing.example/api/github-sync', {
@@ -79,4 +79,14 @@ test.describe('API security boundary regression', () => {
       restore('B2_KEY_ID',old.id); restore('B2_APPLICATION_KEY',old.key); restore('B2_BUCKET_NAME',old.bucket); restore('B2_ENDPOINT',old.endpoint)
     }
   })
+})
+
+
+test('security API regression › Vercel function imports use deployment-safe ESM specifiers', async () => {
+  const fs = await import('node:fs/promises')
+  for (const file of ['api/github-sync.ts', 'api/b2-sign.ts']) {
+    const source = await fs.readFile(file, 'utf8')
+    expect(source).toContain("../server/api-security.js")
+    expect(source).not.toMatch(/from ['"]\.\.\/server\/api-security['"]/)
+  }
 })

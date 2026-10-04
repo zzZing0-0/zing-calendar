@@ -1,7 +1,7 @@
 // Short-lived S3-compatible presigned URLs for the private Backblaze B2 bucket.
 // Binary bytes travel browser <-> B2 directly; long-lived B2 credentials stay on Vercel.
 import crypto from 'node:crypto'
-import { PRIVATE_NO_STORE, browserRequestLooksCrossSite, safeB2Key } from '../server/api-security'
+import { PRIVATE_NO_STORE, browserRequestLooksCrossSite, safeB2Key } from '../server/api-security.js'
 
 const required = (name: string): string => {
   const value = process.env[name]

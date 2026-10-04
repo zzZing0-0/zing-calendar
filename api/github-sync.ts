@@ -8,7 +8,7 @@ import {
   requestBodyTooLarge,
   safeGitHubPath,
   validateGitHubPutBody,
-} from '../server/api-security'
+} from '../server/api-security.js'
 
 const ALLOWED_METHODS = new Set(['GET', 'PUT'])
 const jsonError = (message: string, status: number) => Response.json({ error: message }, { status, headers: PRIVATE_NO_STORE })
