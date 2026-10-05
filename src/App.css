@@ -4808,3 +4808,21 @@ button {
 .inbox-task-meta span{display:block;white-space:nowrap}
 .inbox-task-meta span:last-child{font-size:8px;color:#a0a7a4}
 @media(max-width:640px){.inbox-task-group .overdue-task-link time.inbox-task-meta{max-width:none;font-size:8px}.inbox-task-meta span:last-child{font-size:7px}}
+
+/* v2.2.4 — unify compact task presentation */
+.overdue-task-link strong{color:#354039;font-weight:680}
+.overdue-task-row{grid-template-columns:20px minmax(0,1fr) auto}
+.overdue-task-row .overdue-postpone-today{
+  min-height:0;padding:4px 7px;border-radius:8px;font-size:10px;line-height:1.1;align-self:center
+}
+.task-view-heading{min-width:0;display:flex;flex-direction:column;gap:7px}
+.task-view-title-row{display:flex;align-items:center;gap:10px;min-width:0}
+.task-view-title-row h2{margin:0;min-width:0}
+.task-view-schedule{display:flex;align-items:center;gap:5px;margin-left:34px;color:#8c9690;font-size:12px;line-height:1.2}
+.task-view-schedule svg{width:12px;height:12px;flex:0 0 12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.task-view-delete{margin-right:auto}
+@media(max-width:640px){
+  .overdue-inbox-item{grid-template-columns:minmax(0,1fr)}
+  .overdue-task-row .overdue-postpone-today{min-height:0;padding:4px 7px}
+  .task-view-schedule{margin-left:34px;font-size:11px}
+}

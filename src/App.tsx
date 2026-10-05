@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.2.3'
+const APP_VERSION = '2.2.4'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -4172,14 +4172,14 @@ function App() {
               {overdueTasks.length===0 ? <p className="page-empty compact">目前没有已逾期任务。</p> :
                 <div className="overdue-inbox-list">
                   {overdueTasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}>
-                    <div className="overdue-inbox-main">
+                    <div className="overdue-inbox-main overdue-task-row">
                       <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>
                       <button className="overdue-task-link" type="button" onClick={()=>openTaskAtItsDay(task)}>
                         <strong>{task.title}</strong>
-                        <time>{task.date?.replaceAll('-','/') ?? '未排期'}</time>
+                        <time>{task.date?.replaceAll('-','/') ?? ''}</time>
                       </button>
+                      <button className="overdue-postpone-today" type="button" onClick={()=>postponeTask(task,toDateKey(today))}>延期</button>
                     </div>
-                    <button className="overdue-postpone-today" type="button" onClick={()=>postponeTask(task,toDateKey(today))}>延期到今天</button>
                   </article>)}
                 </div>}
             </div>
@@ -4292,34 +4292,33 @@ function App() {
           <button className="modal-backdrop" type="button" aria-label={viewingTask.activeTimerStartedAt ? "任务计时中" : "关闭任务详情"} onClick={()=>{ if (!viewingTask.activeTimerStartedAt) setViewingTask(null) }} />
           <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
             <div className="editor-header task-view-header">
-              <div>
+              <div className="task-view-heading">
                 <span className="eyebrow">TASK</span>
-                <h2 id="task-view-title">{viewingTask.title}</h2>
+                <div className="task-view-title-row">
+                  <button
+                    type="button"
+                    className={`task-view-checkbox priority-${viewingTask.priority} status-${viewingTask.status}`}
+                    aria-label={viewingTask.status==='completed'?'取消完成':'完成任务'}
+                    onClick={()=>{
+                      const nextStatus:TaskStatus=viewingTask.status==='completed'?'todo':'completed'
+                      if (viewingTask.activeTimerStartedAt && nextStatus==='completed') {
+                        stopTaskTimer(viewingTask, true)
+                        return
+                      }
+                      setTaskStatus(viewingTask,nextStatus)
+                      setViewingTask(current=>current?{...current,status:nextStatus,completedAt:nextStatus==='completed'?new Date().toISOString():undefined}:current)
+                    }}
+                  >{viewingTask.status==='completed'?'✓':viewingTask.status==='abandoned'?'×':''}</button>
+                  <h2 id="task-view-title">{viewingTask.title}</h2>
+                </div>
+                {viewingTask.date && <div className="task-view-schedule" aria-label="任务时间">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>
+                  <span>{isMultiDayTask(viewingTask) ? formatTaskRange(viewingTask) : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}</span>
+                </div>}
               </div>
               {!viewingTask.activeTimerStartedAt && <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>}
             </div>
             <div className="editor-body task-view-body">
-              <div className="task-view-primary-meta">
-                <button
-                  type="button"
-                  className={`task-view-checkbox priority-${viewingTask.priority} status-${viewingTask.status}`}
-                  aria-label={viewingTask.status==='completed'?'取消完成':'完成任务'}
-                  onClick={()=>{
-                    const nextStatus:TaskStatus=viewingTask.status==='completed'?'todo':'completed'
-                    if (viewingTask.activeTimerStartedAt && nextStatus==='completed') {
-                      stopTaskTimer(viewingTask, true)
-                      return
-                    }
-                    setTaskStatus(viewingTask,nextStatus)
-                    setViewingTask(current=>current?{...current,status:nextStatus,completedAt:nextStatus==='completed'?new Date().toISOString():undefined}:current)
-                  }}
-                >{viewingTask.status==='completed'?'✓':viewingTask.status==='abandoned'?'×':''}</button>
-                <span className="task-view-date">
-                  {isMultiDayTask(viewingTask)
-                    ? formatTaskRange(viewingTask)
-                    : viewingTask.date ? `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}` : '收集箱 · 未排期'}
-                </span>
-              </div>
 
               {viewingTask.status === 'todo' && (
                 <section className={`task-timer-panel ${viewingTask.activeTimerStartedAt ? 'running' : ''}`}>
@@ -4377,6 +4376,20 @@ function App() {
                   <span className="task-timer-lock-note">🔒 计时中，结束计时后可编辑或退出</span>
                 ) : (
                   <>
+                    <button className="delete-button task-view-delete" type="button" onClick={()=>{
+                      const task=viewingTask
+                      const series=task.seriesId ? tasks.find(item=>item.id===task.seriesId) : task
+                      if (!series) return
+                      if (task.seriesId && task.occurrenceDate && series.recurrence) {
+                        setEditingTaskId(series.id)
+                        setEditingOccurrenceDate(task.occurrenceDate)
+                        setViewingTask(null)
+                        setSeriesAction('delete')
+                        return
+                      }
+                      deleteTask(series,'series')
+                      setViewingTask(null)
+                    }}>删除</button>
                     <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
                     <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
                   </>

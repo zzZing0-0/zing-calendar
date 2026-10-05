@@ -65,3 +65,22 @@ test('Inbox task operations keep the Inbox open and rows show tag plus activity 
   expect(source.slice(editorStart,editorEnd)).not.toContain('setInboxOpen(false)')
   expect(source).not.toContain('openTaskDetail(task)}}><strong>{task.title}</strong><time>未排期</time>')
 })
+
+test('Inbox and overdue task rows use normal task text styling and overdue postponement stays inline', () => {
+  expect(css).toContain('.overdue-task-link strong{color:#354039')
+  expect(source).toContain('className="overdue-inbox-main overdue-task-row"')
+  expect(source).toContain('>延期</button>')
+  expect(source).not.toContain('>延期到今天</button>')
+  expect(css).toContain('.overdue-task-row{grid-template-columns:20px minmax(0,1fr) auto}')
+})
+
+test('compact task detail keeps completion beside title, hides unscheduled text, and exposes delete', () => {
+  expect(source).toContain('task-view-title-row')
+  expect(source).toContain('task-view-schedule')
+  expect(source).toContain('<svg viewBox="0 0 24 24" aria-hidden="true">')
+  expect(source).toContain('{viewingTask.date && <div className="task-view-schedule"')
+  expect(source).not.toContain(" : '收集箱 · 未排期'")
+  expect(source).toContain('delete-button task-view-delete')
+  expect(source).toContain("setSeriesAction('delete')")
+  expect(css).toContain('.task-view-title-row{display:flex;align-items:center')
+})
