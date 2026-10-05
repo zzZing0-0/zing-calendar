@@ -59,7 +59,8 @@ export function taskFocusSecondsByDate(tasks: Task[], nowMs: number, includeTagI
       // actualDurationMinutes is the user's final, editable truth. Timer sessions are
       // intentionally not re-counted here, so a manual correction (30 -> 5 min)
       // immediately changes focus statistics to 5 minutes.
-      addSeconds(task.date, Math.max(0, Number(task.actualDurationMinutes ?? 0)) * 60)
+      const focusDate = task.date ?? toDateKey(new Date(task.completedAt ?? task.timerSessions?.at(-1)?.endedAt ?? task.updatedAt))
+      addSeconds(focusDate, Math.max(0, Number(task.actualDurationMinutes ?? 0)) * 60)
       addActiveInterval(task.activeTimerStartedAt)
       return
     }
@@ -210,7 +211,7 @@ export function recurrenceEndFromDraft(draft: TaskDraft): RecurrenceEnd | undefi
 }
 
 export function recurrenceFromDraft(draft: TaskDraft): RecurrenceRule | undefined {
-  if (draft.repeatPreset === 'none') return undefined
+  if (!draft.date || draft.repeatPreset === 'none') return undefined
   const end = recurrenceEndFromDraft(draft)
   if (draft.repeatPreset === 'daily') return { unit: 'day', interval: 1, end }
   if (draft.repeatPreset === 'weekly') return { unit: 'week', interval: 1, weekdays: [(fromDateKey(draft.date).getDay() + 6) % 7], end }
@@ -236,7 +237,15 @@ export function draftRepeat(task: Task): Pick<TaskDraft, 'repeatPreset' | 'repea
   return { repeatPreset: 'custom', repeatInterval: rule.interval, repeatUnit: rule.unit, repeatWeekdays: rule.weekdays ?? [], ...ending }
 }
 
+export function isScheduledTask(task: Task): task is Task & { date: string } { return Boolean(task.date) }
+
+export function normalizeTaskScheduling(task: Task): Task {
+  if (task.date) return task
+  return { ...task, date: null, endDate: undefined, time: undefined, recurrence: undefined, recurrenceExceptions: undefined, originalDate: undefined }
+}
+
 export function baseOccursOn(task: Task, key: string) {
+  if (!task.date) return false
   const rule = task.recurrence
   if (!rule || key < task.date) return key === task.date
   const anchor = fromDateKey(task.date)
@@ -256,6 +265,7 @@ export function baseOccursOn(task: Task, key: string) {
 }
 
 export function occurrenceNumber(task: Task, key: string) {
+  if (!task.date) return 0
   let count = 0
   let cursor = fromDateKey(task.date)
   const target = fromDateKey(key)
@@ -275,7 +285,7 @@ export function occursOn(task: Task, key: string) {
 }
 
 export function secondOccurrenceDate(task: Task): string | null {
-  if (!task.recurrence) return null
+  if (!task.date || !task.recurrence) return null
   let cursor = fromDateKey(task.date)
   // Search far enough for yearly/custom yearly rules while respecting recurrence end.
   const limit = new Date(cursor)
@@ -297,8 +307,9 @@ export function secondOccurrenceDate(task: Task): string | null {
 }
 
 export function normalizeSingleOccurrenceSeries(task: Task): Task {
+  task = normalizeTaskScheduling(task)
   if (!task.recurrence || secondOccurrenceDate(task)) return task
-  const first = task.recurrenceExceptions?.[task.date]
+  const first = task.date ? task.recurrenceExceptions?.[task.date] : undefined
   return {
     ...task,
     ...(first ?? {}),
@@ -311,7 +322,7 @@ export function normalizeSingleOccurrenceSeries(task: Task): Task {
 }
 
 export function materializeOccurrence(series: Task, occurrenceDate: string): Task | null {
-  if (series.trashedAt || (series.trashFuture && occurrenceDate >= series.trashFuture.from)) return null
+  if (!series.date || series.trashedAt || (series.trashFuture && occurrenceDate >= series.trashFuture.from)) return null
   const exception = series.recurrenceExceptions?.[occurrenceDate]
   if (exception?.deleted || exception?.trashedAt) return null
   const duration = dayDiff(series.date, taskEndDate(series))
@@ -329,7 +340,7 @@ export function materializeOccurrence(series: Task, occurrenceDate: string): Tas
 export function expandTasks(tasks: Task[], startKey: string, endKey: string) {
   const result: Task[] = []
   tasks.forEach(task => {
-    if (task.trashedAt) return
+    if (task.trashedAt || !task.date) return
     if (!task.recurrence) {
       if (task.date <= endKey && taskEndDate(task) >= startKey) result.push(task)
       return
@@ -341,7 +352,7 @@ export function expandTasks(tasks: Task[], startKey: string, endKey: string) {
       const key = toDateKey(cursor)
       if (occursOn(task, key)) {
         const occurrence = materializeOccurrence(task, key)
-        if (occurrence && occurrence.date <= endKey && taskEndDate(occurrence) >= startKey) result.push(occurrence)
+        if (occurrence?.date && occurrence.date <= endKey && taskEndDate(occurrence) >= startKey) result.push(occurrence)
       }
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -352,7 +363,7 @@ export function expandTasks(tasks: Task[], startKey: string, endKey: string) {
 export function isNextPendingRecurringOccurrence(occurrence: Task, seriesTasks: Task[]) {
   if (occurrence.status !== 'todo' || !occurrence.seriesId || !occurrence.occurrenceDate) return true
   const series = seriesTasks.find(task => task.id === occurrence.seriesId)
-  if (!series?.recurrence) return true
+  if (!series?.date || !series.recurrence) return true
 
   const targetKey = occurrence.occurrenceDate
   let cursor = fromDateKey(series.date)
@@ -389,6 +400,7 @@ export function taskSort(a: Task, b: Task) {
 }
 
 export function formatTaskRange(task: Task) {
+  if (!task.date) return '收集箱'
   const start = fromDateKey(task.date)
   const end = fromDateKey(taskEndDate(task))
   if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
@@ -413,12 +425,12 @@ export function deadlineStage(task: Task, now = new Date()) {
 }
  
 export function isTaskOverdue(task: Task, todayKey = toDateKey(new Date())) {
-  return task.status === 'todo' && taskEndDate(task) < todayKey
+  return Boolean(task.date) && task.status === 'todo' && taskEndDate(task) < todayKey
 }
 
-export function taskEndDate(task: Task) { return task.endDate || task.date }
-export function taskCoversDate(task: Task, key: string) { return task.date <= key && taskEndDate(task) >= key }
-export function isMultiDayTask(task: Task) { return taskEndDate(task) > task.date }
+export function taskEndDate(task: Task) { return task.endDate || task.date || '' }
+export function taskCoversDate(task: Task, key: string) { return Boolean(task.date) && task.date! <= key && taskEndDate(task) >= key }
+export function isMultiDayTask(task: Task) { return Boolean(task.date) && taskEndDate(task) > task.date! }
 
 export type MultiDaySegment = { task: Task; week: number; startColumn: number; span: number; lane: number }
 
@@ -431,7 +443,10 @@ export function buildMultiDaySegments(tasks: Task[], days: CalendarDay[]): Multi
     const weekStart = toDateKey(weekDays[0].date)
     const weekEnd = toDateKey(weekDays[weekDays.length - 1].date)
     const candidates = tasks
-      .filter(task => isMultiDayTask(task) && task.date <= weekEnd && taskEndDate(task) >= weekStart)
+      .filter((task): task is Task & { date: string } => {
+        if (!task.date) return false
+        return isMultiDayTask(task) && task.date <= weekEnd && taskEndDate(task) >= weekStart
+      })
       .sort((a, b) => a.date.localeCompare(b.date) || taskEndDate(b).localeCompare(taskEndDate(a)) || b.priority - a.priority)
     const lanes: { start:number; end:number }[][] = []
     candidates.forEach(task => {

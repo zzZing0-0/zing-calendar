@@ -100,6 +100,13 @@ test.describe('focus domain regression', () => {
     expect(finished.updatedAt).toBe(finished.endedAt)
   })
 
+  test('undated task focus is attributed to its completion or timer activity date', () => {
+    const undated = task({ date: null, actualDurationMinutes: 12, completedAt: '2026-10-04T09:30:00.000Z', updatedAt: '2026-10-04T09:30:00.000Z' })
+    const rows = focusHistoryForDate([undated], [], '2026-10-04', new Date('2026-10-04T13:00:00.000Z').getTime())
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ kind: 'task', seconds: 720 })
+  })
+
   test('history combines task truth with direct-focus overlap and caps countdown overlap', () => {
     const direct = session({ id: 'direct', mode: 'countdown', plannedSeconds: 600, startedAt: '2026-10-04T12:00:00', endedAt: '2026-10-04T12:30:00' })
     const rows = focusHistoryForDate([task({ actualDurationMinutes: 5 })], [direct], '2026-10-04', new Date('2026-10-04T13:00:00').getTime())

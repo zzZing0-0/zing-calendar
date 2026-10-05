@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.0.3'
+const APP_VERSION = '2.1.1'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -18,7 +18,7 @@ import {
   PRIORITIES, addDaysKey, applyRecurringDisplayMode, buildMonth, buildMultiDaySegments, combinedFocusSecondsByDate,
   currentTime, dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatActualDuration, formatDate, normalizedActualDurationMinutes,
   formatFocusDuration, formatTaskRange, fromDateKey, isMultiDayTask, isTaskOverdue,
-  materializeOccurrence, normalizeSingleOccurrenceSeries,
+  materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
   recurrenceFromDraft, repeatPresetLabels, sameDay, taskCoversDate, taskEndDate,
   taskSort, toDateKey,
 } from './domain/task'
@@ -277,6 +277,7 @@ function App() {
   const [moodMonth, setMoodMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
   const [overdueInboxOpen, setOverdueInboxOpen] = useState(false)
+  const [inboxOpen, setInboxOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'anniversary'|'focus'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
@@ -661,7 +662,7 @@ function App() {
     let active = true
     loadTasks<Task>().then(storedTasks => {
       if (!active) return
-      setTasks(storedTasks.map(task => ({ ...task, endDate: task.endDate || undefined })))
+      setTasks(storedTasks.map(task => normalizeTaskScheduling({ ...task, date: task.date || null, endDate: task.endDate || undefined })))
       setTasksHydrated(true)
     }).catch(error => {
       console.error('Failed to load tasks from IndexedDB', error)
@@ -1160,6 +1161,7 @@ function App() {
   )
 
   const activeTasks = useMemo(() => tasks.filter(task => !task.trashedAt), [tasks])
+  const inboxTasks = useMemo(() => activeTasks.filter(task => task.date === null && (showEndedTasks || task.status === 'todo')).sort(taskSort), [activeTasks, showEndedTasks])
   const activeJournalEntries = useMemo(() => filterActiveJournalEntries(journalEntries), [journalEntries])
   const activeAnniversaries = useMemo(() => anniversaries.filter(anniversary => !anniversary.trashedAt), [anniversaries])
   type TrashItem =
@@ -1193,9 +1195,10 @@ function App() {
   const overdueTasks = useMemo(() => {
     const todayKey=toDateKey(today)
     const yesterday=addDaysKey(todayKey,-1)
-    if(!tasks.length) return [] as Task[]
-    const earliest=tasks.reduce((min,task)=>task.date<min?task.date:min,tasks[0].date)
-    return applyRecurringDisplayMode(expandTasks(activeTasks,earliest,yesterday),activeTasks,showAllRecurringTasks)
+    const scheduled=activeTasks.filter((task): task is Task & { date:string } => Boolean(task.date))
+    if(!scheduled.length) return [] as Task[]
+    const earliest=scheduled.reduce((min,task)=>task.date<min?task.date:min,scheduled[0].date)
+    return applyRecurringDisplayMode(expandTasks(scheduled,earliest,yesterday),scheduled,showAllRecurringTasks)
       .filter(task=>isTaskOverdue(task,todayKey))
       .sort((a,b)=>taskEndDate(a).localeCompare(taskEndDate(b)) || b.priority-a.priority || a.title.localeCompare(b.title,'zh-CN'))
   },[activeTasks,today,showAllRecurringTasks])
@@ -1289,7 +1292,7 @@ function App() {
     })()
     const monthTasksByDate = new Map<string,Task[]>()
     monthDisplayTasks.filter(task=>!isMultiDayTask(task)).forEach(task=>{
-      const current=monthTasksByDate.get(task.date)??[]; current.push(task); current.sort(taskSort); monthTasksByDate.set(task.date,current)
+      if (!task.date) return; const current=monthTasksByDate.get(task.date)??[]; current.push(task); current.sort(taskSort); monthTasksByDate.set(task.date,current)
     })
     const monthSegments=buildMultiDaySegments(monthDisplayTasks,monthDays)
     const monthOccupied=monthDays.map((_,dayIndex)=>{
@@ -1332,10 +1335,10 @@ function App() {
     // The continuous mobile calendar prepares recurring tasks once for its whole
     // loaded window. A single-week fallback is retained for non-prepared callers.
     const displayTasks=preparedTasks
-      ? preparedTasks.filter(task=>task.date<=rangeEnd&&taskEndDate(task)>=rangeStart)
+      ? preparedTasks.filter(task=>Boolean(task.date)&&task.date!<=rangeEnd&&taskEndDate(task)>=rangeStart)
       : (()=>{const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
     const tasksByDate=new Map<string,Task[]>()
-    displayTasks.filter(task=>!isMultiDayTask(task)).forEach(task=>{const current=tasksByDate.get(task.date)??[];current.push(task);current.sort(taskSort);tasksByDate.set(task.date,current)})
+    displayTasks.filter(task=>Boolean(task.date)&&!isMultiDayTask(task)).forEach(task=>{const key=task.date!;const current=tasksByDate.get(key)??[];current.push(task);current.sort(taskSort);tasksByDate.set(key,current)})
     const segments=buildMultiDaySegments(displayTasks,weekDays)
     const occupied=weekDays.map((_,column)=>new Set(segments.filter(segment=>segment.week===0&&column>=segment.startColumn&&column<segment.startColumn+segment.span).map(segment=>segment.lane).filter(lane=>lane>=0&&lane<5)))
     const anniversaryMap=preparedAnniversaries ?? new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
@@ -1609,7 +1612,7 @@ function App() {
           ...series,
           recurrenceExceptions: {
             ...series.recurrenceExceptions,
-            [task.occurrenceDate!]: { ...existing, ...updater(existing), updatedAt: now },
+            [task.occurrenceDate!]: { ...existing, ...updater(existing), date: existing.date, updatedAt: now } as RecurrenceException,
           },
           updatedAt: now,
         }
@@ -1671,6 +1674,14 @@ function App() {
     setEditorOpen(true)
   }
 
+  const openInboxTaskEditor = () => {
+    setEditingTaskId(null)
+    setEditingOccurrenceDate(null)
+    setDraft({ ...emptyDraft(today, defaultPriority), date: '', endDate: '', allDay: false, time: '', repeatPreset: 'none' })
+    setInboxOpen(false)
+    setEditorOpen(true)
+  }
+
   const openTaskDetail = (task: Task) => {
     setViewingTask(task)
   }
@@ -1684,7 +1695,7 @@ function App() {
     setEditingOccurrenceDate(task.seriesId ? task.occurrenceDate ?? task.date : null)
     setDraft({
       title: task.title,
-      date: task.date,
+      date: task.date ?? '',
       endDate: task.endDate ?? '',
       priority: task.priority,
       allDay: task.allDay,
@@ -1710,10 +1721,10 @@ function App() {
     const title = draft.title.trim()
     if (!title) return
     const now = new Date().toISOString()
-    const buildFields = (date: string, endDate?: string) => ({
-      title, date, endDate,
-      priority: draft.priority, allDay: draft.allDay,
-      time: draft.allDay ? undefined : draft.time || undefined,
+    const buildFields = (date: string | null, endDate?: string) => ({
+      title, date, endDate: date ? endDate : undefined,
+      priority: draft.priority, allDay: date ? draft.allDay : false,
+      time: date && !draft.allDay ? draft.time || undefined : undefined,
       deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
       actualDurationMinutes: normalizedActualDurationMinutes(draft.actualDurationHours, draft.actualDurationMinutes),
       tagIds: singleOrdinaryTagIds(draft.tagIds),
@@ -1731,6 +1742,7 @@ function App() {
           const exception: RecurrenceException = {
             ...existingException,
             ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
+            date: draft.date || undefined,
             updatedAt: now,
           }
           return current.map(task => task.id === series.id
@@ -1780,7 +1792,7 @@ function App() {
 
         // Whole-series edit. If Repeat becomes "不重复", this is a real conversion:
         // recurrence and every old occurrence exception are removed, so nothing can later "revive".
-        const seriesDate = occurrence && draft.date === occurrence.date ? series.date : draft.date
+        const seriesDate = (occurrence && draft.date === occurrence.date ? series.date : draft.date) ?? ''
         const seriesEndDate = occurrence && (draft.endDate || '') === (occurrence.endDate || '')
           ? series.endDate
           : (draft.endDate && draft.endDate > seriesDate ? draft.endDate : undefined)
@@ -1793,7 +1805,7 @@ function App() {
           ;(task.attachments ?? []).forEach(a => { if (!nextKeys.has(a.storageKey)) tombstones[a.storageKey] = now })
           draft.attachments.forEach(a => { delete tombstones[a.storageKey] })
           return normalizeSingleOccurrenceSeries({
-            ...task, ...buildFields(seriesDate, seriesEndDate), attachmentLinkTombstones: tombstones,
+            ...task, ...buildFields(seriesDate || null, seriesEndDate), attachmentLinkTombstones: tombstones,
             recurrence: nextRecurrence,
             recurrenceExceptions: nextRecurrence ? task.recurrenceExceptions : undefined,
             updatedAt: now,
@@ -1803,16 +1815,18 @@ function App() {
     } else {
       const task: Task = {
         id: crypto.randomUUID(),
-        ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
-        status: 'todo', originalDate: draft.date, recurrence: recurrenceFromDraft(draft),
+        ...buildFields(draft.date || null, draft.date && draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
+        status: 'todo', originalDate: draft.date || undefined, recurrence: recurrenceFromDraft(draft),
         createdAt: now, updatedAt: now,
       }
       setTasks(current => [...current, normalizeSingleOccurrenceSeries(task)])
     }
 
-    const taskDate = fromDateKey(draft.date)
-    setSelectedDate(taskDate)
-    setVisibleMonth(new Date(taskDate.getFullYear(), taskDate.getMonth(), 1))
+    if (draft.date) {
+      const taskDate = fromDateKey(draft.date)
+      setSelectedDate(taskDate)
+      setVisibleMonth(new Date(taskDate.getFullYear(), taskDate.getMonth(), 1))
+    }
     closeEditor()
   }
 
@@ -1887,7 +1901,7 @@ function App() {
   }
 
   const postponeTask = (task: Task, newDate: string) => {
-    if (!newDate || newDate <= task.date) return
+    if (!task.date || !newDate || newDate <= task.date) return
     const now = new Date().toISOString()
     const duration = dayDiff(task.date, taskEndDate(task))
     const event: PostponeEvent = { from: task.date, to: newDate, at: now }
@@ -1905,7 +1919,7 @@ function App() {
         }, updatedAt: now,
       } : series))
     } else setTasks(current => current.map(item => item.id === task.id ? {
-      ...item, originalDate: item.originalDate ?? item.date, date: newDate,
+      ...item, originalDate: item.originalDate ?? item.date ?? undefined, date: newDate,
       endDate: duration > 0 ? addDaysKey(newDate, duration) : undefined,
       postponeHistory: [...(item.postponeHistory ?? []), event], updatedAt: now,
     } : item))
@@ -2092,6 +2106,7 @@ function App() {
       const journalRows = activeJournalEntries.filter(entry => (entry.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
       const days = new Set<string>()
       taskRows.forEach(task => {
+        if (!task.date) return
         const start = tagDateFromKey(task.date), end = tagDateFromKey(taskEndDate(task))
         if (!start || !end) { days.add(task.date); return }
         for (let cursor=new Date(start); cursor<=end; cursor.setDate(cursor.getDate()+1)) days.add(toDateKey(cursor))
@@ -2202,6 +2217,7 @@ function App() {
   }
 
   const openTaskAtItsDay = (task:Task) => {
+    if (!task.date) { setInboxOpen(false); openTaskDetail(task); return }
     const [year,month,day]=task.date.split('-').map(Number)
     const date=new Date(year,month-1,day)
     navigateToCalendarDate(date)
@@ -2214,8 +2230,9 @@ function App() {
     setSearchOpen(false)
     setMobileSearchVisible(false)
     if (result.kind === 'task' || result.kind === 'journal') {
-      const dateKey=result.kind==='task' ? result.item.date : result.item.date
-      const [year,month,day]=dateKey.split('-').map(Number)
+      const dateKey=result.item.date
+      if (result.kind === 'task' && !dateKey) { openTaskDetail(result.item); return }
+      const [year,month,day]=(dateKey as string).split('-').map(Number)
       const date=new Date(year,month-1,day)
       navigateToCalendarDate(date)
       window.setTimeout(()=>{
@@ -2535,7 +2552,7 @@ function App() {
     if(!didaImportPreview || externalImportBusy) return
     setExternalImportBusy(true); setExternalImportMessage('正在导入…')
     try {
-      const mergedTasks=[...tasks,...didaImportPreview.tasks]
+      const mergedTasks=[...tasks,...didaImportPreview.tasks].map(normalizeTaskScheduling)
       const existingTagIds=new Set(tags.map(tag=>tag.id))
       const mergedTags=[...tags,...didaImportPreview.tags.filter(tag=>!existingTagIds.has(tag.id))]
       await Promise.all([saveTasks(mergedTasks),saveTags(mergedTags)])
@@ -2699,8 +2716,9 @@ function App() {
     setBackupRestoring(true); setBackupMessage('正在恢复数据…')
     try {
       // The archive is fully parsed and validated before any local write begins.
+      const restoredTasks = backupPreview.tasks.map(normalizeTaskScheduling)
       await replaceZingData({
-        tasks:backupPreview.tasks,journals:backupPreview.journals,moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
+        tasks:restoredTasks,journals:backupPreview.journals,moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
         tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,
         attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
           const copy = new Uint8Array(item.bytes.byteLength)
@@ -2739,9 +2757,9 @@ function App() {
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
-      syncSnapshotsRef.current = { task:backupPreview.tasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
+      syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
-      setTasks(backupPreview.tasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
+      setTasks(restoredTasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
       suppressNextSettingsSyncRef.current = true
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
@@ -2803,6 +2821,8 @@ function App() {
       const [nextTasks,nextJournals,nextMoods,nextEnergy,nextEnvironment,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings] = await Promise.all([
         loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadDailyEnvironment<DailyEnvironment>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>()
       ])
+      const normalizedNextTasks = nextTasks.map(normalizeTaskScheduling)
+      if (JSON.stringify(normalizedNextTasks) !== JSON.stringify(nextTasks)) await saveTasks(normalizedNextTasks)
       const normalizedNextTags = normalizeTags(nextTags)
       const hydratedTags = ensureRequiredSystemTags(normalizedNextTags)
       const missingSystemTags = hydratedTags.filter(tag => !normalizedNextTags.some(existing => existing.id === tag.id))
@@ -2815,7 +2835,7 @@ function App() {
       // Remote merge is hydration, not a local user edit. Reset the diff baselines
       // before React state changes so pulled records/deletes do not generate fresh tombstones.
       syncSnapshotsRef.current = {
-        task: nextTasks,
+        task: normalizedNextTasks,
         journal: nextJournals,
         mood: nextMoods,
         energy: nextEnergy,
@@ -2827,7 +2847,7 @@ function App() {
         settings: nextSettings,
       }
       syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, settings:true }
-      setTasks(nextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setDailyEnvironment(nextEnvironment); setMenstrualPeriods(nextPeriods)
+      setTasks(normalizedNextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setDailyEnvironment(nextEnvironment); setMenstrualPeriods(nextPeriods)
       setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
       setFocusSessions(nextFocusSessions)
@@ -2965,6 +2985,7 @@ function App() {
             <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='task'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
+            <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${inboxTasks.length}`:''}</span></button>
             <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={trashItems.length?`打开回收站，共 ${trashItems.length} 条`:'打开回收站，当前为空'}><svg className="trash-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg><span>回收站</span></button>
             {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
             {endedTasksViewToggle('calendar-ended-toggle')}
@@ -3167,14 +3188,15 @@ function App() {
               <div className="tag-subsection-heading"><h4>标签与任务的联系</h4><small>{statistics.tagTimelineAll?'完整生命周期 · 完成量与实际执行频率':'当前时间范围 · 完成量与实际执行频率'} · 未来任务不计</small></div>
               {statistics.tagTaskTimelines.length ? <div className="tag-task-timelines">
                 <div className="tag-timeline-axis"><span>{statistics.timelineStart}</span><span>今天</span></div>
-                {[...statistics.tagTaskTimelines].sort((a,b)=>b.completed-a.completed||a.firstDate.localeCompare(b.firstDate)).map(row=>{
-                  const startPct=Math.max(0,dayDiff(statistics.timelineStart,row.firstDate)/statistics.timelineSpan*100)
+                {[...statistics.tagTaskTimelines].sort((a,b)=>b.completed-a.completed||(a.firstDate ?? '').localeCompare(b.firstDate ?? '')).map(row=>{
+                  const firstDate = row.firstDate ?? statistics.timelineStart
+                  const startPct=Math.max(0,dayDiff(statistics.timelineStart,firstDate)/statistics.timelineSpan*100)
                   const endPct=Math.min(100,dayDiff(statistics.timelineStart,row.endKey)/statistics.timelineSpan*100)
                   return <div className={`tag-timeline-row${row.tag.archived?' archived':''}`} key={row.tag.id}>
                     <div className="tag-timeline-meta"><strong>#{row.tag.name}</strong><span>完成 {row.completed}</span>{row.tag.archived&&<em>已归档</em>}</div>
-                    <div className="tag-timeline-track" title={`${row.firstDate} → ${row.endKey}`}>
+                    <div className="tag-timeline-track" title={`${firstDate} → ${row.endKey}`}>
                       <i className="tag-lifecycle" style={{left:`${startPct}%`,width:`${Math.max(.4,endPct-startPct)}%`}} />
-                      {statistics.tagTimelineAll&&<span className="tag-start-date" style={{left:`${startPct}%`}}>{row.firstDate}</span>}
+                      {statistics.tagTimelineAll&&<span className="tag-start-date" style={{left:`${startPct}%`}}>{firstDate}</span>}
                       {row.days.map(day=>{const x=dayDiff(statistics.timelineStart,day.date)/statistics.timelineSpan*100;return <b key={day.date} title={`${day.date} · ${day.count} 个任务`} style={{left:`${x}%`,background:row.tag.color,opacity:Math.min(1,.42+day.count*.18)}} />})}
                       {row.tag.archived&&<span className="tag-archive-end" style={{left:`${endPct}%`}} title={`归档于 ${row.endKey}`} />}
                     </div>
@@ -3684,7 +3706,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><span>▦</span>日历</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><span>🎂</span>纪念日</button>
@@ -4069,11 +4091,35 @@ function App() {
                 </div>
                 {visibleTrashItems.length===0 ? <p className="page-empty compact">这一类还没有内容。</p> : <div className="overdue-inbox-list trash-inbox-list">
                   {visibleTrashItems.map(item=><article key={item.key} className="trash-inbox-item">
-                    <div className="trash-inbox-main"><strong>{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='anniversary'?item.anniversary.title:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date.replaceAll('-','/')} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+                    <div className="trash-inbox-main"><strong>{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='anniversary'?item.anniversary.title:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
                     <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
                   </article>)}
                 </div>}
               </>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {inboxOpen && (
+        <div className="modal-layer overdue-inbox-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭收集箱" onClick={()=>setInboxOpen(false)} />
+          <section className="task-editor overdue-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="inbox-title">
+            <div className="editor-header">
+              <div><span className="eyebrow">INBOX</span><h2 id="inbox-title">收集箱 · {inboxTasks.length}</h2></div>
+              <button className="close-button" type="button" onClick={()=>setInboxOpen(false)} aria-label="关闭">×</button>
+            </div>
+            <div className="editor-body overdue-inbox-body">
+              <button className="primary-button" type="button" onClick={openInboxTaskEditor}>＋ 添加未排期任务</button>
+              {inboxTasks.length===0 ? <p className="page-empty compact">暂时没有未排期任务。</p> :
+                <div className="overdue-inbox-list">
+                  {inboxTasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}>
+                    <div className="overdue-inbox-main">
+                      <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>
+                      <button className="overdue-task-link" type="button" onClick={()=>{setInboxOpen(false);openTaskDetail(task)}}><strong>{task.title}</strong><time>未排期</time></button>
+                    </div>
+                  </article>)}
+                </div>}
             </div>
           </section>
         </div>
@@ -4095,7 +4141,7 @@ function App() {
                       <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>
                       <button className="overdue-task-link" type="button" onClick={()=>openTaskAtItsDay(task)}>
                         <strong>{task.title}</strong>
-                        <time>{task.date.replaceAll('-','/')}</time>
+                        <time>{task.date?.replaceAll('-','/') ?? '未排期'}</time>
                       </button>
                     </div>
                     <button className="overdue-postpone-today" type="button" onClick={()=>postponeTask(task,toDateKey(today))}>延期到今天</button>
@@ -4236,7 +4282,7 @@ function App() {
                 <span className="task-view-date">
                   {isMultiDayTask(viewingTask)
                     ? formatTaskRange(viewingTask)
-                    : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}
+                    : viewingTask.date ? `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}` : '收集箱 · 未排期'}
                 </span>
               </div>
 
@@ -4427,12 +4473,21 @@ function App() {
 
               <div className="time-row task-timing-toggle">
                 <label className="check-field">
-                  <input type="checkbox" checked={draft.allDay} onChange={event => setDraft(current => ({ ...current, allDay: event.target.checked, endDate: event.target.checked ? current.endDate : '' }))} />
-                  <span>全天</span>
+                  <input type="checkbox" checked={Boolean(draft.date)} onChange={event => {
+                    if (!event.target.checked) {
+                      if (draft.repeatPreset !== 'none') { window.alert('请先取消重复。重复任务需要关联日期。'); return }
+                      setDraft(current => ({ ...current, date: '', endDate: '', allDay: false, time: '' }))
+                    } else setDraft(current => ({ ...current, date: toDateKey(selectedDate ?? today) }))
+                  }} />
+                  <span>安排日期</span>
                 </label>
+                {draft.date && <label className="check-field">
+                  <input type="checkbox" checked={draft.allDay} onChange={event => setDraft(current => ({ ...current, allDay: event.target.checked, endDate: event.target.checked ? current.endDate : '' }))} />
+                  <span>跨日期</span>
+                </label>}
               </div>
 
-              {draft.allDay ? (
+              {!draft.date ? <p className="inbox-date-help">未安排日期的任务会保存在收集箱中。</p> : draft.allDay ? (
                 <div className="field-grid">
                   <label className="field"><span>开始日期</span><input type="date" value={draft.date} onChange={event => setDraft(current => ({ ...current, date: event.target.value, endDate: current.endDate && current.endDate < event.target.value ? '' : current.endDate }))} /></label>
                   <label className="field"><span>结束日期 · 可选</span><input type="date" min={draft.date} value={draft.endDate} onChange={event => setDraft(current => ({ ...current, endDate: event.target.value }))} /></label>
@@ -4460,13 +4515,13 @@ function App() {
                 {editingTaskId && (() => {
                   const series = tasks.find(task => task.id === editingTaskId)
                   const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
-                  return shown && shown.status === 'todo' && taskEndDate(shown) < toDateKey(new Date()) ? (
+                  return shown && shown.date && shown.status === 'todo' && taskEndDate(shown) < toDateKey(new Date()) ? (
                     <label className="field postpone-field"><span>延期到</span><div className="postpone-inline"><input type="date" min={toDateKey(new Date())} defaultValue={toDateKey(new Date())} id="postpone-date" /><button type="button" onClick={() => { const input = document.getElementById('postpone-date') as HTMLInputElement | null; if (input?.value && input.value > taskEndDate(shown)) { postponeTask(shown, input.value); closeEditor() } }}>延期</button></div></label>
                   ) : null
                 })()}
               </div>
 
-              <div className="field-grid repeat-fields">
+              {draft.date && <div className="field-grid repeat-fields">
                 <label className="field">
                   <span>重复</span>
                   <select value={draft.repeatPreset} onChange={event => setDraft(current => ({ ...current, repeatPreset: event.target.value as TaskDraft['repeatPreset'] }))}>
@@ -4474,9 +4529,9 @@ function App() {
                   </select>
                 </label>
                 {draft.repeatPreset === 'custom' && <label className="field"><span>每隔</span><div className="repeat-interval"><input type="number" min="1" max="999" value={draft.repeatInterval} onChange={event => setDraft(current => ({ ...current, repeatInterval: Math.min(999, Math.max(1, Number(event.target.value) || 1)) }))} /><select value={draft.repeatUnit} onChange={event => setDraft(current => ({ ...current, repeatUnit: event.target.value as RecurrenceUnit }))}><option value="day">天</option><option value="week">周</option><option value="month">月</option></select></div></label>}
-              </div>
-              {draft.repeatPreset === 'custom' && draft.repeatUnit === 'week' && <div className="field full-field"><span>重复星期</span><div className="weekday-picker">{WEEKDAYS.map((day, index) => <button key={day} type="button" className={draft.repeatWeekdays.includes(index) ? 'active' : ''} onClick={() => setDraft(current => ({ ...current, repeatWeekdays: current.repeatWeekdays.includes(index) ? current.repeatWeekdays.filter(value => value !== index) : [...current.repeatWeekdays, index] }))}>{day}</button>)}</div></div>}
-              {draft.repeatPreset !== 'none' && <div className="field-grid repeat-end-fields">
+              </div>}
+              {draft.date && draft.repeatPreset === 'custom' && draft.repeatUnit === 'week' && <div className="field full-field"><span>重复星期</span><div className="weekday-picker">{WEEKDAYS.map((day, index) => <button key={day} type="button" className={draft.repeatWeekdays.includes(index) ? 'active' : ''} onClick={() => setDraft(current => ({ ...current, repeatWeekdays: current.repeatWeekdays.includes(index) ? current.repeatWeekdays.filter(value => value !== index) : [...current.repeatWeekdays, index] }))}>{day}</button>)}</div></div>}
+              {draft.date && draft.repeatPreset !== 'none' && <div className="field-grid repeat-end-fields">
                 <label className="field"><span>结束</span><select value={draft.repeatEndMode} onChange={event => setDraft(current => ({ ...current, repeatEndMode: event.target.value as TaskDraft['repeatEndMode'] }))}><option value="never">永不</option><option value="date">按日期</option><option value="count">按次数</option></select></label>
                 {draft.repeatEndMode === 'date' && <label className="field"><span>结束日期</span><input type="date" min={draft.date} value={draft.repeatEndDate} onChange={event => setDraft(current => ({ ...current, repeatEndDate: event.target.value }))} /></label>}
                 {draft.repeatEndMode === 'count' && <label className="field"><span>重复次数</span><div className="repeat-count"><input type="number" min="1" max="9999" value={draft.repeatEndCount} onChange={event => setDraft(current => ({ ...current, repeatEndCount: Math.min(9999, Math.max(1, Number(event.target.value) || 1)) }))} /><span>次</span></div></label>}

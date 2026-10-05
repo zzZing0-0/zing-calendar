@@ -33,16 +33,18 @@ export function buildStatistics({
   const startYear = `${today.getFullYear()}-01-01`
   const rangeStart = statsRange==='week' ? startOfWeek : statsRange==='month' ? startOfMonth : statsRange==='30d' ? start30 : statsRange==='year' ? startYear : '0000-01-01'
   const inRange = (key?:string) => Boolean(key && key >= rangeStart && key <= todayKey)
-  const taskOrigin = (task:Task) => task.occurrenceDate ?? task.originalDate ?? task.date
+  const taskOrigin = (task:Task) => task.occurrenceDate ?? task.originalDate ?? task.date ?? ''
   const taskOriginalEnd = (task:Task) => {
     const origin = taskOrigin(task)
+    if (!origin || !task.date) return origin ?? todayKey
     const duration = Math.max(0, dayDiff(task.date, taskEndDate(task)))
     return addDaysKey(origin, duration)
   }
 
   // Expand recurring tasks only across the selected historical window, then use original planned date as cohort.
-  const earliestTaskDate = activeTasks.length ? activeTasks.reduce((min,task)=>task.date<min?task.date:min,activeTasks[0].date) : todayKey
-  const statsTasks = expandTasks(activeTasks, rangeStart==='0000-01-01' ? earliestTaskDate : rangeStart, todayKey)
+  const scheduledTasks = activeTasks.filter((task): task is Task & { date:string } => Boolean(task.date))
+  const earliestTaskDate = scheduledTasks.length ? scheduledTasks.reduce((min,task)=>task.date<min?task.date:min,scheduledTasks[0]?.date ?? todayKey) : todayKey
+  const statsTasks = expandTasks(scheduledTasks, rangeStart==='0000-01-01' ? earliestTaskDate : rangeStart, todayKey)
     .filter(task => inRange(taskOrigin(task)))
   const eligibleTasks = statsTasks.filter(task => task.status!=='todo' || taskEndDate(task) <= todayKey)
   const completed = eligibleTasks.filter(task=>task.status==='completed').length
@@ -123,7 +125,8 @@ export function buildStatistics({
   activeTasks.forEach(task=>{
     const tag=focusTagForIds(task.tagIds)
     if(!task.recurrence){
-      if(inRange(task.date)){const value=Math.max(0,Number(task.actualDurationMinutes??0)*60);addFocusTagValue(tag,value,value>0?(task.timerSessions?.length||1):0)}
+      const focusDate=task.date ?? toDateKey(new Date(task.completedAt ?? task.timerSessions?.at(-1)?.endedAt ?? task.updatedAt))
+      if(inRange(focusDate)){const value=Math.max(0,Number(task.actualDurationMinutes??0)*60);addFocusTagValue(tag,value,value>0?(task.timerSessions?.length||1):0)}
       return
     }
     Object.entries(task.recurrenceExceptions??{}).forEach(([date,exception]:[string,RecurrenceException])=>{
@@ -238,14 +241,15 @@ export function buildStatistics({
   const tagTaskTimelines = managedTags.map(tag=>{
     const archiveEnd = tag.archived && tag.archivedAt && tag.archivedAt < todayKey ? tag.archivedAt : todayKey
     const endKey = tagTimelineAll ? archiveEnd : (archiveEnd < todayKey ? archiveEnd : todayKey)
-    const tagged = timelineTasks.filter(task=>{
+    const tagged = timelineTasks.filter((task): task is Task & { date:string } => {
       if (!(task.tagIds??[DEFAULT_TAG_ID]).includes(tag.id)) return false
+      if (!task.date) return false
       const taskStart = task.date
       const taskEnd = taskEndDate(task)
       return taskStart <= endKey && taskEnd >= timelineStart
     })
     if (!tagged.length) return {tag, completed:0, firstDate:'', endKey, days:[] as {date:string,count:number}[]}
-    const historicalFirst = tagged.reduce((min,task)=>taskOrigin(task)<min?taskOrigin(task):min,taskOrigin(tagged[0]))
+    const historicalFirst = tagged.reduce((min,task)=>taskOrigin(task)<min?taskOrigin(task):min,taskOrigin(tagged[0]!))
     const firstDate = tagTimelineAll ? historicalFirst : timelineStart
     const counts=new Map<string,number>()
     tagged.forEach(task=>{
@@ -258,7 +262,7 @@ export function buildStatistics({
     return {tag, completed, firstDate, endKey, days:[...counts].map(([date,count])=>({date,count}))}
   }).filter(row=>row.firstDate && row.days.length)
   const effectiveTimelineStart = tagTimelineAll && tagTaskTimelines.length
-    ? tagTaskTimelines.reduce((min,row)=>row.firstDate<min?row.firstDate:min,tagTaskTimelines[0].firstDate)
+    ? tagTaskTimelines.reduce((min,row)=>(row.firstDate ?? '')<min?(row.firstDate ?? min):min,tagTaskTimelines[0]?.firstDate ?? timelineStart)
     : timelineStart
   const timelineSpan = Math.max(1,dayDiff(effectiveTimelineStart,todayKey))
 

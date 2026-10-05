@@ -19,7 +19,7 @@ export type AttachmentLinkTombstones = Record<string, string>
 export type Task = {
   id: string
   title: string
-  date: string
+  date: string | null
   endDate?: string
   priority: TaskPriority
   status: TaskStatus

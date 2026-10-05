@@ -70,6 +70,14 @@ test.describe('statistics domain regression', () => {
     expect(result.completionTrend).toEqual([{ key: '2026-10-03', count: 1, label: '10/3' }])
   })
 
+  test('undated Inbox tasks stay outside schedule-based task statistics', () => {
+    const result = stats({
+      activeTasks: [task({ id: 'inbox', title: 'Build notebook', date: null, tagIds: ['english'] })],
+    })
+    expect(result.eligibleTasks).toEqual([])
+    expect(result.tagTaskTimelines).toEqual([])
+  })
+
   test('trashed free focus contributes neither time nor tag statistics', () => {
     const result = stats({
       focusSessions: [

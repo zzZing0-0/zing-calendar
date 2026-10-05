@@ -25,3 +25,34 @@ test.describe('numeric input bounds regression', () => {
     expect(recurrenceFromDraft(draft)?.end).toEqual({ type: 'count', count: 9999 })
   })
 })
+
+test.describe('Inbox scheduling invariants', () => {
+  test('undated task cannot retain recurrence or schedule-only fields', async () => {
+    const { normalizeTaskScheduling } = await import('../../src/domain/task')
+    const task = normalizeTaskScheduling({
+      id:'inbox-1', title:'做 Zing 笔记本功能', date:null, endDate:'2026-10-10', priority:1, status:'todo', allDay:true,
+      time:'09:00', createdAt:'2026-10-05T00:00:00.000Z', updatedAt:'2026-10-05T00:00:00.000Z',
+      recurrence:{ unit:'day', interval:1 }, recurrenceExceptions:{}, originalDate:'2026-10-05',
+    })
+    expect(task.date).toBeNull()
+    expect(task.recurrence).toBeUndefined()
+    expect(task.recurrenceExceptions).toBeUndefined()
+    expect(task.endDate).toBeUndefined()
+    expect(task.time).toBeUndefined()
+  })
+
+  test('undated draft cannot create recurrence', () => {
+    const draft = emptyDraft(new Date(2026, 9, 5))
+    draft.date = ''
+    draft.repeatPreset = 'daily'
+    expect(recurrenceFromDraft(draft)).toBeUndefined()
+  })
+
+  test('dated task can enable recurrence and undated task stays outside calendar expansion', async () => {
+    const { expandTasks, normalizeTaskScheduling } = await import('../../src/domain/task')
+    const datedDraft = emptyDraft(new Date(2026, 9, 5)); datedDraft.repeatPreset='daily'
+    expect(recurrenceFromDraft(datedDraft)?.unit).toBe('day')
+    const inbox = normalizeTaskScheduling({ id:'i', title:'Inbox', date:null, priority:1, status:'todo', allDay:false, createdAt:'2026-10-05T00:00:00.000Z', updatedAt:'2026-10-05T00:00:00.000Z' })
+    expect(expandTasks([inbox], '2026-10-01', '2026-10-31')).toEqual([])
+  })
+})

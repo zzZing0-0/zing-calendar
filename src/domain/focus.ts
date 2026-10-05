@@ -1,5 +1,5 @@
 import type { FocusSession, RecurrenceException, Task } from '../types'
-import { materializeOccurrence } from './task'
+import { materializeOccurrence, toDateKey } from './task'
 
 
 export const COUNTDOWN_MIN_MINUTES = 1
@@ -93,7 +93,8 @@ export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dat
     if (task.trashedAt) return
     if (!task.recurrence) {
       const seconds = Math.max(0, Number(task.actualDurationMinutes ?? 0) * 60)
-      if (task.date === dateKey && seconds > 0) rows.push({ id: `task:${task.id}`, kind: 'task', title: task.title, seconds, tagIds: task.tagIds ?? [], task })
+      const focusDate = task.date ?? toDateKey(new Date(task.completedAt ?? task.timerSessions?.at(-1)?.endedAt ?? task.updatedAt))
+      if (focusDate === dateKey && seconds > 0) rows.push({ id: `task:${task.id}`, kind: 'task', title: task.title, seconds, tagIds: task.tagIds ?? [], task })
       return
     }
     const exception = task.recurrenceExceptions?.[dateKey] as RecurrenceException | undefined

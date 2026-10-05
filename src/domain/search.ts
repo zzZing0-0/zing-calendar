@@ -76,7 +76,7 @@ export function buildSearchResults({
     activeTasks.forEach(task => {
       const hay = `${task.title} ${task.notes ?? ''}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) {
-        results.push({ kind: 'task', id: task.id, title: task.title, date: task.date, snippet: searchSnippet(task.notes ?? '', normalizedSearch), item: task })
+        results.push({ kind: 'task', id: task.id, title: task.title, date: task.date ?? '', snippet: searchSnippet(task.notes ?? '', normalizedSearch), item: task })
       }
     })
   }
