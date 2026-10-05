@@ -4852,9 +4852,9 @@ button {
 .compact-tag-edit-body .field:first-child{margin-top:0}
 .compact-tag-edit-body .field>span{display:block;margin-bottom:6px;color:#7d8782;font-size:10px;font-weight:650}
 .compact-tag-edit-body input{box-sizing:border-box;width:100%;border:1px solid #dfe5e1;border-radius:10px;background:#fff;padding:10px 11px;color:#39453f;font:inherit}
-.compact-tag-edit-actions{display:flex;align-items:center;gap:8px}
-.compact-tag-edit-actions .archive-button{margin-right:0}
-.compact-tag-edit-actions .ghost-button{margin-left:auto}
+.compact-tag-edit-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.compact-tag-edit-secondary{display:flex;align-items:center;gap:8px}
+.compact-tag-edit-actions .ghost-button,.compact-tag-edit-actions .danger-button,.compact-tag-edit-actions .save-button{min-height:40px;padding:0 16px;font-size:14px;border-radius:12px}
 @media(max-width:620px){
   .compact-tag-edit-modal{width:calc(100vw - 18px);max-height:calc(100dvh - 18px)}
 }
