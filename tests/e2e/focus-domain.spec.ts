@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { FocusSession, Task } from '../../src/types'
-import { activeFocusSession, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock } from '../../src/domain/focus'
+import { activeFocusSession, boundedInteger, countdownMinutes, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock } from '../../src/domain/focus'
 
 const session = (patch: Partial<FocusSession> = {}): FocusSession => ({
   id: 'focus-1', tagIds: ['default'], mode: 'stopwatch', startedAt: '2026-10-04T10:00:00.000Z',
@@ -18,6 +18,21 @@ test.describe('focus domain regression', () => {
     const active = session({ id: 'active' })
     expect(activeFocusSession([ended, active])?.id).toBe('active')
     expect(activeFocusSession([ended])).toBeNull()
+  })
+
+  test('countdown input is enforced at 1 to 720 minutes even for typed values', () => {
+    expect(countdownMinutes('1')).toBe(1)
+    expect(countdownMinutes('720')).toBe(720)
+    expect(countdownMinutes('721')).toBe(720)
+    expect(countdownMinutes('10000')).toBe(720)
+    expect(countdownMinutes('0')).toBe(1)
+    expect(countdownMinutes('-20')).toBe(1)
+    expect(countdownMinutes('not-a-number', 15)).toBe(15)
+  })
+
+  test('bounded numeric edits enforce their business limit instead of trusting HTML min/max', () => {
+    expect(boundedInteger('10000', 1, 1440, 1)).toBe(1440)
+    expect(boundedInteger('-5', 1, 1440, 1)).toBe(1)
   })
 
   test('countdown uses its planned duration even when it exceeds the stopwatch safety cap', () => {

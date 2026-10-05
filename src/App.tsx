@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.0.1'
+const APP_VERSION = '2.0.2'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -16,7 +16,7 @@ import type {
 } from './types'
 import {
   PRIORITIES, addDaysKey, applyRecurringDisplayMode, buildMonth, buildMultiDaySegments, combinedFocusSecondsByDate,
-  currentTime, dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatActualDuration, formatDate,
+  currentTime, dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatActualDuration, formatDate, normalizedActualDurationMinutes,
   formatFocusDuration, formatTaskRange, fromDateKey, isMultiDayTask, isTaskOverdue,
   materializeOccurrence, normalizeSingleOccurrenceSeries,
   recurrenceFromDraft, repeatPresetLabels, sameDay, taskCoversDate, taskEndDate,
@@ -33,7 +33,7 @@ import {
   isImportSourceTag, isImportSourceTagId, normalizeEnvironmentOptions, normalizeTags,
 } from './domain/preferences'
 import {
-  ANNIVERSARY_TYPES, anniversaryDistanceLabel, anniversaryIcon, anniversaryMeta, anniversaryOccurrence, buildAnniversaryPageRows, calendarAnnotation,
+  ANNIVERSARY_TYPES, anniversaryDayLimit, anniversaryDistanceLabel, anniversaryIcon, anniversaryMeta, anniversaryOccurrence, buildAnniversaryPageRows, calendarAnnotation,
   emptyAnniversaryDraft, lunarCalendarLabel, lunarFullLabel,
 } from './domain/calendar'
 import { attachmentExtension, csvCell, makeZip, parseBackupEntries, readZingZip, safeBackupFilename } from './domain/backup'
@@ -51,7 +51,7 @@ import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVis
 import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
-import { activeFocusSession as findActiveFocusSession, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock } from './domain/focus'
+import { activeFocusSession as findActiveFocusSession, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock } from './domain/focus'
 import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 import { useAppPreferences } from './hooks/useAppPreferences'
 import { planSyncDiff, syncEntityKey } from './domain/sync'
@@ -1233,7 +1233,7 @@ function App() {
   }
   const saveDirectFocusEdit = () => {
     if(!focusEditId) return
-    const minutes=Math.max(1,Number.parseInt(focusEditMinutes||'1',10)||1), now=new Date().toISOString()
+    const minutes=boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1), now=new Date().toISOString()
     setFocusSessions(current=>current.map(session=>{
       if(session.id!==focusEditId) return session
       const endedAt=new Date(new Date(session.startedAt).getTime()+minutes*60000).toISOString()
@@ -1529,7 +1529,7 @@ function App() {
   const formatClock = formatFocusClock
   const startDirectFocus = () => {
     if (activeTimerTask || activeFocusSession) return
-    const plannedMinutes=Math.max(1,Number.parseInt(focusMinutes||'15',10)||15)
+    const plannedMinutes=countdownMinutes(focusMinutes,15)
     const now=new Date().toISOString()
     setFocusSessions(current=>[...current,{id:crypto.randomUUID(),tagIds:focusTagIds.length?focusTagIds:[DEFAULT_TAG_ID],mode:focusMode,...(focusMode==='countdown'?{plannedSeconds:plannedMinutes*60}:{}),startedAt:now,createdAt:now,updatedAt:now}])
     setTimerNow(Date.now())
@@ -1713,12 +1713,7 @@ function App() {
       priority: draft.priority, allDay: draft.allDay,
       time: draft.allDay ? undefined : draft.time || undefined,
       deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
-      actualDurationMinutes: (() => {
-        const hours = Math.max(0, Number.parseInt(draft.actualDurationHours || '0', 10) || 0)
-        const minutes = Math.max(0, Number.parseInt(draft.actualDurationMinutes || '0', 10) || 0)
-        const total = hours * 60 + minutes
-        return total > 0 ? total : undefined
-      })(),
+      actualDurationMinutes: normalizedActualDurationMinutes(draft.actualDurationHours, draft.actualDurationMinutes),
       tagIds: singleOrdinaryTagIds(draft.tagIds),
       attachments: draft.attachments,
     })
@@ -4019,7 +4014,7 @@ function App() {
                 const focusTag=record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
                 return <div className="focus-history-item" key={record.id}>
                   <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
-                  {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} /> 分钟</label><div className="focus-history-edit-tags">{tagsFor(tags, 'task').map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
+                  {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{tagsFor(tags, 'task').map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
                     <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}}}>更改</button>
                     <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session)setFocusSessions(cur=>cur.filter(item=>item.id!==record.session!.id));else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
                   </div>}
@@ -4042,7 +4037,7 @@ function App() {
                 <button className="focus-stop-button" type="button" onClick={()=>stopDirectFocus(false)}>■ 结束专注</button>
               </> : <>
                 <div className="focus-mode-switch"><button type="button" className={focusMode==='stopwatch'?'active':''} onClick={()=>setFocusMode('stopwatch')}>正计时</button><button type="button" className={focusMode==='countdown'?'active':''} onClick={()=>setFocusMode('countdown')}>倒计时</button></div>
-                {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} /><b>分钟</b></div></label>}
+                {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} onBlur={()=>setFocusMinutes(String(countdownMinutes(focusMinutes,15)))} /><b>分钟</b></div></label>}
                 <div className="focus-tag-picker compact"><span>专注标签</span>{(()=>{const selected=tags.find(tag=>tag.id===(focusTagIds[0]??DEFAULT_TAG_ID))??DEFAULT_TAG;return <button className="focus-current-tag" type="button" onClick={()=>setFocusTagSelectOpen(true)}><span><i style={{background:selected.color}} />{selected.name}</span><b>›</b></button>})()}</div>
 
                 {activeTimerTask && <p className="focus-conflict-note">当前有任务正在计时，请先结束任务计时。</p>}
@@ -4135,7 +4130,7 @@ function App() {
               <div className="anniversary-date-grid">
                 <label className="field"><span>年份{anniversaryDraft.type==='birthday'?'（可选）':''}</span><select value={anniversaryDraft.year} onChange={e=>setAnniversaryDraft(d=>({...d,year:e.target.value}))}>{anniversaryDraft.type==='birthday'&&<option value="">——</option>}{Array.from({length:today.getFullYear()+20-1900+1},(_,i)=>today.getFullYear()+20-i).map(year=><option key={year} value={year}>{year}年</option>)}</select></label>
                 <label className="field"><span>月</span><select value={anniversaryDraft.month} onChange={e=>setAnniversaryDraft(d=>({...d,month:Number(e.target.value)}))}>{Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}月</option>)}</select></label>
-                <label className="field"><span>日</span><select value={anniversaryDraft.day} onChange={e=>setAnniversaryDraft(d=>({...d,day:Number(e.target.value)}))}>{Array.from({length:30},(_,i)=><option key={i+1} value={i+1}>{i+1}日</option>)}</select></label>
+                <label className="field"><span>日</span><select value={anniversaryDraft.day} onChange={e=>setAnniversaryDraft(d=>({...d,day:Number(e.target.value)}))}>{Array.from({length:anniversaryDayLimit(anniversaryDraft.calendar,anniversaryDraft.month,anniversaryDraft.year?Number(anniversaryDraft.year):undefined)},(_,i)=><option key={i+1} value={i+1}>{i+1}日</option>)}</select></label>
               </div>
               {anniversaryDraft.calendar==='lunar' && <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.isLeapMonth} onChange={e=>setAnniversaryDraft(d=>({...d,isLeapMonth:e.target.checked}))} /> 闰月</label>}
               {anniversaryDraft.type!=='birthday' && <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.repeatYearly} onChange={e=>setAnniversaryDraft(d=>({...d,repeatYearly:e.target.checked}))} /> 每年重复</label>}
@@ -4473,13 +4468,13 @@ function App() {
                     <option value="none">不重复</option><option value="daily">每天</option><option value="weekly">{repeatPresetLabels(draft.date).weekly}</option><option value="monthly">{repeatPresetLabels(draft.date).monthly}</option><option value="yearly">{repeatPresetLabels(draft.date).yearly}</option><option value="custom">自定义</option>
                   </select>
                 </label>
-                {draft.repeatPreset === 'custom' && <label className="field"><span>每隔</span><div className="repeat-interval"><input type="number" min="1" max="999" value={draft.repeatInterval} onChange={event => setDraft(current => ({ ...current, repeatInterval: Math.max(1, Number(event.target.value) || 1) }))} /><select value={draft.repeatUnit} onChange={event => setDraft(current => ({ ...current, repeatUnit: event.target.value as RecurrenceUnit }))}><option value="day">天</option><option value="week">周</option><option value="month">月</option></select></div></label>}
+                {draft.repeatPreset === 'custom' && <label className="field"><span>每隔</span><div className="repeat-interval"><input type="number" min="1" max="999" value={draft.repeatInterval} onChange={event => setDraft(current => ({ ...current, repeatInterval: Math.min(999, Math.max(1, Number(event.target.value) || 1)) }))} /><select value={draft.repeatUnit} onChange={event => setDraft(current => ({ ...current, repeatUnit: event.target.value as RecurrenceUnit }))}><option value="day">天</option><option value="week">周</option><option value="month">月</option></select></div></label>}
               </div>
               {draft.repeatPreset === 'custom' && draft.repeatUnit === 'week' && <div className="field full-field"><span>重复星期</span><div className="weekday-picker">{WEEKDAYS.map((day, index) => <button key={day} type="button" className={draft.repeatWeekdays.includes(index) ? 'active' : ''} onClick={() => setDraft(current => ({ ...current, repeatWeekdays: current.repeatWeekdays.includes(index) ? current.repeatWeekdays.filter(value => value !== index) : [...current.repeatWeekdays, index] }))}>{day}</button>)}</div></div>}
               {draft.repeatPreset !== 'none' && <div className="field-grid repeat-end-fields">
                 <label className="field"><span>结束</span><select value={draft.repeatEndMode} onChange={event => setDraft(current => ({ ...current, repeatEndMode: event.target.value as TaskDraft['repeatEndMode'] }))}><option value="never">永不</option><option value="date">按日期</option><option value="count">按次数</option></select></label>
                 {draft.repeatEndMode === 'date' && <label className="field"><span>结束日期</span><input type="date" min={draft.date} value={draft.repeatEndDate} onChange={event => setDraft(current => ({ ...current, repeatEndDate: event.target.value }))} /></label>}
-                {draft.repeatEndMode === 'count' && <label className="field"><span>重复次数</span><div className="repeat-count"><input type="number" min="1" max="9999" value={draft.repeatEndCount} onChange={event => setDraft(current => ({ ...current, repeatEndCount: Math.max(1, Number(event.target.value) || 1) }))} /><span>次</span></div></label>}
+                {draft.repeatEndMode === 'count' && <label className="field"><span>重复次数</span><div className="repeat-count"><input type="number" min="1" max="9999" value={draft.repeatEndCount} onChange={event => setDraft(current => ({ ...current, repeatEndCount: Math.min(9999, Math.max(1, Number(event.target.value) || 1)) }))} /><span>次</span></div></label>}
               </div>}
               {editingTaskId && (() => {
                 const series = tasks.find(task => task.id === editingTaskId)
@@ -4489,7 +4484,7 @@ function App() {
                   <span>实际用时 · 可选</span>
                   <div className="actual-duration-inputs">
                     <label><input type="number" min="0" inputMode="numeric" value={draft.actualDurationHours} onChange={event=>setDraft(current=>({...current,actualDurationHours:event.target.value}))} placeholder="0" /><small>小时</small></label>
-                    <label><input type="number" min="0" max="59" inputMode="numeric" value={draft.actualDurationMinutes} onChange={event=>setDraft(current=>({...current,actualDurationMinutes:event.target.value}))} placeholder="0" /><small>分钟</small></label>
+                    <label><input type="number" min="0" max="59" inputMode="numeric" value={draft.actualDurationMinutes} onChange={event=>setDraft(current=>({...current,actualDurationMinutes:event.target.value}))} onBlur={()=>setDraft(current=>({...current,actualDurationMinutes:String(Math.min(59,Math.max(0,Number.parseInt(current.actualDurationMinutes||'0',10)||0)))}))} placeholder="0" /><small>分钟</small></label>
                   </div>
                   <small>不计时、不强制填写，只记录你对这个任务实际耗时的大致估计。</small>
                 </div>

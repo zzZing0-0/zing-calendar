@@ -166,6 +166,13 @@ export function lunarOccurrence(ann: Anniversary, solarYear: number): Date | nul
   return ann.isLeapMonth ? normalFallback : null
 }
 
+export function anniversaryDayLimit(calendar: 'solar' | 'lunar', month: number, year?: number) {
+  if (calendar === 'lunar') return 30
+  if (month === 2 && year === undefined) return 29
+  const safeYear = year ?? 2024
+  return new Date(safeYear, month, 0).getDate()
+}
+
 export function anniversaryOccurrence(ann: Anniversary, solarYear:number): Date | null {
   if (ann.repeatYearly && ann.year && solarYear < ann.year) return null
   if (ann.calendar==='solar') {

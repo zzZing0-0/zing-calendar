@@ -5,6 +5,8 @@ import type {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DEFAULT_TAG_ID = 'default'
+export const RECURRENCE_INTERVAL_MAX = 999
+export const RECURRENCE_COUNT_MAX = 9999
 
 export const PRIORITIES: { value: TaskPriority; label: string; hint: string }[] = [
   { value: 0, label: 'P0', hint: '从容' },
@@ -100,6 +102,13 @@ export function combinedFocusSecondsByDate(tasks:Task[], sessions:FocusSession[]
   directFocusSecondsByDate(sessions,nowMs,includeTagIds).forEach((seconds,key)=>totals.set(key,(totals.get(key)??0)+seconds))
   return totals
 }
+export function normalizedActualDurationMinutes(hoursValue: string | number, minutesValue: string | number) {
+  const hours = Math.max(0, Number.parseInt(String(hoursValue || '0'), 10) || 0)
+  const minutes = Math.min(59, Math.max(0, Number.parseInt(String(minutesValue || '0'), 10) || 0))
+  const total = hours * 60 + minutes
+  return total > 0 ? total : undefined
+}
+
 export function formatActualDuration(minutes?: number) {
   if (!minutes || minutes <= 0) return ''
   const hours = Math.floor(minutes / 60)
@@ -195,7 +204,7 @@ export function dayDiff(a: string, b: string) {
 
 export function recurrenceEndFromDraft(draft: TaskDraft): RecurrenceEnd | undefined {
   if (draft.repeatEndMode === 'date' && draft.repeatEndDate) return { type: 'date', date: draft.repeatEndDate }
-  if (draft.repeatEndMode === 'count') return { type: 'count', count: Math.max(1, draft.repeatEndCount || 1) }
+  if (draft.repeatEndMode === 'count') return { type: 'count', count: Math.min(RECURRENCE_COUNT_MAX, Math.max(1, draft.repeatEndCount || 1)) }
   return undefined
 }
 
@@ -206,7 +215,7 @@ export function recurrenceFromDraft(draft: TaskDraft): RecurrenceRule | undefine
   if (draft.repeatPreset === 'weekly') return { unit: 'week', interval: 1, weekdays: [(fromDateKey(draft.date).getDay() + 6) % 7], end }
   if (draft.repeatPreset === 'monthly') return { unit: 'month', interval: 1, end }
   if (draft.repeatPreset === 'yearly') return { unit: 'year', interval: 1, end }
-  return { unit: draft.repeatUnit, interval: Math.max(1, draft.repeatInterval || 1), weekdays: draft.repeatUnit === 'week' ? (draft.repeatWeekdays.length ? [...draft.repeatWeekdays].sort() : [(fromDateKey(draft.date).getDay() + 6) % 7]) : undefined, end }
+  return { unit: draft.repeatUnit, interval: Math.min(RECURRENCE_INTERVAL_MAX, Math.max(1, draft.repeatInterval || 1)), weekdays: draft.repeatUnit === 'week' ? (draft.repeatWeekdays.length ? [...draft.repeatWeekdays].sort() : [(fromDateKey(draft.date).getDay() + 6) % 7]) : undefined, end }
 }
 
 export function repeatEndDraft(rule?: RecurrenceRule): Pick<TaskDraft, 'repeatEndMode' | 'repeatEndDate' | 'repeatEndCount'> {

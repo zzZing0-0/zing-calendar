@@ -1,6 +1,21 @@
 import type { FocusSession, RecurrenceException, Task } from '../types'
 import { materializeOccurrence } from './task'
 
+
+export const COUNTDOWN_MIN_MINUTES = 1
+export const COUNTDOWN_MAX_MINUTES = 12 * 60
+export const FOCUS_EDIT_MAX_MINUTES = 24 * 60
+
+export function boundedInteger(value: string | number, min: number, max: number, fallback = min) {
+  const parsed = typeof value === 'number' ? Math.trunc(value) : Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return Math.min(max, Math.max(min, fallback))
+  return Math.min(max, Math.max(min, parsed))
+}
+
+export function countdownMinutes(value: string | number, fallback = 15) {
+  return boundedInteger(value, COUNTDOWN_MIN_MINUTES, COUNTDOWN_MAX_MINUTES, fallback)
+}
+
 export type FocusHistoryRecord = {
   id: string
   kind: 'task' | 'direct'

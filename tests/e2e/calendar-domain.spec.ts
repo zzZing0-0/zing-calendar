@@ -14,7 +14,7 @@ import {
   isoWeekNumber,
   lunarMonthNumber,
   nthWeekdayOfMonth,
-} from '../../src/domain/calendar'
+  anniversaryDayLimit, } from '../../src/domain/calendar'
 
 function solarAnniversary(patch: Partial<Anniversary> = {}): Anniversary {
   return {
@@ -113,4 +113,13 @@ test.describe('calendar domain regression', () => {
     expect(anniversaryDistanceLabel(once, null, today)).toBe('')
   })
 
+})
+
+
+test('anniversary day selector respects real month bounds', () => {
+  expect(anniversaryDayLimit('solar', 1, 2026)).toBe(31)
+  expect(anniversaryDayLimit('solar', 2, 2026)).toBe(28)
+  expect(anniversaryDayLimit('solar', 2, 2024)).toBe(29)
+  expect(anniversaryDayLimit('solar', 2)).toBe(29)
+  expect(anniversaryDayLimit('lunar', 1, 2026)).toBe(30)
 })
