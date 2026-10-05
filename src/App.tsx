@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.1.3'
+const APP_VERSION = '2.1.4'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -4126,13 +4126,23 @@ function App() {
             <div className="editor-body overdue-inbox-body">
               <button className="primary-button" type="button" onClick={openInboxTaskEditor}>＋ 添加未排期任务</button>
               {inboxTasks.length===0 ? <p className="page-empty compact">暂时没有未排期任务。</p> :
-                <div className="overdue-inbox-list">
-                  {inboxTasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}>
-                    <div className="overdue-inbox-main">
-                      <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>
-                      <button className="overdue-task-link" type="button" onClick={()=>{setInboxOpen(false);openTaskDetail(task)}}><strong>{task.title}</strong><time>未排期</time></button>
+                <div className="overdue-inbox-list inbox-task-list">
+                  {[
+                    {label:'未完成',items:inboxTasks.filter(task=>task.status==='todo'),completed:false},
+                    ...(showEndedTasks ? [{label:'已完成',items:inboxTasks.filter(task=>task.status!=='todo'),completed:true}] : []),
+                  ].map(group=>group.items.length>0&&<section className={`inbox-task-group${group.completed?' completed':''}`} key={group.label} aria-label={`${group.label}任务`}>
+                    <div className="inbox-task-group-label">{group.label} · {group.items.length}</div>
+                    <div className="inbox-task-group-items">
+                      {group.items.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}${group.completed?' completed':''}`}>
+                        <div className="overdue-inbox-main">
+                          {group.completed
+                            ? <span className="overdue-priority-box completed" aria-label="已完成">✓</span>
+                            : <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>}
+                          <button className="overdue-task-link" type="button" onClick={()=>{setInboxOpen(false);openTaskDetail(task)}}><strong>{task.title}</strong><time>未排期</time></button>
+                        </div>
+                      </article>)}
                     </div>
-                  </article>)}
+                  </section>)}
                 </div>}
             </div>
           </section>

@@ -17,3 +17,14 @@ test('Inbox UI exposes unscheduled task creation and recurrence guard', () => {
   expect(source).toContain('请先取消重复。重复任务需要关联日期。')
   expect(source).toContain("date: '', endDate: '', allDay: false")
 })
+
+test('Inbox separates unfinished and completed tasks and gives completed tasks explicit state', () => {
+  expect(source).toContain("{label:'未完成',items:inboxTasks.filter(task=>task.status==='todo'),completed:false}")
+  expect(source).toContain("{label:'已完成',items:inboxTasks.filter(task=>task.status!=='todo'),completed:true}")
+  expect(source).toContain("...(showEndedTasks ? [{label:'已完成'")
+  expect(source).toContain('inbox-task-group-label')
+  expect(source).toContain('overdue-priority-box completed')
+  expect(source).toContain('aria-label="已完成"')
+  expect(css).toContain('.inbox-task-group .overdue-inbox-item.completed .overdue-task-link strong')
+  expect(css).toContain('.inbox-task-group.completed')
+})

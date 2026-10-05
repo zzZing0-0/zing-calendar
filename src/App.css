@@ -4764,3 +4764,14 @@ button {
 .trash-task-group-label{font-size:11px;font-weight:700;color:#8b9491;padding:10px 2px 3px;letter-spacing:.04em}
 .trash-task-status{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-right:6px;border-radius:50%;background:#aab2af;color:#fff;font-size:10px;vertical-align:1px}
 .trash-inbox-item.completed .trash-inbox-main>strong{color:#8e9693}
+
+/* v2.1.4 — Inbox lifecycle groups */
+.inbox-task-list{gap:12px}
+.inbox-task-group{display:flex;flex-direction:column;gap:6px}
+.inbox-task-group-label{font-size:11px;font-weight:700;color:#8b9491;padding:5px 2px 1px;letter-spacing:.04em}
+.inbox-task-group-items{display:flex;flex-direction:column;gap:9px}
+.inbox-task-group.completed{margin-top:2px;padding-top:8px;border-top:1px solid rgba(70,80,73,.09)}
+.inbox-task-group .overdue-priority-box.completed{display:inline-flex;align-items:center;justify-content:center;border-color:#8caf9a;background:#8caf9a;color:#fff;font-size:11px;font-weight:800;cursor:default}
+.inbox-task-group .overdue-inbox-item.completed .overdue-task-link strong{color:#8e9693;font-weight:650}
+.inbox-task-group .overdue-inbox-item.completed .overdue-task-link time{color:#a1a8a5}
+.inbox-task-group .overdue-inbox-item.completed .overdue-inbox-main{background:rgba(246,248,246,.72)}
