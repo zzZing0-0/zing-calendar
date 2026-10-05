@@ -4775,3 +4775,36 @@ button {
 .inbox-task-group .overdue-inbox-item.completed .overdue-task-link strong{color:#8e9693;font-weight:650}
 .inbox-task-group .overdue-inbox-item.completed .overdue-task-link time{color:#a1a8a5}
 .inbox-task-group .overdue-inbox-item.completed .overdue-inbox-main{background:rgba(246,248,246,.72)}
+
+/* Inbox workflow */
+.inbox-title-row{display:flex;align-items:center;gap:8px}
+.inbox-title-row h2{margin:0}
+.inbox-add-button{width:28px;height:28px;border:1px solid rgba(58,78,68,.16);border-radius:9px;background:#f5f7f5;color:#34483f;font-size:20px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.inbox-sort-row{display:flex;gap:7px;align-items:stretch;margin:0 0 10px;touch-action:pan-y}
+.inbox-sort-chip{position:relative;min-width:0;flex:1;border:1px solid rgba(58,78,68,.13);border-radius:10px;background:#f5f6f5;color:#68726e;padding:8px 6px 7px;font-size:12px;font-weight:700;cursor:grab;user-select:none;-webkit-user-select:none}
+.inbox-sort-chip:active{cursor:grabbing}
+.inbox-sort-chip.primary{border-color:rgba(89,128,108,.32);background:#edf4ef;color:#496457;padding-top:16px}
+.inbox-sort-chip small{position:absolute;top:3px;left:0;right:0;font-size:7px;line-height:1;letter-spacing:.08em;color:#7d9789;font-weight:700}
+.inbox-primary-group{display:flex;flex-direction:column;gap:5px}
+.inbox-primary-group+.inbox-primary-group{margin-top:7px;padding-top:8px;border-top:1px solid rgba(70,80,73,.07)}
+.inbox-primary-group-label{font-size:10px;font-weight:700;color:#8c9591;padding:0 3px;letter-spacing:.02em}
+@media(max-width:640px){.inbox-add-button{width:26px;height:26px;border-radius:8px}.inbox-sort-row{gap:6px}.inbox-sort-chip{font-size:11px;padding-left:4px;padding-right:4px}}
+
+/* v2.2.2 — Inbox sort affordance and row metadata */
+.inbox-sort-hint{font-size:9px;color:#9aa29f;margin:0 2px 5px;letter-spacing:.02em}
+.inbox-sort-row{gap:5px;align-items:center}
+.inbox-sort-chip{flex:1;padding-top:8px}
+.inbox-sort-chip.primary{padding-top:8px}
+.inbox-sort-chip small{display:none}
+.inbox-sort-arrow{flex:0 0 auto;color:#a5ada9;font-size:15px;font-weight:700;line-height:1;user-select:none}
+.inbox-task-group .overdue-task-link time{font-size:9px;color:#929b97;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+@media(max-width:640px){.inbox-sort-hint{font-size:8px}.inbox-sort-arrow{font-size:13px}.inbox-task-group .overdue-task-link time{max-width:48%;font-size:8px}}
+
+
+/* v2.2.3 — Inbox drag landing cue and readable activity metadata */
+.inbox-sort-chip.drop-target{border-color:#78a18c;background:#e6f1e9;box-shadow:inset 3px 0 0 #78a18c}
+.inbox-sort-drop-cue{position:absolute;left:5px;top:-12px;font-size:8px;line-height:1;color:#638773;font-weight:800;white-space:nowrap;pointer-events:none}
+.inbox-task-group .overdue-task-link time.inbox-task-meta{max-width:none;overflow:visible;text-overflow:clip;display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.2}
+.inbox-task-meta span{display:block;white-space:nowrap}
+.inbox-task-meta span:last-child{font-size:8px;color:#a0a7a4}
+@media(max-width:640px){.inbox-task-group .overdue-task-link time.inbox-task-meta{max-width:none;font-size:8px}.inbox-task-meta span:last-child{font-size:7px}}

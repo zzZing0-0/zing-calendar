@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, KeyboardEvent } from 'react'
 import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.1.4'
+const APP_VERSION = '2.2.3'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -57,6 +57,8 @@ import { useAppPreferences } from './hooks/useAppPreferences'
 import { planSyncDiff, syncEntityKey } from './domain/sync'
 import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
 import { buildAttachmentLifecycle, referencedAttachmentKeys } from './domain/attachments'
+import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, moveInboxSortKey, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
+import type { InboxSortKey } from './domain/inbox'
 
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
@@ -278,6 +280,11 @@ function App() {
   const [monthPickerTarget, setMonthPickerTarget] = useState<'calendar'|'mood'|null>(null)
   const [overdueInboxOpen, setOverdueInboxOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
+  const [inboxSortOrder, setInboxSortOrder] = useState<InboxSortKey[]>(() => {
+    try { return normalizeInboxSortOrder(JSON.parse(localStorage.getItem('zing:inboxSortOrder') || 'null')) } catch { return [...DEFAULT_INBOX_SORT_ORDER] }
+  })
+  const inboxSortDragRef = useRef<InboxSortKey | null>(null)
+  const [inboxSortDropTarget, setInboxSortDropTarget] = useState<InboxSortKey | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'anniversary'|'focus'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
@@ -1102,6 +1109,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
   useEffect(() => { localStorage.setItem('zing:encouragementStyle', encouragementStyle) }, [encouragementStyle])
+  useEffect(() => { localStorage.setItem('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
   useEffect(() => {
     const now = new Date().toISOString()
     const clocks = advanceWordClock(wordCloudIgnored, settingsWordClockRef.current, now)
@@ -1161,7 +1169,9 @@ function App() {
   )
 
   const activeTasks = useMemo(() => tasks.filter(task => !task.trashedAt), [tasks])
-  const inboxTasks = useMemo(() => activeTasks.filter(task => task.date === null && (showEndedTasks || task.status === 'todo')).sort(taskSort), [activeTasks, showEndedTasks])
+  const inboxTasks = useMemo(() => activeTasks.filter(task => task.date === null && (showEndedTasks || task.status === 'todo')), [activeTasks, showEndedTasks])
+  const inboxTodoGroups = useMemo(() => groupInboxTodoTasks(inboxTasks.filter(task => task.status === 'todo'), inboxSortOrder, tags), [inboxTasks, inboxSortOrder, tags])
+  const inboxCompletedTasks = useMemo(() => sortCompletedInboxTasks(inboxTasks.filter(task => task.status !== 'todo')), [inboxTasks])
   const activeJournalEntries = useMemo(() => filterActiveJournalEntries(journalEntries), [journalEntries])
   const activeAnniversaries = useMemo(() => anniversaries.filter(anniversary => !anniversary.trashedAt), [anniversaries])
   type TrashItem =
@@ -1689,7 +1699,6 @@ function App() {
     setEditingTaskId(null)
     setEditingOccurrenceDate(null)
     setDraft({ ...emptyDraft(today, defaultPriority), date: '', endDate: '', allDay: false, time: '', repeatPreset: 'none' })
-    setInboxOpen(false)
     setEditorOpen(true)
   }
 
@@ -2201,6 +2210,14 @@ function App() {
     const label = year && month && day ? formatUiDate(new Date(year, month - 1, day)) : result.date
     if (result.kind === 'journal') return result.item.time ? `${label} · ${result.item.time}` : label
     return label
+  }
+
+  const inboxTaskMeta = (task: Task) => {
+    const tagId = inboxOrdinaryTaskTagId(task)
+    const tag = tags.find(item => item.id === tagId)
+    const activity = new Date(inboxActivityAt(task))
+    const activityText = Number.isNaN(activity.getTime()) ? '时间未知' : activity.toLocaleString([], { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
+    return { tag: `#${tag?.name ?? '默认'}`, activity: `${inboxActivityKind(task) === 'updated' ? '更新' : '创建'} ${activityText}` }
   }
 
   const searchMarker = (result: SearchResult) => {
@@ -4119,30 +4136,24 @@ function App() {
         <div className="modal-layer overdue-inbox-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭收集箱" onClick={()=>setInboxOpen(false)} />
           <section className="task-editor overdue-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="inbox-title">
-            <div className="editor-header">
-              <div><span className="eyebrow">INBOX</span><h2 id="inbox-title">收集箱 · {inboxTasks.length}</h2></div>
+            <div className="editor-header inbox-editor-header">
+              <div><span className="eyebrow">INBOX</span><div className="inbox-title-row"><h2 id="inbox-title">收集箱 · {inboxTasks.length}</h2><button className="inbox-add-button" type="button" onClick={openInboxTaskEditor} aria-label="添加未排期任务" title="添加未排期任务">＋</button></div></div>
               <button className="close-button" type="button" onClick={()=>setInboxOpen(false)} aria-label="关闭">×</button>
             </div>
             <div className="editor-body overdue-inbox-body">
-              <button className="primary-button" type="button" onClick={openInboxTaskEditor}>＋ 添加未排期任务</button>
+              <div className="inbox-sort-row" aria-label="收集箱排序优先级">
+                {inboxSortOrder.map((key,index)=><Fragment key={key}><button className={`inbox-sort-chip${index===0?' primary':''}${inboxSortDropTarget===key&&inboxSortDragRef.current!==key?' drop-target':''}`} type="button" draggable
+                  onDragStart={()=>{inboxSortDragRef.current=key;setInboxSortDropTarget(null)}} onDragEnter={()=>{if(inboxSortDragRef.current&&inboxSortDragRef.current!==key)setInboxSortDropTarget(key)}} onDragOver={event=>event.preventDefault()} onDragEnd={()=>{inboxSortDragRef.current=null;setInboxSortDropTarget(null)}} onDrop={()=>{const from=inboxSortDragRef.current;if(from)setInboxSortOrder(current=>moveInboxSortKey(current,from,key));inboxSortDragRef.current=null;setInboxSortDropTarget(null)}}
+                  onTouchStart={()=>{inboxSortDragRef.current=key;setInboxSortDropTarget(null)}} onTouchMove={event=>{const touch=event.touches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest<HTMLButtonElement>('[data-inbox-sort-key]');const to=target?.dataset.inboxSortKey as InboxSortKey|undefined;if(to&&to!==inboxSortDragRef.current)setInboxSortDropTarget(to)}} onTouchEnd={event=>{const touch=event.changedTouches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest<HTMLButtonElement>('[data-inbox-sort-key]');const to=(target?.dataset.inboxSortKey as InboxSortKey|undefined)??inboxSortDropTarget??undefined;const from=inboxSortDragRef.current;if(from&&to)setInboxSortOrder(current=>moveInboxSortKey(current,from,to));inboxSortDragRef.current=null;setInboxSortDropTarget(null)}}
+                  data-inbox-sort-key={key} aria-label={`${index===0?'首要排序：':'排序：'}${key==='time'?'时间':key==='priority'?'优先级':'标签'}`}>{inboxSortDropTarget===key&&inboxSortDragRef.current!==key&&<span className="inbox-sort-drop-cue">放这里</span>}{key==='time'?'时间':key==='priority'?'优先级':'标签'}</button>{index<inboxSortOrder.length-1&&<span className="inbox-sort-arrow" aria-hidden="true">›</span>}</Fragment>)}
+              </div>
               {inboxTasks.length===0 ? <p className="page-empty compact">暂时没有未排期任务。</p> :
                 <div className="overdue-inbox-list inbox-task-list">
-                  {[
-                    {label:'未完成',items:inboxTasks.filter(task=>task.status==='todo'),completed:false},
-                    ...(showEndedTasks ? [{label:'已完成',items:inboxTasks.filter(task=>task.status!=='todo'),completed:true}] : []),
-                  ].map(group=>group.items.length>0&&<section className={`inbox-task-group${group.completed?' completed':''}`} key={group.label} aria-label={`${group.label}任务`}>
-                    <div className="inbox-task-group-label">{group.label} · {group.items.length}</div>
-                    <div className="inbox-task-group-items">
-                      {group.items.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}${group.completed?' completed':''}`}>
-                        <div className="overdue-inbox-main">
-                          {group.completed
-                            ? <span className="overdue-priority-box completed" aria-label="已完成">✓</span>
-                            : <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>}
-                          <button className="overdue-task-link" type="button" onClick={()=>{setInboxOpen(false);openTaskDetail(task)}}><strong>{task.title}</strong><time>未排期</time></button>
-                        </div>
-                      </article>)}
-                    </div>
-                  </section>)}
+                  {inboxTodoGroups.length>0&&<section className="inbox-task-group" aria-label="未完成任务">
+                    <div className="inbox-task-group-label">未完成 · {inboxTodoGroups.reduce((sum,group)=>sum+group.tasks.length,0)}</div>
+                    {inboxTodoGroups.map(group=><div className="inbox-primary-group" key={group.key}><div className="inbox-primary-group-label">{group.label}</div><div className="inbox-task-group-items">{group.tasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}><div className="overdue-inbox-main"><button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta"><span>{inboxTaskMeta(task).tag}</span><span>{inboxTaskMeta(task).activity}</span></time></button></div></article>)}</div></div>)}
+                  </section>}
+                  {showEndedTasks&&inboxCompletedTasks.length>0&&<section className="inbox-task-group completed" aria-label="已完成任务"><div className="inbox-task-group-label">已完成 · {inboxCompletedTasks.length}</div><div className="inbox-task-group-items">{inboxCompletedTasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority} completed`}><div className="overdue-inbox-main"><span className="overdue-priority-box completed" aria-label="已完成">✓</span><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta"><span>{inboxTaskMeta(task).tag}</span><span>{inboxTaskMeta(task).activity}</span></time></button></div></article>)}</div></section>}
                 </div>}
             </div>
           </section>
