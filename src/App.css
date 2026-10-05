@@ -4826,3 +4826,17 @@ button {
   .overdue-task-row .overdue-postpone-today{min-height:0;padding:4px 7px}
   .task-view-schedule{margin-left:34px;font-size:11px}
 }
+
+/* v2.2.5 — compact detail hierarchy and Inbox visual grouping */
+.task-view-heading{gap:0}
+.task-view-schedule{margin:0 0 14px auto;justify-content:flex-end;width:max-content;max-width:100%;color:#8c9690}
+.task-view-footer .task-view-delete{margin-right:0}
+.task-view-footer .delete-button,.task-view-footer .cancel-button,.task-view-footer .save-button{height:36px;padding:0 12px;border-radius:9px;font-size:11px;line-height:1;font-weight:650}
+.inbox-primary-group-label{display:flex;align-items:center;gap:5px}
+.inbox-group-dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
+.inbox-task-tag{display:inline-flex!important;align-items:center;justify-content:flex-end;gap:4px}
+.inbox-task-tag i{width:6px;height:6px;border-radius:50%;flex:0 0 6px}
+@media(max-width:640px){
+  .task-view-schedule{margin-bottom:12px;font-size:11px}
+  .task-view-footer .delete-button,.task-view-footer .cancel-button,.task-view-footer .save-button{height:36px;font-size:11px;padding:0 12px}
+}

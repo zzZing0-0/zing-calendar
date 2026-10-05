@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.2.4'
+const APP_VERSION = '2.2.5'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -2217,7 +2217,7 @@ function App() {
     const tag = tags.find(item => item.id === tagId)
     const activity = new Date(inboxActivityAt(task))
     const activityText = Number.isNaN(activity.getTime()) ? '时间未知' : activity.toLocaleString([], { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
-    return { tag: `#${tag?.name ?? '默认'}`, activity: `${inboxActivityKind(task) === 'updated' ? '更新' : '创建'} ${activityText}` }
+    return { tag: tag?.name ?? '默认', tagColor: tag?.color ?? '#9aa29f', activity: `${inboxActivityKind(task) === 'updated' ? '更新' : '创建'} ${activityText}` }
   }
 
   const searchMarker = (result: SearchResult) => {
@@ -4151,9 +4151,9 @@ function App() {
                 <div className="overdue-inbox-list inbox-task-list">
                   {inboxTodoGroups.length>0&&<section className="inbox-task-group" aria-label="未完成任务">
                     <div className="inbox-task-group-label">未完成 · {inboxTodoGroups.reduce((sum,group)=>sum+group.tasks.length,0)}</div>
-                    {inboxTodoGroups.map(group=><div className="inbox-primary-group" key={group.key}><div className="inbox-primary-group-label">{group.label}</div><div className="inbox-task-group-items">{group.tasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}><div className="overdue-inbox-main"><button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta"><span>{inboxTaskMeta(task).tag}</span><span>{inboxTaskMeta(task).activity}</span></time></button></div></article>)}</div></div>)}
+                    {inboxTodoGroups.map(group=><div className="inbox-primary-group" key={group.key}><div className="inbox-primary-group-label">{group.color&&<span className="inbox-group-dot" style={{background:group.color}} aria-hidden="true"/>}{group.label}</div><div className="inbox-task-group-items">{group.tasks.map(task=>{const meta=inboxTaskMeta(task);const tagIsPrimary=inboxSortOrder[0]==='tag';return <article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}><div className="overdue-inbox-main"><button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta">{!tagIsPrimary&&<span className="inbox-task-tag"><i style={{background:meta.tagColor}} aria-hidden="true"/>{meta.tag}</span>}<span>{meta.activity}</span></time></button></div></article>})}</div></div>)}
                   </section>}
-                  {showEndedTasks&&inboxCompletedTasks.length>0&&<section className="inbox-task-group completed" aria-label="已完成任务"><div className="inbox-task-group-label">已完成 · {inboxCompletedTasks.length}</div><div className="inbox-task-group-items">{inboxCompletedTasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority} completed`}><div className="overdue-inbox-main"><span className="overdue-priority-box completed" aria-label="已完成">✓</span><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta"><span>{inboxTaskMeta(task).tag}</span><span>{inboxTaskMeta(task).activity}</span></time></button></div></article>)}</div></section>}
+                  {showEndedTasks&&inboxCompletedTasks.length>0&&<section className="inbox-task-group completed" aria-label="已完成任务"><div className="inbox-task-group-label">已完成 · {inboxCompletedTasks.length}</div><div className="inbox-task-group-items">{inboxCompletedTasks.map(task=>{const meta=inboxTaskMeta(task);const tagIsPrimary=inboxSortOrder[0]==='tag';return <article key={task.id} className={`overdue-inbox-item priority-${task.priority} completed`}><div className="overdue-inbox-main"><span className="overdue-priority-box completed" aria-label="已完成">✓</span><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta">{!tagIsPrimary&&<span className="inbox-task-tag"><i style={{background:meta.tagColor}} aria-hidden="true"/>{meta.tag}</span>}<span>{meta.activity}</span></time></button></div></article>})}</div></section>}
                 </div>}
             </div>
           </section>
@@ -4293,7 +4293,6 @@ function App() {
           <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
             <div className="editor-header task-view-header">
               <div className="task-view-heading">
-                <span className="eyebrow">TASK</span>
                 <div className="task-view-title-row">
                   <button
                     type="button"
@@ -4311,14 +4310,14 @@ function App() {
                   >{viewingTask.status==='completed'?'✓':viewingTask.status==='abandoned'?'×':''}</button>
                   <h2 id="task-view-title">{viewingTask.title}</h2>
                 </div>
-                {viewingTask.date && <div className="task-view-schedule" aria-label="任务时间">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>
-                  <span>{isMultiDayTask(viewingTask) ? formatTaskRange(viewingTask) : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}</span>
-                </div>}
               </div>
               {!viewingTask.activeTimerStartedAt && <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>}
             </div>
             <div className="editor-body task-view-body">
+              {viewingTask.date && <div className="task-view-schedule" aria-label="任务时间">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>
+                <span>{isMultiDayTask(viewingTask) ? formatTaskRange(viewingTask) : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}</span>
+              </div>}
 
               {viewingTask.status === 'todo' && (
                 <section className={`task-timer-panel ${viewingTask.activeTimerStartedAt ? 'running' : ''}`}>
@@ -4370,13 +4369,8 @@ function App() {
 
               {viewingTask.notes && <section className="task-view-section"><h3>备注</h3><div className="task-view-notes">{viewingTask.notes}</div></section>}
             </div>
-            <div className="editor-footer">
-              <div className="editor-primary-actions">
-                {viewingTask.activeTimerStartedAt ? (
-                  <span className="task-timer-lock-note">🔒 计时中，结束计时后可编辑或退出</span>
-                ) : (
-                  <>
-                    <button className="delete-button task-view-delete" type="button" onClick={()=>{
+            <div className="editor-footer task-view-footer">
+              {!viewingTask.activeTimerStartedAt && <button className="delete-button task-view-delete" type="button" onClick={()=>{
                       const task=viewingTask
                       const series=task.seriesId ? tasks.find(item=>item.id===task.seriesId) : task
                       if (!series) return
@@ -4389,11 +4383,14 @@ function App() {
                       }
                       deleteTask(series,'series')
                       setViewingTask(null)
-                    }}>删除</button>
-                    <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
-                    <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
-                  </>
-                )}
+              }}>删除</button>}
+              <div className="editor-primary-actions">
+                {viewingTask.activeTimerStartedAt ? (
+                  <span className="task-timer-lock-note">🔒 计时中，结束计时后可编辑或退出</span>
+                ) : (<>
+                  <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
+                  <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
+                </>)}
               </div>
             </div>
           </section>

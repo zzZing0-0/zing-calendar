@@ -19,7 +19,8 @@ test('Inbox sort order normalizes and draggable reordering moves a key to the ta
 test('Inbox tag ordering accepts normal Tag objects without passing them as tag IDs', () => {
   const rows=[task('tagged',1,'2026-10-05T00:00:00Z','a'),task('default',1,'2026-10-04T00:00:00Z')]
   expect(() => [...rows].sort((a,b)=>compareInboxTasks(a,b,['tag','time','priority'],tags))).not.toThrow()
-  expect(groupInboxTodoTasks(rows,['tag','time','priority'],tags).map(group=>group.label)).toEqual(['#默认','#工具'])
+  expect(groupInboxTodoTasks(rows,['tag','time','priority'],tags).map(group=>group.label)).toEqual(['默认','工具'])
+  expect(groupInboxTodoTasks(rows,['tag','time','priority'],tags).map(group=>group.color)).toEqual(['#aaa','#bbb'])
 })
 
 test('Inbox unfinished sorting applies primary, secondary, and tertiary keys in order', () => {
@@ -32,6 +33,7 @@ test('only the primary Inbox sort key creates visible groups', () => {
   const rows=[task('p3-a',3,'2026-10-01T00:00:00Z','a'),task('p3-b',3,'2026-10-02T00:00:00Z','b'),task('p1',1,'2026-10-03T00:00:00Z','a')]
   const priorityGroups=groupInboxTodoTasks(rows,['priority','tag','time'],tags)
   expect(priorityGroups.map(g=>g.label)).toEqual(['P3 · 紧急','P1 · 普通'])
+  expect(priorityGroups.map(g=>g.color)).toEqual(['#c8665f','#d3b64b'])
   expect(priorityGroups[0].tasks.map(x=>x.id)).toEqual(['p3-a','p3-b'])
   const timeGroups=groupInboxTodoTasks(rows,['time','priority','tag'],tags)
   expect(timeGroups).toHaveLength(1)

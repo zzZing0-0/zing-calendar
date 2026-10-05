@@ -51,7 +51,7 @@ export function compareInboxTasks(a: Task, b: Task, order: InboxSortKey[], tags:
   return a.id.localeCompare(b.id)
 }
 
-export type InboxTaskGroup = { key: string; label: string; tasks: Task[] }
+export type InboxTaskGroup = { key: string; label: string; color?: string; tasks: Task[] }
 
 export function groupInboxTodoTasks(tasks: Task[], order: InboxSortKey[], tags: Tag[]): InboxTaskGroup[] {
   const sorted = [...tasks].sort((a, b) => compareInboxTasks(a, b, order, tags))
@@ -63,10 +63,13 @@ export function groupInboxTodoTasks(tasks: Task[], order: InboxSortKey[], tags: 
     const id = primary === 'priority' ? String(task.priority) : inboxOrdinaryTaskTagId(task)
     const label = primary === 'priority'
       ? `P${task.priority} · ${['从容', '普通', '较高', '紧急'][task.priority]}`
-      : `#${tagMap.get(id)?.name ?? '默认'}`
+      : `${tagMap.get(id)?.name ?? '默认'}`
+    const color = primary === 'priority'
+      ? ['#789c86', '#d3b64b', '#d88b48', '#c8665f'][task.priority]
+      : tagMap.get(id)?.color
     const existing = groups.get(id)
     if (existing) existing.tasks.push(task)
-    else groups.set(id, { key: id, label, tasks: [task] })
+    else groups.set(id, { key: id, label, color, tasks: [task] })
   }
   return [...groups.values()]
 }

@@ -57,8 +57,10 @@ test('Inbox task operations keep the Inbox open and rows show tag plus activity 
   expect(source).toContain('const inboxTaskMeta = (task: Task) =>')
   expect(source).toContain("inboxActivityKind(task) === 'updated' ? '更新' : '创建'")
   expect(source).toContain('inbox-task-meta')
-  expect(source).toContain('inboxTaskMeta(task).tag')
-  expect(source).toContain('inboxTaskMeta(task).activity')
+  expect(source).toContain("const tagIsPrimary=inboxSortOrder[0]==='tag'")
+  expect(source).toContain('inbox-task-tag')
+  expect(source).toContain('meta.activity')
+  expect(source).not.toContain('`#${tag?.name')
   expect(css).toContain('time.inbox-task-meta')
   const editorStart=source.indexOf('const openInboxTaskEditor = () =>')
   const editorEnd=source.indexOf('const openTaskDetail =', editorStart)
@@ -77,10 +79,30 @@ test('Inbox and overdue task rows use normal task text styling and overdue postp
 test('compact task detail keeps completion beside title, hides unscheduled text, and exposes delete', () => {
   expect(source).toContain('task-view-title-row')
   expect(source).toContain('task-view-schedule')
+  expect(source).toContain('editor-body task-view-body')
   expect(source).toContain('<svg viewBox="0 0 24 24" aria-hidden="true">')
   expect(source).toContain('{viewingTask.date && <div className="task-view-schedule"')
   expect(source).not.toContain(" : '收集箱 · 未排期'")
   expect(source).toContain('delete-button task-view-delete')
   expect(source).toContain("setSeriesAction('delete')")
   expect(css).toContain('.task-view-title-row{display:flex;align-items:center')
+})
+
+
+test('Inbox primary groups use color dots and tag-primary rows avoid repeated tag metadata', () => {
+  expect(source).toContain('inbox-group-dot')
+  expect(source).toContain('style={{background:group.color}}')
+  expect(source).toContain("!tagIsPrimary&&<span className=\"inbox-task-tag\"")
+  expect(css).toContain('.inbox-group-dot{width:7px')
+})
+
+test('compact task detail keeps schedule below the header divider and aligns footer actions', () => {
+  const headerStart=source.indexOf('<div className="editor-header task-view-header">')
+  const bodyStart=source.indexOf('<div className="editor-body task-view-body">', headerStart)
+  expect(source.slice(headerStart,bodyStart)).not.toContain('task-view-schedule')
+  expect(source.slice(headerStart,bodyStart)).not.toContain('<span className=\"eyebrow\">TASK</span>')
+  expect(source.slice(bodyStart)).toContain('task-view-schedule')
+  expect(source).toContain('editor-footer task-view-footer')
+  expect(css).toContain('.task-view-schedule{margin:0 0 14px auto')
+  expect(css).toContain('.task-view-footer .delete-button,.task-view-footer .cancel-button,.task-view-footer .save-button')
 })
