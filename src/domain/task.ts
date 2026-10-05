@@ -111,6 +111,10 @@ export function normalizedActualDurationMinutes(hoursValue: string | number, min
   return total > 0 ? total : undefined
 }
 
+export function clearTaskFocusData<T extends Pick<Task, 'actualDurationMinutes' | 'timerSessions' | 'timerSecondsRemainder'>>(task: T): T {
+  return { ...task, actualDurationMinutes: 0, timerSessions: [], timerSecondsRemainder: 0 }
+}
+
 export function formatActualDuration(minutes?: number) {
   if (!minutes || minutes <= 0) return ''
   const hours = Math.floor(minutes / 60)
@@ -426,6 +430,11 @@ export function deadlineStage(task: Task, now = new Date()) {
  
 export function isTaskOverdue(task: Task, todayKey = toDateKey(new Date())) {
   return Boolean(task.date) && task.status === 'todo' && taskEndDate(task) < todayKey
+}
+
+
+export function compactCount(count: number) {
+  return count > 99 ? '99+' : String(count)
 }
 
 export function taskEndDate(task: Task) { return task.endDate || task.date || '' }

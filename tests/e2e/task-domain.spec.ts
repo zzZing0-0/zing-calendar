@@ -1,7 +1,28 @@
 import { expect, test } from '@playwright/test'
-import { emptyDraft, normalizedActualDurationMinutes, recurrenceFromDraft } from '../../src/domain/task'
+import { clearTaskFocusData, compactCount, emptyDraft, normalizedActualDurationMinutes, recurrenceFromDraft } from '../../src/domain/task'
 
 
+
+
+test('compact count keeps two digits and caps larger counts at 99+', () => {
+  expect(compactCount(0)).toBe('0')
+  expect(compactCount(1)).toBe('1')
+  expect(compactCount(99)).toBe('99')
+  expect(compactCount(100)).toBe('99+')
+  expect(compactCount(237)).toBe('99+')
+})
+
+
+test('deleting a task focus record clears only focus data and preserves the task', () => {
+  const original = {
+    id:'task-focus-1', title:'保留这个任务', date:'2026-10-05', priority:2 as const, status:'completed' as const, allDay:true,
+    actualDurationMinutes:35, timerSessions:[{startedAt:'2026-10-05T10:00:00.000Z',endedAt:'2026-10-05T10:35:00.000Z'}], timerSecondsRemainder:12,
+    notes:'任务内容不能丢', createdAt:'2026-10-05T00:00:00.000Z', updatedAt:'2026-10-05T10:35:00.000Z',
+  }
+  const cleared = clearTaskFocusData(original)
+  expect(cleared).toMatchObject({ id:'task-focus-1', title:'保留这个任务', status:'completed', notes:'任务内容不能丢', actualDurationMinutes:0, timerSessions:[], timerSecondsRemainder:0 })
+  expect(original.actualDurationMinutes).toBe(35)
+})
 
 test.describe('numeric input bounds regression', () => {
   test('manual duration minutes cannot bypass the 0 to 59 minute component', () => {

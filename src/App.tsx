@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.1.1'
+const APP_VERSION = '2.1.3'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -18,7 +18,7 @@ import {
   PRIORITIES, addDaysKey, applyRecurringDisplayMode, buildMonth, buildMultiDaySegments, combinedFocusSecondsByDate,
   currentTime, dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatActualDuration, formatDate, normalizedActualDurationMinutes,
   formatFocusDuration, formatTaskRange, fromDateKey, isMultiDayTask, isTaskOverdue,
-  materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
+  clearTaskFocusData, compactCount, materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
   recurrenceFromDraft, repeatPresetLabels, sameDay, taskCoversDate, taskEndDate,
   taskSort, toDateKey,
 } from './domain/task'
@@ -1183,7 +1183,18 @@ function App() {
     focusSessions.forEach(session => { if (session.trashedAt) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
   },[tasks,journalEntries,anniversaries,focusSessions])
-  const visibleTrashItems = useMemo(() => trashFilter === 'all' ? trashItems : trashItems.filter(item => item.entity === trashFilter), [trashItems, trashFilter])
+  const trashTaskStatus = (item: Extract<TrashItem,{entity:'task'}>): TaskStatus => item.kind === 'occurrence' && item.occurrenceDate
+    ? (item.task.recurrenceExceptions?.[item.occurrenceDate]?.status ?? item.task.status)
+    : item.task.status
+  const visibleTrashItems = useMemo(() => {
+    const filtered = trashFilter === 'all' ? trashItems : trashItems.filter(item => item.entity === trashFilter)
+    return showEndedTasks ? filtered : filtered.filter(item => item.entity !== 'task' || trashTaskStatus(item) === 'todo')
+  }, [trashItems, trashFilter, showEndedTasks])
+  const trashTaskGroups = useMemo(() => {
+    if (trashFilter !== 'task') return null
+    const taskItems = visibleTrashItems.filter((item): item is Extract<TrashItem,{entity:'task'}> => item.entity === 'task')
+    return { active: taskItems.filter(item => trashTaskStatus(item) === 'todo'), ended: taskItems.filter(item => trashTaskStatus(item) !== 'todo') }
+  }, [visibleTrashItems, trashFilter])
 
   const displayTasks = useMemo(() => {
     const start = toDateKey(days[0].date)
@@ -1225,9 +1236,9 @@ function App() {
   const clearTaskFocusRecord = (task:Task) => {
     const now=new Date().toISOString()
     if(task.seriesId&&task.occurrenceDate){
-      setTasks(current=>current.map(series=>series.id!==task.seriesId?series:{...series,recurrenceExceptions:{...(series.recurrenceExceptions??{}),[task.occurrenceDate!]:{...(series.recurrenceExceptions?.[task.occurrenceDate!]??{updatedAt:now}),actualDurationMinutes:0,timerSessions:[],timerSecondsRemainder:0,updatedAt:now}},updatedAt:now}))
+      setTasks(current=>current.map(series=>series.id!==task.seriesId?series:{...series,recurrenceExceptions:{...(series.recurrenceExceptions??{}),[task.occurrenceDate!]:{...clearTaskFocusData(series.recurrenceExceptions?.[task.occurrenceDate!]??{updatedAt:now}),updatedAt:now}},updatedAt:now}))
     } else {
-      setTasks(current=>current.map(item=>item.id===task.id?{...item,actualDurationMinutes:0,timerSessions:[],timerSecondsRemainder:0,updatedAt:now}:item))
+      setTasks(current=>current.map(item=>item.id===task.id?{...clearTaskFocusData(item),updatedAt:now}:item))
     }
   }
 
@@ -2985,9 +2996,9 @@ function App() {
             <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='task'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
-            <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${inboxTasks.length}`:''}</span></button>
+            <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
             <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={trashItems.length?`打开回收站，共 ${trashItems.length} 条`:'打开回收站，当前为空'}><svg className="trash-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg><span>回收站</span></button>
-            {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {overdueTasks.length}</button>}
+            {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {compactCount(overdueTasks.length)}</button>}
             {endedTasksViewToggle('calendar-ended-toggle')}
             <button className="program-refresh-button" type="button" onClick={()=>void refreshProgram()} disabled={programRefreshBusy} aria-label="检查并刷新程序" title="检查并刷新程序">{programRefreshBusy?'…':'↻'}</button>
           </div>
@@ -4090,10 +4101,13 @@ function App() {
                   {([['all','全部'],['task','任务'],['journal','记录'],['anniversary','纪念日'],['focus','专注']] as const).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
                 </div>
                 {visibleTrashItems.length===0 ? <p className="page-empty compact">这一类还没有内容。</p> : <div className="overdue-inbox-list trash-inbox-list">
-                  {visibleTrashItems.map(item=><article key={item.key} className="trash-inbox-item">
-                    <div className="trash-inbox-main"><strong>{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='anniversary'?item.anniversary.title:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+                  {(trashTaskGroups ? [
+                    {label:'未完成',items:trashTaskGroups.active},
+                    ...(showEndedTasks ? [{label:'已完成',items:trashTaskGroups.ended}] : []),
+                  ] : [{label:'',items:visibleTrashItems}]).map(group=>group.items.length>0&&<div className="trash-task-group" key={group.label||'all'}>{group.label&&<div className="trash-task-group-label">{group.label} · {group.items.length}</div>}{group.items.map(item=><article key={item.key} className={`trash-inbox-item${item.entity==='task'&&trashTaskStatus(item)!=='todo'?' completed':''}`}>
+                    <div className="trash-inbox-main"><strong>{item.entity==='task'&&trashTaskStatus(item)!=='todo'&&<span className="trash-task-status" aria-label="已完成">✓</span>}{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='anniversary'?item.anniversary.title:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
                     <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
-                  </article>)}
+                  </article>)}</div>)}
                 </div>}
               </>}
             </div>
@@ -4487,7 +4501,7 @@ function App() {
                 </label>}
               </div>
 
-              {!draft.date ? <p className="inbox-date-help">未安排日期的任务会保存在收集箱中。</p> : draft.allDay ? (
+              {!draft.date ? null : draft.allDay ? (
                 <div className="field-grid">
                   <label className="field"><span>开始日期</span><input type="date" value={draft.date} onChange={event => setDraft(current => ({ ...current, date: event.target.value, endDate: current.endDate && current.endDate < event.target.value ? '' : current.endDate }))} /></label>
                   <label className="field"><span>结束日期 · 可选</span><input type="date" min={draft.date} value={draft.endDate} onChange={event => setDraft(current => ({ ...current, endDate: event.target.value }))} /></label>
