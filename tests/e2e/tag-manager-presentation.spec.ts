@@ -21,8 +21,10 @@ test('tag editor uses draft state with consistent secondary actions and an expli
   expect(source).toContain('saveTagEdit')
   expect(source).toContain('className="compact-tag-edit-secondary"')
   expect(source).toContain('className="save-button" onClick={()=>saveTagEdit(tag)}')
-  expect(css).toContain('.compact-tag-edit-secondary{display:flex;align-items:center;gap:8px}')
-  expect(css).toContain('.compact-tag-edit-actions .ghost-button,.compact-tag-edit-actions .danger-button,.compact-tag-edit-actions .save-button{min-height:40px')
+  expect(css).toContain('.compact-tag-edit-secondary{display:flex;align-items:center;gap:10px}')
+  expect(css).toContain('.compact-tag-edit-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 24px 22px')
+  expect(css).toContain('.compact-tag-edit-actions .ghost-button,.compact-tag-edit-actions .danger-button,.compact-tag-edit-actions .save-button{box-sizing:border-box;min-height:40px')
+  expect(css).toContain('.compact-tag-edit-actions .danger-button{border:1px solid #ead8d5;background:#fff;color:#b56b63}')
 })
 
 test('closing tag manager also clears its nested tag editor state', () => {
