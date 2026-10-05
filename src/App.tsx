@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.2.7'
+const APP_VERSION = '2.2.8'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -2083,7 +2083,6 @@ function App() {
     const id = crypto.randomUUID()
     setTags(current => [...current, { id, name, color: newTagColor, scope: newTagScope, sortOrder: Math.max(-1, ...current.filter(tag => !tag.system).map(tag => tag.sortOrder ?? 0)) + 1, updatedAt: new Date().toISOString() }])
     setNewTagName('')
-    setSelectedTagManageId(id)
   }
 
   const setTagArchived = (id: string, archived: boolean) => {

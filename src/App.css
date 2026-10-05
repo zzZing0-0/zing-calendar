@@ -4841,8 +4841,8 @@ button {
   .task-view-footer .delete-button,.task-view-footer .cancel-button,.task-view-footer .save-button{height:36px;font-size:11px;padding:0 12px}
 }
 
-/* v2.2.6 — separate tag browsing/creation from tag editing */
-.tag-edit-layer{z-index:160}
+/* v2.2.8 — tag editor is a true nested dialog above the tag manager */
+.tag-edit-layer{z-index:540}
 .tag-edit-layer>.modal-backdrop{z-index:0!important}
 .compact-tag-edit-modal{position:relative;z-index:1;width:min(520px,calc(100vw - 32px))}
 .compact-tag-edit-title{display:flex;align-items:center;gap:10px}
