@@ -4840,3 +4840,21 @@ button {
   .task-view-schedule{margin-bottom:12px;font-size:11px}
   .task-view-footer .delete-button,.task-view-footer .cancel-button,.task-view-footer .save-button{height:36px;font-size:11px;padding:0 12px}
 }
+
+/* v2.2.6 — separate tag browsing/creation from tag editing */
+.tag-edit-layer{z-index:160}
+.tag-edit-layer>.modal-backdrop{z-index:0!important}
+.compact-tag-edit-modal{position:relative;z-index:1;width:min(520px,calc(100vw - 32px))}
+.compact-tag-edit-title{display:flex;align-items:center;gap:10px}
+.compact-tag-edit-title>i{width:12px;height:12px;border-radius:50%;flex:0 0 12px}
+.compact-tag-edit-title h2{margin:0}
+.compact-tag-edit-body .field{margin-top:12px}
+.compact-tag-edit-body .field:first-child{margin-top:0}
+.compact-tag-edit-body .field>span{display:block;margin-bottom:6px;color:#7d8782;font-size:10px;font-weight:650}
+.compact-tag-edit-body input{box-sizing:border-box;width:100%;border:1px solid #dfe5e1;border-radius:10px;background:#fff;padding:10px 11px;color:#39453f;font:inherit}
+.compact-tag-edit-actions{display:flex;align-items:center;gap:8px}
+.compact-tag-edit-actions .archive-button{margin-right:0}
+.compact-tag-edit-actions .ghost-button{margin-left:auto}
+@media(max-width:620px){
+  .compact-tag-edit-modal{width:calc(100vw - 18px);max-height:calc(100dvh - 18px)}
+}

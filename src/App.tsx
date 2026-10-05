@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.2.5'
+const APP_VERSION = '2.2.7'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -4229,9 +4229,9 @@ function App() {
 
       {tagManagerOpen && (
         <div className="modal-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭标签管理" onClick={() => setTagManagerOpen(false)} />
+          <button className="modal-backdrop" type="button" aria-label="关闭标签管理" onClick={() => {setSelectedTagManageId(null);setTagManagerOpen(false)}} />
           <section className="task-editor tag-manager compact-tag-manager" role="dialog" aria-modal="true" aria-labelledby="tag-manager-title">
-            <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => setTagManagerOpen(false)}>×</button></div>
+            <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => {setSelectedTagManageId(null);setTagManagerOpen(false)}}>×</button></div>
             <div className="editor-body">
               <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
                 {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
@@ -4243,29 +4243,43 @@ function App() {
               </div>
 
               <div className="compact-tag-list">
-                {activeManagedTags.filter(tag=>tag.scope===newTagScope).map(tag=><button key={tag.id} type="button" className={`compact-tag-chip${selectedTagManageId===tag.id?' active':''}`} onClick={()=>setSelectedTagManageId(current=>current===tag.id?null:tag.id)}>
+                {activeManagedTags.filter(tag=>tag.scope===newTagScope).map(tag=><button key={tag.id} type="button" className="compact-tag-chip" onClick={()=>setSelectedTagManageId(tag.id)}>
                   <i style={{background:tag.color}} /><span>{tag.name}</span>
                 </button>)}
                 {activeManagedTags.every(tag=>tag.scope!==newTagScope)&&<p className="page-empty compact">这里还没有{tagScopeLabel(newTagScope)}。</p>}
               </div>
 
-              {selectedTagManageId && (() => {
-                const tag=activeManagedTags.find(item=>item.id===selectedTagManageId)
-                if(!tag) return null
-                return <div className="compact-tag-detail">
-                  <div className="compact-tag-detail-heading"><i style={{background:tag.color}} /><strong>编辑标签</strong></div>
-                  <label className="field"><span>名称</span><input value={tag.name} onChange={e=>{const next=e.target.value;if(tagNameTaken(tags,next,tag.id)){setAutoSyncToast(`⚠ #${next.trim()} 已存在`);return}setTags(current=>current.map(item=>item.id===tag.id?{...item,name:next,updatedAt:new Date().toISOString()}:item))}} /></label>
-                  <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${tag.color===color?' active':''}`} style={{background:color}} onClick={()=>setTags(current=>current.map(item=>item.id===tag.id?{...item,color,updatedAt:new Date().toISOString()}:item))} aria-label={`设为 ${color}`} />)}</div></div>
-                  <div className="field"><span>分类</span><div className="tag-detail-scope">
-                    {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={tag.scope===scope?'active':''} onClick={()=>{setTags(current=>current.map(item=>item.id===tag.id?{...item,scope,updatedAt:new Date().toISOString()}:item));setNewTagScope(scope)}}>{label}</button>)}
-                  </div></div>
-                  <div className="compact-tag-detail-actions"><button type="button" className="archive-button" onClick={()=>{setTagArchived(tag.id,true);setSelectedTagManageId(null)}}>归档</button><button type="button" className="delete-button compact-delete" onClick={()=>deleteTag(tag.id)}>删除</button></div>
-                </div>
-              })()}
             </div>
           </section>
         </div>
       )}
+
+
+      {selectedTagManageId && (() => {
+        const tag=activeManagedTags.find(item=>item.id===selectedTagManageId)
+        if(!tag) return null
+        return <div className="modal-layer tag-edit-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭编辑标签" onClick={()=>setSelectedTagManageId(null)} />
+          <section className="task-editor compact-tag-edit-modal" role="dialog" aria-modal="true" aria-labelledby="tag-edit-title">
+            <div className="editor-header">
+              <div className="compact-tag-edit-title"><i style={{background:tag.color}} /><div><span className="eyebrow">TAG</span><h2 id="tag-edit-title">编辑标签</h2></div></div>
+              <button className="close-button" type="button" onClick={()=>setSelectedTagManageId(null)}>×</button>
+            </div>
+            <div className="editor-body compact-tag-edit-body">
+              <label className="field"><span>名称</span><input value={tag.name} onChange={e=>{const next=e.target.value;if(tagNameTaken(tags,next,tag.id)){setAutoSyncToast(`⚠ #${next.trim()} 已存在`);return}setTags(current=>current.map(item=>item.id===tag.id?{...item,name:next,updatedAt:new Date().toISOString()}:item))}} autoFocus /></label>
+              <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${tag.color===color?' active':''}`} style={{background:color}} onClick={()=>setTags(current=>current.map(item=>item.id===tag.id?{...item,color,updatedAt:new Date().toISOString()}:item))} aria-label={`设为 ${color}`} />)}</div></div>
+              <div className="field"><span>分类</span><div className="tag-detail-scope">
+                {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={tag.scope===scope?'active':''} onClick={()=>{setTags(current=>current.map(item=>item.id===tag.id?{...item,scope,updatedAt:new Date().toISOString()}:item));setNewTagScope(scope)}}>{label}</button>)}
+              </div></div>
+            </div>
+            <div className="editor-actions compact-tag-edit-actions">
+              <button type="button" className="archive-button" onClick={()=>{setTagArchived(tag.id,true);setSelectedTagManageId(null)}}>归档</button>
+              <button type="button" className="delete-button compact-delete" onClick={()=>deleteTag(tag.id)}>删除</button>
+              <button type="button" className="ghost-button" onClick={()=>setSelectedTagManageId(null)}>关闭</button>
+            </div>
+          </section>
+        </div>
+      })()}
 
       {archivedTagsOpen && (
         <div className="modal-layer" role="presentation">
