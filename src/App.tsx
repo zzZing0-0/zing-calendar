@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '1.10.22'
+const APP_VERSION = '2.0.1'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -1540,9 +1540,10 @@ function App() {
     // Keep the just-finished focus tag selected when the panel returns to
     // "Start focus", matching the tag restored after closing/reopening it.
     setFocusTagIds([lastOrdinaryTagId??DEFAULT_TAG_ID])
-    const timing=focusTiming(activeFocusSession,Date.now(),maxFocusSeconds)
-    const capEnd=new Date(activeFocusSession.startedAt).getTime()+maxFocusSeconds*1000
-    const endMs=automatic ? (timing.dueAtMs??capEnd) : Math.min(Date.now(),capEnd)
+    const nowMs=Date.now()
+    const timing=focusTiming(activeFocusSession,nowMs,maxFocusSeconds)
+    const dueAtMs=timing.dueAtMs??nowMs
+    const endMs=automatic ? dueAtMs : Math.min(nowMs,dueAtMs)
     setFocusSessions(current=>current.map(session=>session.id===activeFocusSession.id?finishedFocusSession(session,endMs):session))
   }
 

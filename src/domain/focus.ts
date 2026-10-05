@@ -19,13 +19,21 @@ export function focusTiming(session: FocusSession | null, nowMs: number, maxFocu
   if (!session) return { elapsedSeconds: 0, remainingSeconds: 0, dueAtMs: null as number | null }
   const startMs = new Date(session.startedAt).getTime()
   if (!Number.isFinite(startMs)) return { elapsedSeconds: 0, remainingSeconds: 0, dueAtMs: null as number | null }
+  const elapsedRaw = Math.max(0, Math.floor((nowMs - startMs) / 1000))
+  if (session.mode === 'countdown') {
+    const plannedSeconds = Math.max(0, session.plannedSeconds ?? 0)
+    return {
+      elapsedSeconds: Math.min(plannedSeconds, elapsedRaw),
+      remainingSeconds: Math.max(0, plannedSeconds - elapsedRaw),
+      dueAtMs: startMs + plannedSeconds * 1000,
+    }
+  }
   const safeMax = Math.max(0, maxFocusSeconds)
-  const elapsedSeconds = Math.min(safeMax, Math.max(0, Math.floor((nowMs - startMs) / 1000)))
-  const countdownSeconds = session.mode === 'countdown' ? Math.max(0, session.plannedSeconds ?? 0) : null
-  const remainingSeconds = countdownSeconds === null ? 0 : Math.max(0, countdownSeconds - elapsedSeconds)
-  const capDue = startMs + safeMax * 1000
-  const countdownDue = countdownSeconds === null ? Number.POSITIVE_INFINITY : startMs + countdownSeconds * 1000
-  return { elapsedSeconds, remainingSeconds, dueAtMs: Math.min(capDue, countdownDue) }
+  return {
+    elapsedSeconds: Math.min(safeMax, elapsedRaw),
+    remainingSeconds: 0,
+    dueAtMs: startMs + safeMax * 1000,
+  }
 }
 
 export function formatFocusClock(seconds: number) {

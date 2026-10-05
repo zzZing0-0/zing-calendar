@@ -20,11 +20,33 @@ test.describe('focus domain regression', () => {
     expect(activeFocusSession([ended])).toBeNull()
   })
 
-  test('timing respects countdown due time and maximum focus cap', () => {
-    const countdown = session({ mode: 'countdown', plannedSeconds: 900 })
-    const now = new Date('2026-10-04T10:10:00.000Z').getTime()
-    expect(focusTiming(countdown, now, 7200)).toEqual({ elapsedSeconds: 600, remainingSeconds: 300, dueAtMs: new Date('2026-10-04T10:15:00.000Z').getTime() })
-    expect(focusTiming(session(), new Date('2026-10-04T13:00:00.000Z').getTime(), 7200).elapsedSeconds).toBe(7200)
+  test('countdown uses its planned duration even when it exceeds the stopwatch safety cap', () => {
+    const countdown = session({ mode: 'countdown', plannedSeconds: 150 * 60 })
+    const afterTwoHoursTenMinutes = new Date('2026-10-04T12:10:00.000Z').getTime()
+    expect(focusTiming(countdown, afterTwoHoursTenMinutes, 2 * 3600)).toEqual({
+      elapsedSeconds: 130 * 60,
+      remainingSeconds: 20 * 60,
+      dueAtMs: new Date('2026-10-04T12:30:00.000Z').getTime(),
+    })
+  })
+
+  test('stopwatch remains capped by the maximum focus safety limit', () => {
+    const afterThreeHours = new Date('2026-10-04T13:00:00.000Z').getTime()
+    expect(focusTiming(session(), afterThreeHours, 2 * 3600)).toEqual({
+      elapsedSeconds: 2 * 3600,
+      remainingSeconds: 0,
+      dueAtMs: new Date('2026-10-04T12:00:00.000Z').getTime(),
+    })
+  })
+
+  test('countdown stops at its own due time rather than the stopwatch cap', () => {
+    const countdown = session({ mode: 'countdown', plannedSeconds: 150 * 60 })
+    const afterThreeHours = new Date('2026-10-04T13:00:00.000Z').getTime()
+    expect(focusTiming(countdown, afterThreeHours, 2 * 3600)).toEqual({
+      elapsedSeconds: 150 * 60,
+      remainingSeconds: 0,
+      dueAtMs: new Date('2026-10-04T12:30:00.000Z').getTime(),
+    })
   })
 
   test('clock formatting preserves mm:ss and hh:mm:ss display', () => {
