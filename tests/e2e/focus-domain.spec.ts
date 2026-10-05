@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { FocusSession, Task } from '../../src/types'
-import { activeFocusSession, boundedInteger, countdownMinutes, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock } from '../../src/domain/focus'
+import { activeFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from '../../src/domain/focus'
 
 const session = (patch: Partial<FocusSession> = {}): FocusSession => ({
   id: 'focus-1', tagIds: ['default'], mode: 'stopwatch', startedAt: '2026-10-04T10:00:00.000Z',
@@ -20,6 +20,29 @@ test.describe('focus domain regression', () => {
     expect(activeFocusSession([ended])).toBeNull()
   })
 
+
+  test('free focus trash lifecycle preserves data until explicit permanent deletion', () => {
+    const deletedAt = '2026-10-04T11:00:00.000Z'
+    const trashed = trashFocusSession(session({ endedAt: '2026-10-04T10:30:00.000Z', durationSeconds: 1800 }), deletedAt)
+    expect(trashed).toMatchObject({ id: 'focus-1', trashedAt: deletedAt, updatedAt: deletedAt, durationSeconds: 1800 })
+    expect(activeFocusSessions([trashed])).toEqual([])
+
+    const restoredAt = '2026-10-04T12:00:00.000Z'
+    const restored = restoreFocusSession(trashed, restoredAt)
+    expect(restored.trashedAt).toBeUndefined()
+    expect(restored.updatedAt).toBe(restoredAt)
+    expect(activeFocusSessions([restored])).toHaveLength(1)
+
+    expect(permanentlyDeleteFocusSession([trashed, session({ id: 'keep' })], 'focus-1').map(row => row.id)).toEqual(['keep'])
+    expect(purgeTrashedFocusSessions([trashed, session({ id: 'keep' })]).map(row => row.id)).toEqual(['keep'])
+  })
+
+  test('trashed free focus is excluded from active session lookup and focus history', () => {
+    const trashed = session({ endedAt: '2026-10-04T10:30:00.000Z', trashedAt: '2026-10-04T11:00:00.000Z' })
+    const trashedActive = session({ id: 'trashed-active', trashedAt: '2026-10-04T11:00:00.000Z' })
+    expect(activeFocusSession([trashedActive])).toBeNull()
+    expect(focusHistoryForDate([], [trashed], '2026-10-04', new Date('2026-10-04T13:00:00Z').getTime())).toEqual([])
+  })
   test('countdown input is enforced at 1 to 720 minutes even for typed values', () => {
     expect(countdownMinutes('1')).toBe(1)
     expect(countdownMinutes('720')).toBe(720)

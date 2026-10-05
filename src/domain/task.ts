@@ -80,6 +80,7 @@ export function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number
   const totals = new Map<string, number>()
   const add = (key:string, seconds:number) => totals.set(key,(totals.get(key)??0)+Math.max(0,seconds))
   sessions.forEach(session => {
+    if (session.trashedAt) return
     if (!includeTagIds(session.tagIds)) return
     const start = new Date(session.startedAt).getTime()
     if (!Number.isFinite(start)) return

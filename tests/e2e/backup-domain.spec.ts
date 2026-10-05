@@ -38,6 +38,14 @@ test.describe('backup domain regression', () => {
     expect(decodeBackupJson<{version:number}>(entries, 'manifest.json')).toEqual({ version: 1 })
   })
 
+  test('focus trash lifecycle metadata survives backup JSON round-trip', async () => {
+    const encoder = new TextEncoder()
+    const rows = [{ id: 'focus-1', tagIds: ['default'], mode: 'stopwatch', startedAt: '2026-10-04T10:00:00.000Z', endedAt: '2026-10-04T10:30:00.000Z', durationSeconds: 1800, createdAt: '2026-10-04T10:00:00.000Z', updatedAt: '2026-10-04T11:00:00.000Z', trashedAt: '2026-10-04T11:00:00.000Z' }]
+    const blob = makeZip([{ path: 'data/focus.json', bytes: encoder.encode(JSON.stringify(rows)) }])
+    const entries = await readZingZip(new File([blob], 'backup.zip', { type: 'application/zip' }))
+    expect(decodeBackupJson(entries, 'data/focus.json')).toEqual(rows)
+  })
+
   test('backup JSON decoder keeps missing and malformed file failures explicit', () => {
     expect(() => decodeBackupJson(new Map(), 'data/tasks.json')).toThrow('缺少 data/tasks.json')
     expect(() => decodeBackupJson(new Map([['bad.json', new TextEncoder().encode('{')]]), 'bad.json')).toThrow('bad.json 无法解析')

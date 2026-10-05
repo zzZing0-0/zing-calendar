@@ -70,6 +70,17 @@ test.describe('statistics domain regression', () => {
     expect(result.completionTrend).toEqual([{ key: '2026-10-03', count: 1, label: '10/3' }])
   })
 
+  test('trashed free focus contributes neither time nor tag statistics', () => {
+    const result = stats({
+      focusSessions: [
+        focus({ id: 'live', startedAt: '2026-10-04T10:00:00.000Z', endedAt: '2026-10-04T10:10:00.000Z', tagIds: ['english'] }),
+        focus({ id: 'trash', startedAt: '2026-10-04T11:00:00.000Z', endedAt: '2026-10-04T11:30:00.000Z', tagIds: ['english'], trashedAt: '2026-10-04T11:40:00.000Z' }),
+      ],
+    })
+    expect(result.focusSeconds).toBe(10 * 60)
+    expect(result.focusTagRows.map(row => [row.tag.id, row.seconds, row.sessions])).toEqual([['english', 10 * 60, 1]])
+  })
+
   test('excluding default focus removes default-tag task and direct-focus time only', () => {
     const result = stats({
       excludeDefaultFocusStats: true,

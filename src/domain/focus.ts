@@ -27,7 +27,27 @@ export type FocusHistoryRecord = {
 }
 
 export function activeFocusSession(sessions: FocusSession[]) {
-  return sessions.find(session => !session.endedAt) ?? null
+  return sessions.find(session => !session.trashedAt && !session.endedAt) ?? null
+}
+
+export function trashFocusSession(session: FocusSession, trashedAt: string) {
+  return { ...session, trashedAt, updatedAt: trashedAt }
+}
+
+export function restoreFocusSession(session: FocusSession, restoredAt: string) {
+  return { ...session, trashedAt: undefined, updatedAt: restoredAt }
+}
+
+export function activeFocusSessions(sessions: FocusSession[]) {
+  return sessions.filter(session => !session.trashedAt)
+}
+
+export function permanentlyDeleteFocusSession(sessions: FocusSession[], id: string) {
+  return sessions.filter(session => session.id !== id)
+}
+
+export function purgeTrashedFocusSessions(sessions: FocusSession[]) {
+  return sessions.filter(session => !session.trashedAt)
 }
 
 export function focusTiming(session: FocusSession | null, nowMs: number, maxFocusSeconds: number) {
@@ -87,6 +107,7 @@ export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dat
   const dayStart = new Date(`${dateKey}T00:00:00`).getTime()
   const dayEnd = new Date(`${dateKey}T23:59:59.999`).getTime() + 1
   sessions.forEach(session => {
+    if (session.trashedAt) return
     const start = new Date(session.startedAt).getTime()
     if (!Number.isFinite(start)) return
     const rawEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs

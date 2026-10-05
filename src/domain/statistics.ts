@@ -133,6 +133,7 @@ export function buildStatistics({
     })
   })
   focusSessions.forEach(session=>{
+    if(session.trashedAt)return
     const date=toDateKey(new Date(session.startedAt)); if(!inRange(date))return
     const start=new Date(session.startedAt).getTime(),end=session.endedAt?new Date(session.endedAt).getTime():timerNow
     const cap=session.mode==='countdown'&&session.plannedSeconds?start+session.plannedSeconds*1000:end

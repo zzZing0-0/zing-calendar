@@ -6,7 +6,7 @@ export type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?
 export type PostponeEvent = { from: string; to: string; at: string }
 export type Attachment = { id: string; type: 'image' | 'audio'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string; duration?: number }
 export type TimerSession = { startedAt: string; endedAt: string; durationSeconds: number }
-export type FocusSession = { id:string; tagIds:string[]; mode:'stopwatch'|'countdown'; plannedSeconds?:number; startedAt:string; endedAt?:string; durationSeconds?:number; createdAt:string; updatedAt:string }
+export type FocusSession = { id:string; tagIds:string[]; mode:'stopwatch'|'countdown'; plannedSeconds?:number; startedAt:string; endedAt?:string; durationSeconds?:number; createdAt:string; updatedAt:string; trashedAt?:string }
 export type RecurrenceException = { deleted?: boolean; trashedAt?: string; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; activeTimerStartedAt?: string; timerSessions?: TimerSession[]; timerSecondsRemainder?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 export type CalendarDay = {
