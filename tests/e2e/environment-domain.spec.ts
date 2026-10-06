@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
   createEnvironmentOption, deleteEnvironmentOption, environmentByDate, environmentOptionNameTaken,
-  environmentOptionUsed, moveEnvironmentOption, setEnvironmentChoice, setEnvironmentLocation, updateEnvironmentOption,
+  environmentOptionUsed, moveEnvironmentOption, setEnvironmentChoice, setEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption,
 } from '../../src/domain/environment'
 import type { DailyEnvironment, EnvironmentOption } from '../../src/types'
 
@@ -50,11 +50,16 @@ test.describe('environment domain regression', () => {
     expect(deleted.find(row => row.id === 'weather:sunny')?.deletedAt).toBeUndefined()
   })
 
-  test('moving options swaps active order only and leaves boundary moves unchanged', () => {
-    const moved = moveEnvironmentOption(options, 'weather:custom', -1, 'moved')
-    expect(moved.find(row => row.id === 'weather:custom')?.order).toBe(0)
-    expect(moved.find(row => row.id === 'weather:sunny')?.order).toBe(1)
-    expect(moved.find(row => row.id === 'weather:old')?.order).toBe(2)
-    expect(moveEnvironmentOption(options, 'weather:sunny', -1, AT)).toEqual(options)
+  test('custom options stay after built-ins and can reorder only within the custom block', () => {
+    const rows: EnvironmentOption[] = [
+      { id: 'weather:sunny', name: '晴', order: 10, builtin: true, updatedAt: AT },
+      { id: 'weather:custom-a', name: '自定义A', order: 0, updatedAt: AT },
+      { id: 'weather:custom-b', name: '自定义B', order: 1, updatedAt: AT },
+    ]
+    expect(sortEnvironmentOptionsBuiltinsFirst(rows).map(row=>row.id)).toEqual(['weather:sunny','weather:custom-a','weather:custom-b'])
+    expect(moveEnvironmentOption(rows, 'weather:custom-a', -1, AT)).toEqual(rows)
+    const moved = moveEnvironmentOption(rows, 'weather:custom-b', -1, 'moved')
+    expect(sortEnvironmentOptionsBuiltinsFirst(moved).map(row=>row.id)).toEqual(['weather:sunny','weather:custom-b','weather:custom-a'])
+    expect(moveEnvironmentOption(rows, 'weather:sunny', 1, AT)).toEqual(rows)
   })
 })

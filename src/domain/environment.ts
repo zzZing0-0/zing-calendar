@@ -52,6 +52,10 @@ export function setEnvironmentLocation(
   return existing ? rows.map(row => row.date === date ? next : row) : [...rows, next]
 }
 
+export function sortEnvironmentOptionsBuiltinsFirst(rows: EnvironmentOption[]) {
+  return [...rows].sort((a, b) => Number(Boolean(b.builtin)) - Number(Boolean(a.builtin)) || a.order - b.order)
+}
+
 export function environmentOptionUsed(rows: DailyEnvironment[], kind: EnvironmentKind, id: string) {
   return rows.some(row => kind === 'weather' ? row.weatherOptionId === id : row.thermalOptionId === id)
 }
@@ -86,7 +90,11 @@ export function deleteEnvironmentOption(rows: EnvironmentOption[], id: string, u
 }
 
 export function moveEnvironmentOption(rows: EnvironmentOption[], id: string, direction: -1 | 1, updatedAt: string) {
-  const active = rows.filter(row => !row.deletedAt).sort((a, b) => a.order - b.order)
+  const selected = rows.find(row => row.id === id)
+  if (!selected || selected.builtin) return rows
+  // Built-ins are a fixed leading block. Reordering is intentionally scoped to
+  // custom options so a custom weather/thermal choice can never jump ahead of them.
+  const active = rows.filter(row => !row.deletedAt && !row.builtin).sort((a, b) => a.order - b.order)
   const index = active.findIndex(row => row.id === id)
   const target = index + direction
   if (index < 0 || target < 0 || target >= active.length) return rows

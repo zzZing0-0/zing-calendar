@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { DEFAULT_EMOTION_OPTIONS, createEmotionOption, emotionGroupOrder, normalizeEmotionOptions, sanitizeEmotionIds, toggleEmotionId, updateEmotionOption } from '../../src/domain/emotions'
+import { DEFAULT_EMOTION_OPTIONS, createEmotionOption, emotionGroupOrder, normalizeEmotionOptions, sanitizeEmotionIds, sortEmotionOptionsBuiltinsFirst, toggleEmotionId, updateEmotionOption } from '../../src/domain/emotions'
 
 test.describe('record emotion domain', () => {
   test('ships a rich grouped built-in vocabulary including the chosen disgust label', () => {
@@ -28,4 +28,13 @@ test.describe('record emotion domain', () => {
     const options=normalizeEmotionOptions(undefined); const ids=options.slice(0,4).map(x=>x.id)
     expect(sanitizeEmotionIds([ids[0],ids[0],ids[1],ids[2],ids[3],'missing'],options)).toEqual(ids.slice(0,3))
   })
+
+  test('custom emotions always render after built-ins inside the same group', () => {
+    const rows = [
+      { id:'custom', name:'自定义开心', group:'positive' as const, order:0, updatedAt:'2026-10-06T00:00:00.000Z' },
+      { id:'builtin', name:'开心', group:'positive' as const, order:99, builtin:true, updatedAt:'2026-10-06T00:00:00.000Z' },
+    ]
+    expect(sortEmotionOptionsBuiltinsFirst(rows).map(item=>item.id)).toEqual(['builtin','custom'])
+  })
+
 })

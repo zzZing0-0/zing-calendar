@@ -21,6 +21,10 @@ export function normalizeEmotionOptions(rows: EmotionOption[] | undefined): Emot
     .filter(item=>item && item.id && item.name && ['negative','neutral','positive'].includes(item.group))
   return [...builtins,...custom]
 }
+export function sortEmotionOptionsBuiltinsFirst(rows: EmotionOption[]) {
+  return [...rows].sort((a,b)=>Number(Boolean(b.builtin))-Number(Boolean(a.builtin))||a.order-b.order)
+}
+
 export function emotionGroupOrder(impact: JournalImpact): EmotionGroup[] {
   return impact < 0 ? ['negative','neutral','positive'] : impact > 0 ? ['positive','neutral','negative'] : ['neutral','positive','negative']
 }

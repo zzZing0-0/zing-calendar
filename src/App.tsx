@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.3.3'
+const APP_VERSION = '2.3.4'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -47,13 +47,13 @@ import {
   ENERGIES, IMPACTS, MOODS, activeJournalEntries as filterActiveJournalEntries, emptyJournalDraft,
   energyMap, journalEntriesForDate, moodMap, toggleDailyEnergy, toggleDailyMood,
 } from './domain/journal'
-import { EMOTION_GROUP_LABEL, createEmotionOption, deleteEmotionOption, emotionGroupOrder, emotionNameTaken, normalizeEmotionOptions, sanitizeEmotionIds, toggleEmotionId, updateEmotionOption } from './domain/emotions'
+import { EMOTION_GROUP_LABEL, createEmotionOption, deleteEmotionOption, emotionGroupOrder, emotionNameTaken, sortEmotionOptionsBuiltinsFirst, normalizeEmotionOptions, sanitizeEmotionIds, toggleEmotionId, updateEmotionOption } from './domain/emotions'
 import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVisualForDate, patchPeriodDayLog, periodForDate as findPeriodForDate } from './domain/menstrual'
 import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
 import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from './domain/focus'
-import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
+import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 import { useAppPreferences } from './hooks/useAppPreferences'
 import { planSyncDiff, syncEntityKey } from './domain/sync'
 import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
@@ -3370,7 +3370,7 @@ function App() {
         <section className="settings-page">
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
 
-          <div className="settings-group personalization-settings">
+          <div className="settings-group calendar-task-settings">
             <div className="settings-group-title"><h3>日历任务</h3></div>
             <label className="setting-row">
               <span><strong>顶部问候语</strong><small>显示在左上角品牌标记旁。</small></span>
@@ -3554,7 +3554,7 @@ function App() {
               <section className="environment-option-group">
                 <div className="environment-option-heading"><div><strong>{label}</strong><small>每日单选 · 可不记录</small></div><button type="button" className="save-button compact" onClick={()=>addEnvironmentOption(kind)}>＋ 添加</button></div>
                 <div className="environment-option-list">
-                  {rows.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map((item,index,shown)=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}>
+                  {sortEnvironmentOptionsBuiltinsFirst(rows.filter(item=>!item.deletedAt)).map((item,index,shown)=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}>
                     {item.builtin
                       ? <><span className="environment-option-emoji readonly">{item.emoji||'—'}</span><span className="environment-option-name readonly">{item.name}</span></>
                       : <>
@@ -3581,7 +3581,7 @@ function App() {
           <button className="modal-backdrop" type="button" aria-label="关闭具体感受选择" onClick={()=>setEmotionPickerOpen(false)} />
           <section className="task-editor emotion-picker-modal" role="dialog" aria-modal="true" aria-label="选择具体感受">
             <div className="editor-header"><div><span className="eyebrow">EMOTIONS</span><h2>选择具体感受</h2></div><button className="close-button" type="button" onClick={()=>setEmotionPickerOpen(false)}>×</button></div>
-            <div className="editor-body emotion-picker-body"><div className="emotion-picker-status"><span>已选择 {journalDraft.emotionIds.length}/3</span><button type="button" onClick={()=>setJournalDraft(current=>({...current,emotionIds:[]}))} disabled={!journalDraft.emotionIds.length}>清空</button></div><div className="emotion-groups">{emotionGroupOrder(journalDraft.impact).map(group=>{const rows=emotionOptions.filter(item=>item.group===group&&!item.deletedAt&&(!item.archived||journalDraft.emotionIds.includes(item.id))).sort((a,b)=>a.order-b.order);return rows.length?<section className={`emotion-group emotion-${group}`} key={group}><small>{EMOTION_GROUP_LABEL[group]}</small><div className="emotion-picker">{rows.map(item=><button key={item.id} type="button" className={`emotion-choice${journalDraft.emotionIds.includes(item.id)?' active':''}`} disabled={!journalDraft.emotionIds.includes(item.id)&&journalDraft.emotionIds.length>=3} onClick={()=>setJournalDraft(current=>({...current,emotionIds:toggleEmotionId(current.emotionIds,item.id)}))}>{item.name}</button>)}</div></section>:null})}</div></div>
+            <div className="editor-body emotion-picker-body"><div className="emotion-picker-status"><span>已选择 {journalDraft.emotionIds.length}/3</span><button type="button" onClick={()=>setJournalDraft(current=>({...current,emotionIds:[]}))} disabled={!journalDraft.emotionIds.length}>清空</button></div><div className="emotion-groups">{emotionGroupOrder(journalDraft.impact).map(group=>{const rows=sortEmotionOptionsBuiltinsFirst(emotionOptions.filter(item=>item.group===group&&!item.deletedAt&&(!item.archived||journalDraft.emotionIds.includes(item.id))));return rows.length?<section className={`emotion-group emotion-${group}`} key={group}><small>{EMOTION_GROUP_LABEL[group]}</small><div className="emotion-picker">{rows.map(item=><button key={item.id} type="button" className={`emotion-choice${journalDraft.emotionIds.includes(item.id)?' active':''}`} disabled={!journalDraft.emotionIds.includes(item.id)&&journalDraft.emotionIds.length>=3} onClick={()=>setJournalDraft(current=>({...current,emotionIds:toggleEmotionId(current.emotionIds,item.id)}))}>{item.name}</button>)}</div></section>:null})}</div></div>
             <div className="editor-footer emotion-picker-footer"><button type="button" className="save-button" onClick={()=>setEmotionPickerOpen(false)}>完成</button></div>
           </section>
         </div>
@@ -3594,7 +3594,7 @@ function App() {
             <div className="editor-header"><div><span className="eyebrow">EMOTIONS</span><h2>具体感受</h2></div><button className="close-button" type="button" onClick={()=>setEmotionManagerOpen(false)}>×</button></div>
             <div className="editor-body environment-manager-body">
               <div className="environment-option-heading"><div><strong>Emotion Vocabulary</strong><small>按分组管理 · Record 最多选择 3 个</small></div></div>
-              {(['positive','neutral','negative'] as EmotionGroup[]).map(group=>{const rows=emotionOptions.filter(item=>item.group===group&&!item.deletedAt).sort((a,b)=>a.order-b.order);const expanded=emotionManagerExpanded===group;return <section className={`emotion-manager-group emotion-${group}${expanded?' expanded':''}`} key={group}><div className="emotion-manager-group-heading"><button type="button" className="emotion-manager-toggle" onClick={()=>setEmotionManagerExpanded(current=>current===group?null:group)}><span className="emotion-manager-dot"/><strong>{EMOTION_GROUP_LABEL[group]}</strong><small>{rows.length}</small><b>{expanded?'⌃':'⌄'}</b></button><button type="button" className="emotion-manager-add" aria-label={`添加${EMOTION_GROUP_LABEL[group]}感受`} onClick={()=>addEmotionOption(group)}>＋</button></div>{expanded&&<div className="environment-option-list">{rows.map(item=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}><span className="emotion-manager-dot"/><button type="button" className={`environment-option-name ${item.builtin?'readonly':'editable'}`} onClick={()=>renameEmotionOption(item)}>{item.name}</button><div className="environment-option-actions compact">{!item.builtin&&<select aria-label={`${item.name}分组`} value={item.group} onChange={event=>changeEmotionGroup(item,event.target.value as EmotionGroup)}><option value="positive">正向</option><option value="neutral">中性</option><option value="negative">负向</option></select>}<button type="button" onClick={()=>toggleArchiveEmotionOption(item)}>{item.archived?'恢复':'归档'}</button>{!item.builtin&&!journalEntries.some(entry=>(entry.emotionIds??[]).includes(item.id))&&<button type="button" className="danger-text" onClick={()=>removeEmotionOption(item)}>删除</button>}</div></div>)}</div>}</section>})}
+              {(['positive','neutral','negative'] as EmotionGroup[]).map(group=>{const rows=sortEmotionOptionsBuiltinsFirst(emotionOptions.filter(item=>item.group===group&&!item.deletedAt));const expanded=emotionManagerExpanded===group;return <section className={`emotion-manager-group emotion-${group}${expanded?' expanded':''}`} key={group}><div className="emotion-manager-group-heading"><button type="button" className="emotion-manager-toggle" onClick={()=>setEmotionManagerExpanded(current=>current===group?null:group)}><span className="emotion-manager-dot"/><strong>{EMOTION_GROUP_LABEL[group]}</strong><small>{rows.length}</small><b>{expanded?'⌃':'⌄'}</b></button><button type="button" className="emotion-manager-add" aria-label={`添加${EMOTION_GROUP_LABEL[group]}感受`} onClick={()=>addEmotionOption(group)}>＋</button></div>{expanded&&<div className="environment-option-list">{rows.map(item=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}><span className="emotion-manager-dot"/><button type="button" className={`environment-option-name ${item.builtin?'readonly':'editable'}`} onClick={()=>renameEmotionOption(item)}>{item.name}</button><div className="environment-option-actions compact">{!item.builtin&&<select aria-label={`${item.name}分组`} value={item.group} onChange={event=>changeEmotionGroup(item,event.target.value as EmotionGroup)}><option value="positive">正向</option><option value="neutral">中性</option><option value="negative">负向</option></select>}<button type="button" onClick={()=>toggleArchiveEmotionOption(item)}>{item.archived?'恢复':'归档'}</button>{!item.builtin&&!journalEntries.some(entry=>(entry.emotionIds??[]).includes(item.id))&&<button type="button" className="danger-text" onClick={()=>removeEmotionOption(item)}>删除</button>}</div></div>)}</div>}</section>})}
             </div>
           </section>
         </div>
@@ -3910,7 +3910,7 @@ function App() {
                     <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.weatherOptionId ? (()=>{const item=weatherOptions.find(row=>row.id===selectedEnvironment.weatherOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'天气'})() : '天气'}</span>
                     <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
                       <option value="">天气</option>
-                      {weatherOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                      {sortEnvironmentOptionsBuiltinsFirst(weatherOptions.filter(item=>!item.deletedAt)).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
                     </select>
                   </label>
                   <span className="journal-environment-separator" aria-hidden="true">｜</span>
@@ -3918,7 +3918,7 @@ function App() {
                     <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.thermalOptionId ? (()=>{const item=thermalOptions.find(row=>row.id===selectedEnvironment.thermalOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'体感'})() : '体感'}</span>
                     <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
                       <option value="">体感</option>
-                      {thermalOptions.filter(item=>!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
+                      {sortEnvironmentOptionsBuiltinsFirst(thermalOptions.filter(item=>!item.deletedAt)).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
                     </select>
                   </label>
                 </div>}
