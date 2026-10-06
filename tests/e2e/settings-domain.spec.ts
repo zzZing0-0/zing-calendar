@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizeIgnoredWords, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from '../../src/domain/settings'
 import { DEFAULT_THERMAL_OPTIONS, DEFAULT_WEATHER_OPTIONS } from '../../src/domain/preferences'
+import { DEFAULT_EMOTION_OPTIONS } from '../../src/domain/emotions'
 
 test.describe('settings domain regression', () => {
   test('ignored words are normalized and deduplicated before sync', () => {
@@ -20,11 +21,12 @@ test.describe('settings domain regression', () => {
       greeting: '', weekStartsMonday: true, dateFormat: 'dmy', defaultPriority: 0,
       showEndedTasks: true, showAllRecurringTasks: false, excludeDefaultFocusStats: false,
       wordCloudIgnored: [' A ', 'a'], encouragementMessages: [], encouragementStyle: 'random', maxFocusHours: 99,
-      weatherOptions: DEFAULT_WEATHER_OPTIONS, thermalOptions: DEFAULT_THERMAL_OPTIONS,
+      weatherOptions: DEFAULT_WEATHER_OPTIONS, thermalOptions: DEFAULT_THERMAL_OPTIONS, emotionOptions: DEFAULT_EMOTION_OPTIONS,
     }, { added: { a: 'x' }, removed: {} }, '2026-10-04T00:00:00.000Z')
     expect(next.greeting).toBe('Hello, Zing')
     expect(next.wordCloudIgnored).toEqual(['a'])
     expect(next.maxFocusHours).toBe(12)
+    expect(next.emotionOptions).toHaveLength(DEFAULT_EMOTION_OPTIONS.length)
   })
 
   test('updatedAt alone never makes otherwise-identical settings look changed', () => {
@@ -32,7 +34,7 @@ test.describe('settings domain regression', () => {
       greeting: 'Hi', weekStartsMonday: false, dateFormat: 'mdy', defaultPriority: 2,
       showEndedTasks: false, showAllRecurringTasks: true, excludeDefaultFocusStats: true,
       wordCloudIgnored: [], encouragementMessages: [], encouragementStyle: 'light', maxFocusHours: 4,
-      weatherOptions: DEFAULT_WEATHER_OPTIONS, thermalOptions: DEFAULT_THERMAL_OPTIONS,
+      weatherOptions: DEFAULT_WEATHER_OPTIONS, thermalOptions: DEFAULT_THERMAL_OPTIONS, emotionOptions: DEFAULT_EMOTION_OPTIONS,
     }, { added: {}, removed: {} }, '2026-10-01T00:00:00.000Z')
     expect(settingsEqualIgnoringUpdatedAt(base, { ...base, updatedAt: '2026-10-04T00:00:00.000Z' })).toBe(true)
   })

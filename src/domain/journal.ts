@@ -1,5 +1,5 @@
 import type { DailyEnergy, DailyMood, EnergyLevel, JournalDraft, JournalEntry, JournalImpact, MoodLevel } from '../types'
-import { currentTime, toDateKey } from './task'
+import { toDateKey } from './task'
 import { DEFAULT_TAG_ID } from './preferences'
 
 export const MOODS: { value: MoodLevel; label: string }[] = [
@@ -21,7 +21,7 @@ export const ENERGIES: { value: EnergyLevel; label: string }[] = [
 export const IMPACTS: JournalImpact[] = [-2, -1, 0, 1, 2]
 
 export function emptyJournalDraft(date: Date): JournalDraft {
-  return { date: toDateKey(date), hasTime: true, time: currentTime(), title: '', content: '', impact: 0, tagIds: [DEFAULT_TAG_ID], attachments: [] }
+  return { date: toDateKey(date), title: '', content: '', impact: 0, emotionIds: [], tagIds: [DEFAULT_TAG_ID], attachments: [] }
 }
 
 export function toggleDailyMood(rows: DailyMood[], date: string, level: MoodLevel, updatedAt: string): DailyMood[] {
@@ -43,11 +43,7 @@ export function activeJournalEntries(rows: JournalEntry[]): JournalEntry[] {
 }
 
 export function journalEntriesForDate(rows: JournalEntry[], date: string): JournalEntry[] {
-  return rows.filter(entry => !entry.trashedAt && entry.date === date).sort((a, b) => {
-    if (a.time && b.time && a.time !== b.time) return a.time.localeCompare(b.time)
-    if (a.time !== b.time) return a.time ? -1 : 1
-    return a.createdAt.localeCompare(b.createdAt)
-  })
+  return rows.filter(entry => !entry.trashedAt && entry.date === date).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
 export function moodMap(rows: DailyMood[]): Map<string, DailyMood> {

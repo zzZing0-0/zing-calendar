@@ -1,5 +1,6 @@
-import type { EncouragementMessage, EncouragementStyle, EnvironmentOption, SyncedUserSettings, TaskPriority } from '../types'
+import type { EncouragementMessage, EncouragementStyle, EmotionOption, EnvironmentOption, SyncedUserSettings, TaskPriority } from '../types'
 import { normalizeEnvironmentOptions, DEFAULT_THERMAL_OPTIONS, DEFAULT_WEATHER_OPTIONS } from './preferences'
+import { normalizeEmotionOptions } from './emotions'
 
 export type WordClock = { added: Record<string, string>; removed: Record<string, string> }
 
@@ -54,6 +55,7 @@ type BuildSettingsInput = {
   maxFocusHours: number
   weatherOptions: EnvironmentOption[]
   thermalOptions: EnvironmentOption[]
+  emotionOptions: EmotionOption[]
 }
 
 export function buildSyncedSettings(input: BuildSettingsInput, clock: WordClock, now: string): SyncedUserSettings {
@@ -65,7 +67,7 @@ export function buildSyncedSettings(input: BuildSettingsInput, clock: WordClock,
     wordCloudIgnored: normalizeIgnoredWords(input.wordCloudIgnored),
     wordCloudIgnoredAddedAt: { ...clock.added }, wordCloudIgnoredRemovedAt: { ...clock.removed },
     encouragementMessages: input.encouragementMessages, encouragementStyle: input.encouragementStyle,
-    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions,
+    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions, emotionOptions: input.emotionOptions,
   }
 }
 
@@ -89,5 +91,6 @@ export function normalizedIncomingSettings(settings: SyncedUserSettings) {
     maxFocusHours: clampMaxFocusHours(settings.maxFocusHours ?? 2),
     weatherOptions: normalizeEnvironmentOptions(settings.weatherOptions, DEFAULT_WEATHER_OPTIONS),
     thermalOptions: normalizeEnvironmentOptions(settings.thermalOptions, DEFAULT_THERMAL_OPTIONS),
+    emotionOptions: normalizeEmotionOptions(settings.emotionOptions),
   }
 }

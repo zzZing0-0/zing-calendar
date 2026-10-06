@@ -5,18 +5,18 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.2.12'
+const APP_VERSION = '2.3.0'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
-  CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EnergyLevel, EnvironmentOption, FocusSession,
+  CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EmotionGroup, EmotionOption, EnergyLevel, EnvironmentOption, FocusSession,
   JournalDraft, JournalEntry, JournalImpact, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
   RecurrenceException, RecurrenceUnit, SyncedUserSettings, Tag, TagScope, Task, TaskDraft,
   TaskPriority, TaskStatus,
 } from './types'
 import {
   PRIORITIES, addDaysKey, applyRecurringDisplayMode, buildMonth, buildMultiDaySegments, combinedFocusSecondsByDate,
-  currentTime, dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatActualDuration, formatDate, normalizedActualDurationMinutes,
+  dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatActualDuration, formatDate, normalizedActualDurationMinutes,
   formatFocusDuration, formatTaskRange, fromDateKey, isMultiDayTask, isTaskOverdue,
   clearTaskFocusData, compactCount, materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
   recurrenceFromDraft, repeatPresetLabels, sameDay, taskCoversDate, taskEndDate,
@@ -47,6 +47,7 @@ import {
   ENERGIES, IMPACTS, MOODS, activeJournalEntries as filterActiveJournalEntries, emptyJournalDraft,
   energyMap, journalEntriesForDate, moodMap, toggleDailyEnergy, toggleDailyMood,
 } from './domain/journal'
+import { EMOTION_GROUP_LABEL, createEmotionOption, deleteEmotionOption, emotionGroupOrder, emotionNameTaken, normalizeEmotionOptions, sanitizeEmotionIds, toggleEmotionId, updateEmotionOption } from './domain/emotions'
 import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVisualForDate, patchPeriodDayLog, periodForDate as findPeriodForDate } from './domain/menstrual'
 import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
@@ -295,6 +296,8 @@ function App() {
   const [weatherOptions, setWeatherOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:weatherOptions', DEFAULT_WEATHER_OPTIONS))
   const [thermalOptions, setThermalOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:thermalOptions', DEFAULT_THERMAL_OPTIONS))
   const [environmentManagerKind, setEnvironmentManagerKind] = useState<'weather'|'thermal'|null>(null)
+  const [emotionOptions, setEmotionOptions] = useState<EmotionOption[]>(() => { try { return normalizeEmotionOptions(JSON.parse(localStorage.getItem('zing:emotionOptions')||'[]')) } catch { return normalizeEmotionOptions(undefined) } })
+  const [emotionManagerOpen, setEmotionManagerOpen] = useState(false)
   const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
@@ -803,6 +806,32 @@ function App() {
     updateEnvironmentOptions(kind,current=>reorderEnvironmentOption(current,item.id,direction,new Date().toISOString()))
   }
 
+  const addEmotionOption = () => {
+    const name=window.prompt('添加具体感受')?.trim(); if(!name) return
+    if(emotionNameTaken(emotionOptions,name)){window.alert('已经有同名感受了');return}
+    const raw=window.prompt('选择分组：负向 / 中性 / 正向','负向')?.trim(); if(raw===undefined) return
+    const group:EmotionGroup=raw==='正向'?'positive':raw==='中性'?'neutral':'negative'
+    setEmotionOptions(current=>createEmotionOption(current,crypto.randomUUID(),name,group,new Date().toISOString()))
+  }
+  const renameEmotionOption = (item:EmotionOption) => {
+    if(item.builtin) return
+    const name=window.prompt('修改名称',item.name)?.trim(); if(!name||name===item.name) return
+    if(emotionNameTaken(emotionOptions,name,item.id)){window.alert('已经有同名感受了');return}
+    setEmotionOptions(current=>updateEmotionOption(current,item.id,{name},new Date().toISOString()))
+  }
+  const changeEmotionGroup = (item:EmotionOption) => {
+    if(item.builtin) return
+    const raw=window.prompt('选择分组：负向 / 中性 / 正向',EMOTION_GROUP_LABEL[item.group])?.trim(); if(raw===undefined) return
+    const group:EmotionGroup=raw==='正向'?'positive':raw==='中性'?'neutral':'negative'
+    setEmotionOptions(current=>updateEmotionOption(current,item.id,{group},new Date().toISOString()))
+  }
+  const toggleArchiveEmotionOption = (item:EmotionOption) => setEmotionOptions(current=>updateEmotionOption(current,item.id,{archived:!item.archived},new Date().toISOString()))
+  const removeEmotionOption = (item:EmotionOption) => {
+    if(item.builtin||journalEntries.some(entry=>(entry.emotionIds??[]).includes(item.id))) return
+    if(!window.confirm(`彻底删除“${item.name}”？`)) return
+    setEmotionOptions(current=>deleteEmotionOption(current,item.id,new Date().toISOString()))
+  }
+
   const periodForDate = (key:string) => findPeriodForDate(menstrualPeriods, key, toDateKey(today))
   const startPeriod = () => {
     if (!selectedDate) return
@@ -837,7 +866,7 @@ function App() {
 
   const editJournal = (entry: JournalEntry) => {
   setEditingJournalId(entry.id)
-  setJournalDraft({ date: entry.date, hasTime: Boolean(entry.time), time: entry.time ?? currentTime(), title: entry.title || entry.content.slice(0, 60) || '记录', content: entry.title ? entry.content : '', impact: entry.impact, tagIds: entry.tagIds?.length ? entry.tagIds : [DEFAULT_TAG_ID], attachments: entry.attachments ?? [] })
+  setJournalDraft({ date: entry.date, title: entry.title || entry.content.slice(0, 60) || '记录', content: entry.title ? entry.content : '', impact: entry.impact, emotionIds: sanitizeEmotionIds(entry.emotionIds, emotionOptions), tagIds: entry.tagIds?.length ? entry.tagIds : [DEFAULT_TAG_ID], attachments: entry.attachments ?? [] })
   setJournalEditorOpen(true)
   }
 
@@ -852,8 +881,8 @@ function App() {
   const content = journalDraft.content.trim()
   const now = new Date().toISOString()
   const fields = {
-    date: journalDraft.date, time: journalDraft.hasTime ? journalDraft.time || undefined : undefined,
-    title, content, impact: journalDraft.impact,
+    date: journalDraft.date,
+    title, content, impact: journalDraft.impact, emotionIds: sanitizeEmotionIds(journalDraft.emotionIds, emotionOptions),
     tagIds: journalDraft.tagIds.length ? journalDraft.tagIds : [DEFAULT_TAG_ID],
     attachments: journalDraft.attachments,
   }
@@ -1113,6 +1142,7 @@ function App() {
 
   useEffect(() => { localStorage.setItem('zing:weatherOptions', JSON.stringify(weatherOptions)) }, [weatherOptions])
   useEffect(() => { localStorage.setItem('zing:thermalOptions', JSON.stringify(thermalOptions)) }, [thermalOptions])
+  useEffect(() => { localStorage.setItem('zing:emotionOptions', JSON.stringify(emotionOptions)) }, [emotionOptions])
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
   useEffect(() => { localStorage.setItem('zing:encouragementStyle', encouragementStyle) }, [encouragementStyle])
@@ -1123,7 +1153,7 @@ function App() {
     settingsWordClockRef.current = clocks
     const next = buildSyncedSettings({
       greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
-      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, weatherOptions, thermalOptions,
+      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, weatherOptions, thermalOptions, emotionOptions,
     }, clocks, now)
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -1146,7 +1176,7 @@ function App() {
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions,emotionOptions])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -2659,9 +2689,9 @@ function App() {
   const exportJournalsCsv = () => {
     const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
     const rows=[
-      ['id','date','time','title','event_impact','tags','body_markdown','image_count','audio_count','created_at','updated_at'],
+      ['id','date','title','event_impact','emotions','tags','body_markdown','image_count','audio_count','created_at','updated_at'],
       ...activeJournalEntries.map(entry=>[
-        entry.id,entry.date,entry.time??'',entry.title,entry.impact,(entry.tagIds??[]).map(tagName).join(' | '),entry.content??'',
+        entry.id,entry.date,entry.title,entry.impact,(entry.emotionIds??[]).map(id=>emotionOptions.find(item=>item.id===id)?.name??id).join(' | '),(entry.tagIds??[]).map(tagName).join(' | '),entry.content??'',
         (entry.attachments??[]).filter(item=>item.type==='image').length,(entry.attachments??[]).filter(item=>item.type==='audio').length,entry.createdAt,entry.updatedAt
       ])
     ]
@@ -2721,7 +2751,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions,emotionOptions})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -2794,6 +2824,7 @@ function App() {
       if (typeof s.maxFocusHours==='number') localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,Math.round(s.maxFocusHours)))))
       if (Array.isArray(s.weatherOptions)) localStorage.setItem('zing:weatherOptions',JSON.stringify(s.weatherOptions))
       if (Array.isArray(s.thermalOptions)) localStorage.setItem('zing:thermalOptions',JSON.stringify(s.thermalOptions))
+      if (Array.isArray(s.emotionOptions)) localStorage.setItem('zing:emotionOptions',JSON.stringify(s.emotionOptions))
       // Restore is device-local by design. Persist restored settings locally too, but do
       // not create sync changes/tombstones that could roll the cloud back.
       const restoredAt=new Date().toISOString()
@@ -2807,7 +2838,7 @@ function App() {
         encouragementMessages:Array.isArray(s.encouragementMessages)?s.encouragementMessages:encouragementMessages,
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
         maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
-        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions,
+        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions,
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
@@ -2829,6 +2860,7 @@ function App() {
       if (typeof s.maxFocusHours==='number') setMaxFocusHours(Math.min(12,Math.max(2,Math.round(s.maxFocusHours))))
       if (Array.isArray(s.weatherOptions)) setWeatherOptions(normalizeEnvironmentOptions(s.weatherOptions,DEFAULT_WEATHER_OPTIONS))
       if (Array.isArray(s.thermalOptions)) setThermalOptions(normalizeEnvironmentOptions(s.thermalOptions,DEFAULT_THERMAL_OPTIONS))
+      if (Array.isArray(s.emotionOptions)) setEmotionOptions(normalizeEmotionOptions(s.emotionOptions))
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
     } catch(error) {
@@ -2921,7 +2953,7 @@ function App() {
         localStorage.setItem('zing:encouragementMessages',JSON.stringify(incoming.encouragementMessages))
         localStorage.setItem('zing:encouragementStyle',incoming.encouragementStyle)
         localStorage.setItem('zing:maxFocusHours',String(incoming.maxFocusHours))
-        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions)
+        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions)
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -3365,6 +3397,7 @@ function App() {
             <div className="settings-group-title"><h3>天气与体感</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('weather')}><span><strong>管理天气</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('thermal')}><span><strong>管理体感</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setEmotionManagerOpen(true)}><span><strong>管理具体感受</strong><small>管理 Record 使用的情绪词库与分组。</small></span><b>›</b></button>
           </div>
 
           <div className="settings-group">
@@ -3546,6 +3579,19 @@ function App() {
           </section>
         </div>
       })()}
+
+      {emotionManagerOpen && (
+        <div className="modal-layer environment-manager-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭具体感受管理" onClick={()=>setEmotionManagerOpen(false)} />
+          <section className="task-editor environment-manager emotion-manager" role="dialog" aria-modal="true" aria-label="管理具体感受">
+            <div className="editor-header"><div><span className="eyebrow">EMOTIONS</span><h2>具体感受</h2></div><button className="close-button" type="button" onClick={()=>setEmotionManagerOpen(false)}>×</button></div>
+            <div className="editor-body environment-manager-body">
+              <div className="environment-option-heading"><div><strong>Emotion Vocabulary</strong><small>Record 最多选择 3 个 · 内置词可归档</small></div><button type="button" className="save-button compact" onClick={addEmotionOption}>＋ 添加</button></div>
+              {(['negative','neutral','positive'] as EmotionGroup[]).map(group=><section className={`emotion-manager-group emotion-${group}`} key={group}><h3>{EMOTION_GROUP_LABEL[group]}</h3><div className="environment-option-list">{emotionOptions.filter(item=>item.group===group&&!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}><span className="emotion-manager-dot"/><button type="button" className={`environment-option-name ${item.builtin?'readonly':'editable'}`} onClick={()=>renameEmotionOption(item)}>{item.name}</button><div className="environment-option-actions compact">{!item.builtin&&<button type="button" onClick={()=>changeEmotionGroup(item)}>分组</button>}<button type="button" onClick={()=>toggleArchiveEmotionOption(item)}>{item.archived?'恢复':'归档'}</button>{!item.builtin&&!journalEntries.some(entry=>(entry.emotionIds??[]).includes(item.id))&&<button type="button" className="danger-text" onClick={()=>removeEmotionOption(item)}>删除</button>}</div></div>)}</div></section>)}
+            </div>
+          </section>
+        </div>
+      )}
 
       {encouragementManagerOpen && (
         <div className="modal-layer encouragement-layer" role="presentation">
@@ -4030,7 +4076,7 @@ function App() {
                     const images = (entry.attachments ?? []).filter(a => a.type === 'image').length
                     const hasAudio = (entry.attachments ?? []).some(a => a.type === 'audio')
                     return <button key={entry.id} type="button" className="journal-entry journal-card-v067" onClick={() => setViewingJournalId(entry.id)}>
-                      <span className="journal-meta">{entry.time ?? '无时间'}</span>
+                      <span className="journal-meta">{new Date(entry.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
                       <strong className="journal-title">{entry.title || '记录'}</strong>
                       <span className={`impact-badge impact-${entry.impact}`}>{entry.impact > 0 ? '+' : ''}{entry.impact}</span>
                       <span className="journal-card-bottom">
@@ -4449,9 +4495,10 @@ function App() {
             </div>
             <div className="editor-body">
               <div className="journal-view-meta">
-                <span>{viewingJournal.date}{viewingJournal.time ? ` · ${viewingJournal.time}` : ''}</span>
+                <span>属于 {viewingJournal.date} · 记录于 {new Date(viewingJournal.createdAt).toLocaleString()}</span>
                 <span className={`impact-badge impact-${viewingJournal.impact}`}>{viewingJournal.impact > 0 ? '+' : ''}{viewingJournal.impact}</span>
               </div>
+              {(viewingJournal.emotionIds??[]).length>0 && <div className="journal-view-emotions">{(viewingJournal.emotionIds??[]).map(id=>{const item=emotionOptions.find(row=>row.id===id);return item?<span key={id} className={`emotion-chip emotion-${item.group}`}>{item.name}</span>:null})}</div>}
               {viewingJournal.content && <div className="journal-view-content">{viewingJournal.content}</div>}
               {(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).length>0 && <div className="entry-tags journal-view-tags">{(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).map(id=>{const tag=tags.find(item=>item.id===id);return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null})}</div>}
               {(viewingJournal.attachments ?? []).some(a=>a.type==='image') && <div className="attachment-list">{(viewingJournal.attachments ?? []).filter(a=>a.type==='image').map(attachment=><AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />)}</div>}
@@ -4479,8 +4526,8 @@ function App() {
             <div className="editor-body">
               <label className="field full-field"><span>标题 *</span><input autoFocus value={journalDraft.title} onChange={event => setJournalDraft(current => ({ ...current, title: event.target.value }))} placeholder="给这条记录一个标题" /></label>
               <div className="field full-field"><span>事件影响</span><div className="impact-picker">{IMPACTS.map(impact => <button key={impact} type="button" className={`impact-choice impact-${impact}${journalDraft.impact === impact ? ' active' : ''}`} onClick={() => setJournalDraft(current => ({ ...current, impact }))}>{impact > 0 ? '+' : ''}{impact}</button>)}</div></div>
+              <div className="field full-field journal-emotion-field"><span>具体感受 · 可选 · 最多 3 个</span><div className="emotion-groups">{emotionGroupOrder(journalDraft.impact).map(group=>{const rows=emotionOptions.filter(item=>item.group===group&&!item.deletedAt&&(!item.archived||journalDraft.emotionIds.includes(item.id))).sort((a,b)=>a.order-b.order);return rows.length?<section className={`emotion-group emotion-${group}`} key={group}><small>{EMOTION_GROUP_LABEL[group]}</small><div className="emotion-picker">{rows.map(item=><button key={item.id} type="button" className={`emotion-choice${journalDraft.emotionIds.includes(item.id)?' active':''}`} disabled={!journalDraft.emotionIds.includes(item.id)&&journalDraft.emotionIds.length>=3} onClick={()=>setJournalDraft(current=>({...current,emotionIds:toggleEmotionId(current.emotionIds,item.id)}))}>{item.name}</button>)}</div></section>:null})}</div></div>
               <label className="field full-field"><span>正文 · Markdown</span><textarea rows={10} value={journalDraft.content} onChange={event => setJournalDraft(current => ({ ...current, content: event.target.value }))} placeholder="正文可选。支持标题、粗体、斜体、删除线、列表、引用、行内代码、分隔线和链接。" /></label>
-              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor(tags, 'journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />{tag.name}</button>)}</div></div>
               <div className="field full-field journal-image-field"><span>图片 · 最多 9 张</span><div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input className="journal-file-input" type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('journal')} disabled={journalDraft.attachments.filter(a=>a.type==='image').length>=9}>▧ 从图片库选择</button></div>
                 {journalDraft.attachments.some(a => a.type === 'image') && <div className="attachment-list">{journalDraft.attachments.filter(a => a.type === 'image').map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeJournalAttachment(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
                 <small>自动压缩后保存 · 单张约 1 MB · 最多 9 张</small>
@@ -4489,10 +4536,7 @@ function App() {
                 {journalDraft.attachments.find(a => a.type === 'audio') ? (() => { const audio = journalDraft.attachments.find(a => a.type === 'audio')!; return <div className="journal-audio-edit"><AudioAttachment attachment={audio}/><button type="button" onClick={() => void removeJournalAttachment(audio)}>删除录音</button></div> })() :
                   <button type="button" className="record-button" onClick={recording ? stopJournalRecording : () => void startJournalRecording()}>{recording ? `■ 停止录音 ${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2,'0')}` : '● 开始录音'}</button>}
               </div>
-              <div className="field-grid journal-date-row">
-                <label className="field"><span>日期</span><input type="date" value={journalDraft.date} onChange={event => setJournalDraft(current => ({ ...current, date: event.target.value }))} /></label>
-                <label className="field"><span>时间</span><input type="time" value={journalDraft.time} onChange={event => setJournalDraft(current => ({ ...current, hasTime: true, time: event.target.value }))} /></label>
-              </div>
+              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor(tags, 'journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />{tag.name}</button>)}</div></div>
             </div>
             <div className="editor-footer">
               {editingJournalId && <div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={() => { deleteJournal(editingJournalId); closeJournalEditor() }}>删除记录</button></div>}

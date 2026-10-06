@@ -49,6 +49,8 @@ export type Task = {
 
 export type MoodLevel = 1 | 2 | 3 | 4 | 5
 export type JournalImpact = -2 | -1 | 0 | 1 | 2
+export type EmotionGroup = 'negative' | 'neutral' | 'positive'
+export type EmotionOption = { id: string; name: string; group: EmotionGroup; order: number; builtin?: boolean; archived?: boolean; updatedAt: string; deletedAt?: string }
 
 export type DailyMood = {
   date: string
@@ -96,10 +98,11 @@ export type MenstrualPeriod = {
 export type JournalEntry = {
   id: string
   date: string
-  time?: string
+  time?: string // legacy v2.2 and earlier; retained only for backward-compatible reads
   title: string
   content: string
   impact: JournalImpact
+  emotionIds?: string[]
   createdAt: string
   updatedAt: string
   tagIds?: string[]
@@ -142,11 +145,10 @@ export type Tag = { id: string; name: string; color: string; scope: TagScope; so
 
 export type JournalDraft = {
   date: string
-  hasTime: boolean
-  time: string
   title: string
   content: string
   impact: JournalImpact
+  emotionIds: string[]
   tagIds: string[]
   attachments: Attachment[]
 }
@@ -202,6 +204,7 @@ export type SyncedUserSettings = {
   maxFocusHours?: number
   weatherOptions?: EnvironmentOption[]
   thermalOptions?: EnvironmentOption[]
+  emotionOptions?: EmotionOption[]
 }
 
 export type BackupPreview = {
@@ -230,6 +233,7 @@ export type BackupPreview = {
     maxFocusHours?: number
     weatherOptions?: EnvironmentOption[]
     thermalOptions?: EnvironmentOption[]
+    emotionOptions?: EmotionOption[]
   }
   attachments: {
     storageKey: string

@@ -4862,3 +4862,10 @@ button {
   .compact-tag-edit-modal{width:calc(100vw - 18px);max-height:calc(100dvh - 18px)}
   .compact-tag-edit-actions{padding:16px 24px 20px}
 }
+
+/* v2.3.0 — Record emotions */
+.emotion-groups{display:grid;gap:12px}.emotion-group{display:grid;gap:7px}.emotion-group>small{font-size:11px;font-weight:750;color:var(--muted)}
+.emotion-picker{display:flex;flex-wrap:wrap;gap:7px}.emotion-choice{min-height:34px;padding:6px 11px;border:1px solid #e1e6e2;border-radius:999px;background:#fff;color:#59645e;cursor:pointer}
+.emotion-choice:disabled{opacity:.38;cursor:not-allowed}.emotion-negative .emotion-choice.active,.emotion-chip.emotion-negative{background:#f4e3e1;border-color:#d8aaa5;color:#925d58}.emotion-neutral .emotion-choice.active,.emotion-chip.emotion-neutral{background:#ecefed;border-color:#cbd2ce;color:#66716b}.emotion-positive .emotion-choice.active,.emotion-chip.emotion-positive{background:#e2eee5;border-color:#abc5b2;color:#55765f}
+.journal-view-emotions{display:flex;flex-wrap:wrap;gap:7px;margin:-7px 0 15px}.emotion-chip{padding:4px 9px;border:1px solid transparent;border-radius:999px;font-size:11px;font-weight:700}
+.emotion-manager-group{margin-top:18px}.emotion-manager-group h3{margin:0 0 8px;font-size:12px}.emotion-manager-dot{width:10px;height:10px;border-radius:50%;background:#aeb7b2}.emotion-manager-group.emotion-negative .emotion-manager-dot{background:#c98780}.emotion-manager-group.emotion-neutral .emotion-manager-dot{background:#9da7a1}.emotion-manager-group.emotion-positive .emotion-manager-dot{background:#79a184}

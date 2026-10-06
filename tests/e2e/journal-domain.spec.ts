@@ -3,11 +3,12 @@ import { activeJournalEntries, emptyJournalDraft, energyMap, journalEntriesForDa
 import type { DailyEnergy, DailyMood, JournalEntry } from '../../src/types'
 
 test.describe('journal / mood / energy domain regression', () => {
-  test('new journal drafts keep the stable date, time, impact, default tag, and empty attachment defaults', () => {
+  test('new journal drafts keep the calendar date while system timestamps stay outside the editable draft', () => {
     const draft = emptyJournalDraft(new Date(2026, 9, 4, 15, 6))
     expect(draft.date).toBe('2026-10-04')
-    expect(draft.hasTime).toBe(true)
-    expect(draft.time).toMatch(/^\d{2}:\d{2}$/)
+    expect('time' in draft).toBe(false)
+    expect('hasTime' in draft).toBe(false)
+    expect(draft.emotionIds).toEqual([])
     expect(draft.impact).toBe(0)
     expect(draft.tagIds).toEqual(['default'])
     expect(draft.attachments).toEqual([])
@@ -29,7 +30,7 @@ test.describe('journal / mood / energy domain regression', () => {
     expect(toggleDailyEnergy(next, '2026-10-04', 3, 'later')).toEqual(rows)
   })
 
-  test('active journal filtering excludes trash and date selection keeps timed entries first in chronological order', () => {
+  test('active journal filtering excludes trash and date selection uses immutable creation time, not legacy manual time', () => {
     const base = { content: '', impact: 0 as const, tagIds: ['default'], attachments: [], updatedAt: '2026-10-04T00:00:00Z' }
     const rows: JournalEntry[] = [
       { ...base, id: 'untimed', date: '2026-10-04', title: 'untimed', createdAt: '2026-10-04T01:00:00Z' },
@@ -39,7 +40,7 @@ test.describe('journal / mood / energy domain regression', () => {
       { ...base, id: 'other', date: '2026-10-05', title: 'other', createdAt: '2026-10-05T01:00:00Z' },
     ]
     expect(activeJournalEntries(rows).map(row => row.id)).not.toContain('trash')
-    expect(journalEntriesForDate(rows, '2026-10-04').map(row => row.id)).toEqual(['early', 'late', 'untimed'])
+    expect(journalEntriesForDate(rows, '2026-10-04').map(row => row.id)).toEqual(['untimed', 'late', 'early'])
   })
 
   test('mood and energy maps retain one row per stored date for calendar lookup', () => {
