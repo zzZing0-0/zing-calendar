@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.3.0'
+const APP_VERSION = '2.3.3'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -298,6 +298,8 @@ function App() {
   const [environmentManagerKind, setEnvironmentManagerKind] = useState<'weather'|'thermal'|null>(null)
   const [emotionOptions, setEmotionOptions] = useState<EmotionOption[]>(() => { try { return normalizeEmotionOptions(JSON.parse(localStorage.getItem('zing:emotionOptions')||'[]')) } catch { return normalizeEmotionOptions(undefined) } })
   const [emotionManagerOpen, setEmotionManagerOpen] = useState(false)
+  const [emotionPickerOpen, setEmotionPickerOpen] = useState(false)
+  const [emotionManagerExpanded, setEmotionManagerExpanded] = useState<EmotionGroup | null>(null)
   const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
@@ -806,12 +808,11 @@ function App() {
     updateEnvironmentOptions(kind,current=>reorderEnvironmentOption(current,item.id,direction,new Date().toISOString()))
   }
 
-  const addEmotionOption = () => {
-    const name=window.prompt('添加具体感受')?.trim(); if(!name) return
+  const addEmotionOption = (group: EmotionGroup) => {
+    const name=window.prompt(`添加${EMOTION_GROUP_LABEL[group]}感受`)?.trim(); if(!name) return
     if(emotionNameTaken(emotionOptions,name)){window.alert('已经有同名感受了');return}
-    const raw=window.prompt('选择分组：负向 / 中性 / 正向','负向')?.trim(); if(raw===undefined) return
-    const group:EmotionGroup=raw==='正向'?'positive':raw==='中性'?'neutral':'negative'
     setEmotionOptions(current=>createEmotionOption(current,crypto.randomUUID(),name,group,new Date().toISOString()))
+    setEmotionManagerExpanded(group)
   }
   const renameEmotionOption = (item:EmotionOption) => {
     if(item.builtin) return
@@ -819,10 +820,8 @@ function App() {
     if(emotionNameTaken(emotionOptions,name,item.id)){window.alert('已经有同名感受了');return}
     setEmotionOptions(current=>updateEmotionOption(current,item.id,{name},new Date().toISOString()))
   }
-  const changeEmotionGroup = (item:EmotionOption) => {
-    if(item.builtin) return
-    const raw=window.prompt('选择分组：负向 / 中性 / 正向',EMOTION_GROUP_LABEL[item.group])?.trim(); if(raw===undefined) return
-    const group:EmotionGroup=raw==='正向'?'positive':raw==='中性'?'neutral':'negative'
+  const changeEmotionGroup = (item:EmotionOption, group:EmotionGroup) => {
+    if(item.builtin || group===item.group) return
     setEmotionOptions(current=>updateEmotionOption(current,item.id,{group},new Date().toISOString()))
   }
   const toggleArchiveEmotionOption = (item:EmotionOption) => setEmotionOptions(current=>updateEmotionOption(current,item.id,{archived:!item.archived},new Date().toISOString()))
@@ -3372,15 +3371,12 @@ function App() {
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
 
           <div className="settings-group personalization-settings">
-            <div className="settings-group-title"><h3>个人化</h3></div>
+            <div className="settings-group-title"><h3>日历任务</h3></div>
             <label className="setting-row">
               <span><strong>顶部问候语</strong><small>显示在左上角品牌标记旁。</small></span>
               <input className="setting-text-input" value={greeting} onChange={e => setGreeting(e.target.value)} onBlur={() => { if (!greeting.trim()) setGreeting('Hello, Zing') }} />
             </label>
-          </div>
 
-          <div className="settings-group">
-            <div className="settings-group-title"><h3>日历</h3></div>
             <div className="setting-row"><span><strong>每周开始日</strong></span><div className="setting-segment"><button className={weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(true)}>周一</button><button className={!weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(false)}>周日</button></div></div>
             <div className="setting-row"><span><strong>日期格式</strong></span><div className="setting-segment"><button className={dateFormat==='dmy'?'active':''} onClick={()=>setDateFormat('dmy')}>22 Sep 2026</button><button className={dateFormat==='mdy'?'active':''} onClick={()=>setDateFormat('mdy')}>Sep 22, 2026</button></div></div>
             <div className="setting-row">
@@ -3394,10 +3390,11 @@ function App() {
           </div>
 
           <div className="settings-group">
-            <div className="settings-group-title"><h3>天气与体感</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('weather')}><span><strong>管理天气</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('thermal')}><span><strong>管理体感</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setEmotionManagerOpen(true)}><span><strong>管理具体感受</strong><small>管理 Record 使用的情绪词库与分组。</small></span><b>›</b></button>
+            <div className="settings-group-title"><h3>专注</h3></div>
+            <div className="encouragement-style-setting">
+              <span><strong>最长专注时长</strong><small>达到上限后自动结束并保存，避免忘记停止计时。</small></span>
+              <label className="max-focus-hours-control"><input type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /><b>小时</b></label>
+            </div>
           </div>
 
           <div className="settings-group">
@@ -3407,11 +3404,10 @@ function App() {
           </div>
 
           <div className="settings-group">
-            <div className="settings-group-title"><h3>专注</h3></div>
-            <div className="encouragement-style-setting">
-              <span><strong>最长专注时长</strong><small>达到上限后自动结束并保存，避免忘记停止计时。</small></span>
-              <label className="max-focus-hours-control"><input type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /><b>小时</b></label>
-            </div>
+            <div className="settings-group-title"><h3>天气与情绪</h3></div>
+            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('weather')}><span><strong>管理天气</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('thermal')}><span><strong>管理体感</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setEmotionManagerOpen(true)}><span><strong>管理具体感受</strong><small>管理 Record 使用的情绪词库与分组。</small></span><b>›</b></button>
           </div>
 
           <div className="settings-group">
@@ -3429,16 +3425,6 @@ function App() {
             <div className="settings-group-title"><h3>词云</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setWordIgnoreManagerOpen(true)}>
               <span><strong>管理屏蔽词</strong><small>{wordCloudIgnored.length ? `已屏蔽 ${wordCloudIgnored.length} 个词` : '添加或恢复不参与词云统计的词。'}</small></span><b>›</b>
-            </button>
-          </div>
-
-          <div className="settings-group">
-            <div className="settings-group-title"><h3>友情链接</h3></div>
-            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('https://zzzing0-0.github.io/audio-vocabulary-sprint/index.html','_blank','noopener,noreferrer')}>
-              <span><strong>Zing 背单词</strong><small>Audio Vocabulary Sprint · 背单词与学习统计</small></span><b>↗</b>
-            </button>
-            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('http://www.yunshangxiezuo.com/home','_blank','noopener,noreferrer')}>
-              <span><strong>云上写作</strong><small>小说写作与作品数据</small></span><b>↗</b>
             </button>
           </div>
 
@@ -3483,6 +3469,16 @@ function App() {
               </button>
               {backupMessage && <div className="backup-status" role="status">{backupMessage}</div>}
             </div>
+          </div>
+
+          <div className="settings-group">
+            <div className="settings-group-title"><h3>友情链接</h3></div>
+            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('https://zzzing0-0.github.io/audio-vocabulary-sprint/index.html','_blank','noopener,noreferrer')}>
+              <span><strong>Zing 背单词</strong><small>Audio Vocabulary Sprint · 背单词与学习统计</small></span><b>↗</b>
+            </button>
+            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('http://www.yunshangxiezuo.com/home','_blank','noopener,noreferrer')}>
+              <span><strong>云上写作</strong><small>小说写作与作品数据</small></span><b>↗</b>
+            </button>
           </div>
         </section>
       )}
@@ -3580,14 +3576,25 @@ function App() {
         </div>
       })()}
 
+      {emotionPickerOpen && (
+        <div className="modal-layer emotion-picker-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭具体感受选择" onClick={()=>setEmotionPickerOpen(false)} />
+          <section className="task-editor emotion-picker-modal" role="dialog" aria-modal="true" aria-label="选择具体感受">
+            <div className="editor-header"><div><span className="eyebrow">EMOTIONS</span><h2>选择具体感受</h2></div><button className="close-button" type="button" onClick={()=>setEmotionPickerOpen(false)}>×</button></div>
+            <div className="editor-body emotion-picker-body"><div className="emotion-picker-status"><span>已选择 {journalDraft.emotionIds.length}/3</span><button type="button" onClick={()=>setJournalDraft(current=>({...current,emotionIds:[]}))} disabled={!journalDraft.emotionIds.length}>清空</button></div><div className="emotion-groups">{emotionGroupOrder(journalDraft.impact).map(group=>{const rows=emotionOptions.filter(item=>item.group===group&&!item.deletedAt&&(!item.archived||journalDraft.emotionIds.includes(item.id))).sort((a,b)=>a.order-b.order);return rows.length?<section className={`emotion-group emotion-${group}`} key={group}><small>{EMOTION_GROUP_LABEL[group]}</small><div className="emotion-picker">{rows.map(item=><button key={item.id} type="button" className={`emotion-choice${journalDraft.emotionIds.includes(item.id)?' active':''}`} disabled={!journalDraft.emotionIds.includes(item.id)&&journalDraft.emotionIds.length>=3} onClick={()=>setJournalDraft(current=>({...current,emotionIds:toggleEmotionId(current.emotionIds,item.id)}))}>{item.name}</button>)}</div></section>:null})}</div></div>
+            <div className="editor-footer emotion-picker-footer"><button type="button" className="save-button" onClick={()=>setEmotionPickerOpen(false)}>完成</button></div>
+          </section>
+        </div>
+      )}
+
       {emotionManagerOpen && (
         <div className="modal-layer environment-manager-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭具体感受管理" onClick={()=>setEmotionManagerOpen(false)} />
           <section className="task-editor environment-manager emotion-manager" role="dialog" aria-modal="true" aria-label="管理具体感受">
             <div className="editor-header"><div><span className="eyebrow">EMOTIONS</span><h2>具体感受</h2></div><button className="close-button" type="button" onClick={()=>setEmotionManagerOpen(false)}>×</button></div>
             <div className="editor-body environment-manager-body">
-              <div className="environment-option-heading"><div><strong>Emotion Vocabulary</strong><small>Record 最多选择 3 个 · 内置词可归档</small></div><button type="button" className="save-button compact" onClick={addEmotionOption}>＋ 添加</button></div>
-              {(['negative','neutral','positive'] as EmotionGroup[]).map(group=><section className={`emotion-manager-group emotion-${group}`} key={group}><h3>{EMOTION_GROUP_LABEL[group]}</h3><div className="environment-option-list">{emotionOptions.filter(item=>item.group===group&&!item.deletedAt).sort((a,b)=>a.order-b.order).map(item=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}><span className="emotion-manager-dot"/><button type="button" className={`environment-option-name ${item.builtin?'readonly':'editable'}`} onClick={()=>renameEmotionOption(item)}>{item.name}</button><div className="environment-option-actions compact">{!item.builtin&&<button type="button" onClick={()=>changeEmotionGroup(item)}>分组</button>}<button type="button" onClick={()=>toggleArchiveEmotionOption(item)}>{item.archived?'恢复':'归档'}</button>{!item.builtin&&!journalEntries.some(entry=>(entry.emotionIds??[]).includes(item.id))&&<button type="button" className="danger-text" onClick={()=>removeEmotionOption(item)}>删除</button>}</div></div>)}</div></section>)}
+              <div className="environment-option-heading"><div><strong>Emotion Vocabulary</strong><small>按分组管理 · Record 最多选择 3 个</small></div></div>
+              {(['positive','neutral','negative'] as EmotionGroup[]).map(group=>{const rows=emotionOptions.filter(item=>item.group===group&&!item.deletedAt).sort((a,b)=>a.order-b.order);const expanded=emotionManagerExpanded===group;return <section className={`emotion-manager-group emotion-${group}${expanded?' expanded':''}`} key={group}><div className="emotion-manager-group-heading"><button type="button" className="emotion-manager-toggle" onClick={()=>setEmotionManagerExpanded(current=>current===group?null:group)}><span className="emotion-manager-dot"/><strong>{EMOTION_GROUP_LABEL[group]}</strong><small>{rows.length}</small><b>{expanded?'⌃':'⌄'}</b></button><button type="button" className="emotion-manager-add" aria-label={`添加${EMOTION_GROUP_LABEL[group]}感受`} onClick={()=>addEmotionOption(group)}>＋</button></div>{expanded&&<div className="environment-option-list">{rows.map(item=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}><span className="emotion-manager-dot"/><button type="button" className={`environment-option-name ${item.builtin?'readonly':'editable'}`} onClick={()=>renameEmotionOption(item)}>{item.name}</button><div className="environment-option-actions compact">{!item.builtin&&<select aria-label={`${item.name}分组`} value={item.group} onChange={event=>changeEmotionGroup(item,event.target.value as EmotionGroup)}><option value="positive">正向</option><option value="neutral">中性</option><option value="negative">负向</option></select>}<button type="button" onClick={()=>toggleArchiveEmotionOption(item)}>{item.archived?'恢复':'归档'}</button>{!item.builtin&&!journalEntries.some(entry=>(entry.emotionIds??[]).includes(item.id))&&<button type="button" className="danger-text" onClick={()=>removeEmotionOption(item)}>删除</button>}</div></div>)}</div>}</section>})}
             </div>
           </section>
         </div>
@@ -4526,7 +4533,7 @@ function App() {
             <div className="editor-body">
               <label className="field full-field"><span>标题 *</span><input autoFocus value={journalDraft.title} onChange={event => setJournalDraft(current => ({ ...current, title: event.target.value }))} placeholder="给这条记录一个标题" /></label>
               <div className="field full-field"><span>事件影响</span><div className="impact-picker">{IMPACTS.map(impact => <button key={impact} type="button" className={`impact-choice impact-${impact}${journalDraft.impact === impact ? ' active' : ''}`} onClick={() => setJournalDraft(current => ({ ...current, impact }))}>{impact > 0 ? '+' : ''}{impact}</button>)}</div></div>
-              <div className="field full-field journal-emotion-field"><span>具体感受 · 可选 · 最多 3 个</span><div className="emotion-groups">{emotionGroupOrder(journalDraft.impact).map(group=>{const rows=emotionOptions.filter(item=>item.group===group&&!item.deletedAt&&(!item.archived||journalDraft.emotionIds.includes(item.id))).sort((a,b)=>a.order-b.order);return rows.length?<section className={`emotion-group emotion-${group}`} key={group}><small>{EMOTION_GROUP_LABEL[group]}</small><div className="emotion-picker">{rows.map(item=><button key={item.id} type="button" className={`emotion-choice${journalDraft.emotionIds.includes(item.id)?' active':''}`} disabled={!journalDraft.emotionIds.includes(item.id)&&journalDraft.emotionIds.length>=3} onClick={()=>setJournalDraft(current=>({...current,emotionIds:toggleEmotionId(current.emotionIds,item.id)}))}>{item.name}</button>)}</div></section>:null})}</div></div>
+              <div className="field full-field journal-emotion-field"><span>具体感受 · 可选 · 最多 3 个</span><button type="button" className="journal-emotion-trigger" onClick={()=>setEmotionPickerOpen(true)}><span className="journal-emotion-selection">{journalDraft.emotionIds.length ? journalDraft.emotionIds.map(id=>{const item=emotionOptions.find(row=>row.id===id);return item?<i key={id} className={`emotion-chip emotion-${item.group}`}>{item.name}</i>:null}) : <small>还没有选择具体感受</small>}</span><b>{journalDraft.emotionIds.length?'修改':'选择'} ›</b></button></div>
               <label className="field full-field"><span>正文 · Markdown</span><textarea rows={10} value={journalDraft.content} onChange={event => setJournalDraft(current => ({ ...current, content: event.target.value }))} placeholder="正文可选。支持标题、粗体、斜体、删除线、列表、引用、行内代码、分隔线和链接。" /></label>
               <div className="field full-field journal-image-field"><span>图片 · 最多 9 张</span><div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input className="journal-file-input" type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('journal')} disabled={journalDraft.attachments.filter(a=>a.type==='image').length>=9}>▧ 从图片库选择</button></div>
                 {journalDraft.attachments.some(a => a.type === 'image') && <div className="attachment-list">{journalDraft.attachments.filter(a => a.type === 'image').map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeJournalAttachment(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
