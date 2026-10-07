@@ -40,9 +40,22 @@ test('notes markdown polish › toolbar title wrapper accepts UIW nullable butto
 })
 
 
-test('notes mobile regression › long-note editor keeps toolbar fixed and scrolls content below it', () => {
+test('notes mobile regression › editor follows the visual viewport while the keyboard is open', () => {
   const css = readFileSync('src/App.css','utf8')
-  expect(css).toContain('.note-split.mobile-edit .note-edit-pane{overflow:hidden}')
-  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:sticky;top:0;z-index:3')
-  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto}')
+  const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
+  expect(notes).toContain('window.visualViewport')
+  expect(notes).toContain("viewport?.addEventListener('resize',update)")
+  expect(notes).toContain("viewport?.addEventListener('scroll',update)")
+  expect(notes).toContain("document.body.style.overflow='hidden'")
+  expect(css).toContain('.note-editor-overlay{top:var(--note-vv-top,0px);bottom:auto;height:var(--note-vv-height,100dvh);overflow:hidden}')
+  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:relative;z-index:3')
+  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch}')
+})
+
+test('notes mobile regression › visual viewport listeners and page scroll lock are cleaned up', () => {
+  const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
+  expect(notes).toContain("viewport?.removeEventListener('resize',update)")
+  expect(notes).toContain("viewport?.removeEventListener('scroll',update)")
+  expect(notes).toContain('document.body.style.overflow=previousBodyOverflow')
+  expect(notes).toContain('document.documentElement.style.overflow=previousOverflow')
 })
