@@ -188,6 +188,29 @@ test('notes mobile browser regression › typing in a long single-layer note pre
   await expect.poll(async () => Math.abs((await editor.evaluate(el => (el as HTMLElement).scrollTop)) - before)).toBeLessThan(8)
 })
 
+test('notes mobile browser regression › sticky toolbar stays pinned while long-note typing preserves scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.locator('.bottom-nav').getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('button', { name: '＋ 新建' }).click()
+  const textarea = page.locator('.note-editor .zing-mobile-md-textarea')
+  const source = Array.from({length: 120}, (_, i) => `line ${i + 1} sticky toolbar content`).join('\n\n')
+  await textarea.fill(source)
+  const editor = page.locator('.note-editor')
+  const toolbar = page.locator('.note-editor .zing-mobile-md-toolbar-shell')
+  await editor.evaluate(el => { (el as HTMLElement).scrollTop = 900 })
+  await expect.poll(() => editor.evaluate(el => (el as HTMLElement).scrollTop)).toBeGreaterThan(500)
+  const pinnedY = await toolbar.evaluate(el => el.getBoundingClientRect().top)
+  await editor.evaluate(el => { (el as HTMLElement).scrollTop += 500 })
+  await expect.poll(async () => Math.abs((await toolbar.evaluate(el => el.getBoundingClientRect().top)) - pinnedY)).toBeLessThan(2)
+  const beforeTyping = await editor.evaluate(el => (el as HTMLElement).scrollTop)
+  const offset = source.indexOf('line 90') + 'line 90'.length
+  await textarea.evaluate((el, pos) => { const t=el as HTMLTextAreaElement; t.focus({preventScroll:true}); t.setSelectionRange(pos,pos) }, offset)
+  await textarea.press('d')
+  await expect.poll(async () => Math.abs((await editor.evaluate(el => (el as HTMLElement).scrollTop)) - beforeTyping)).toBeLessThan(8)
+  await expect.poll(async () => Math.abs((await toolbar.evaluate(el => el.getBoundingClientRect().top)) - pinnedY)).toBeLessThan(2)
+})
+
 test('notes desktop browser regression › the mounted UIW editor drives preview scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 850 })
   await page.goto('/')

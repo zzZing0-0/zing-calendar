@@ -34,7 +34,8 @@ function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:str
  const toggleTask=()=>{const sel=selection();const next=toggleMarkdownTaskAtOffset(value,sel.start);if(next!==value)commit(next,sel);else prefix('- [ ] ')}
  const heading=(level:number)=>{const sel=selection();const bounds=lineBounds(value,sel.start);const line=value.slice(bounds.start,bounds.end);const clean=line.replace(/^#{1,6}\s+/,'');const mark='#'.repeat(level)+' ';const next=value.slice(0,bounds.start)+mark+clean+value.slice(bounds.end);commit(next,{start:bounds.start+mark.length,end:bounds.start+mark.length+clean.length})}
  return <div className="zing-mobile-md-editor" data-mobile-single-layer="true">
-  <div className="zing-mobile-md-toolbar" role="toolbar" aria-label="Markdown 工具栏">
+  <div className="zing-mobile-md-toolbar-shell">
+   <div className="zing-mobile-md-toolbar" role="toolbar" aria-label="Markdown 工具栏">
    <select aria-label="标题" defaultValue="" onChange={e=>{const n=Number(e.target.value);if(n)heading(n);e.currentTarget.value='' }}><option value="">H⌄</option>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>H{n}</option>)}</select>
    <button type="button" title="粗体" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('**')}>B</button>
    <button type="button" title="斜体" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('*')}><i>I</i></button>
@@ -51,6 +52,7 @@ function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:str
    <button type="button" title="行内代码" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('`')}>{'</>'}</button>
    <button type="button" title="代码块" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('```\n','\n```','代码')}>▣</button>
    <button type="button" title="分隔线" onMouseDown={e=>e.preventDefault()} onClick={()=>insert('\n---\n')}>—</button>
+   </div>
   </div>
   <textarea ref={textareaRef} className="zing-mobile-md-textarea" aria-label="Markdown 正文" value={value} onChange={e=>handleInputChange(e.target.value)} spellCheck={false}/>
  </div>

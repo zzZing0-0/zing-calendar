@@ -54,7 +54,7 @@ test('notes mobile architecture regression › mobile editing is independent of 
   expect(notes).not.toContain('visualViewport')
   expect(notes).not.toContain('mobileNaturalHeight')
   expect(notes).not.toContain('keyboard-open')
-  expect(css).toContain('.zing-mobile-md-toolbar{position:sticky;top:0')
+  expect(css).toContain('.zing-mobile-md-toolbar-shell{position:-webkit-sticky;position:sticky;top:0')
   expect(css).toContain('.zing-mobile-md-textarea{display:block;box-sizing:border-box;width:100%;min-height:320px;height:auto;overflow:hidden;resize:none')
 })
 
@@ -62,7 +62,7 @@ test('notes mobile layout regression › the headless toolbar is the only sticky
   const css = readFileSync('src/App.css','utf8')
   const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx','utf8')
   expect(adapter).toContain('className="zing-mobile-md-toolbar"')
-  expect(css).toContain('.zing-mobile-md-toolbar{position:sticky;top:0')
+  expect(css).toContain('.zing-mobile-md-toolbar-shell{position:-webkit-sticky;position:sticky;top:0')
   expect(css).not.toContain('.zing-mobile-md-textarea{position:sticky')
 })
 
