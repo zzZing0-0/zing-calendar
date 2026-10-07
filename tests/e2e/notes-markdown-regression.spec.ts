@@ -46,6 +46,7 @@ test('notes mobile regression › editor follows the visual viewport while the k
   expect(notes).toContain('window.visualViewport')
   expect(notes).toContain("viewport?.addEventListener('resize',update)")
   expect(notes).toContain("viewport?.addEventListener('scroll',update)")
+  expect(notes).toContain("if(!keyboardOpen)return")
   expect(notes).toContain("document.body.style.overflow='hidden'")
   expect(css).toContain('.note-editor-overlay{top:var(--note-vv-top,0px);bottom:auto;height:var(--note-vv-height,100dvh);overflow:hidden}')
   expect(css).toContain('.note-editor-overlay .note-editor{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;display:block}')
@@ -80,14 +81,16 @@ test('notes mobile caret regression › mobile edit disables UIW highlight overl
 })
 
 
-test('notes mobile height regression › editor and preview fill the actually visible space below their on-screen top', () => {
+test('notes mobile scroll ownership regression › page scrolls normally and keyboard mode alone constrains the editor', () => {
   const css = readFileSync('src/App.css','utf8')
   const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
-  const patch = css.slice(css.indexOf('/* v2.6.4 — Mobile Notes size'))
-  expect(notes).toContain('const splitRef=useRef<HTMLDivElement>(null)')
-  expect(notes).toContain('splitRef.current?.getBoundingClientRect().top')
-  expect(notes).toContain("'--note-split-height':`${Math.max(320,mobileViewport.top+mobileViewport.height-mobileViewport.splitTop)}px`")
-  expect(notes).toContain('ref={splitRef} className={`note-split mobile-${mobileMode}`}')
-  expect(patch).toContain('.note-split.mobile-edit,.note-split.mobile-preview{height:var(--note-split-height,60dvh);min-height:320px;overflow:hidden}')
-  expect(patch).not.toContain('max(520px')
+  const app = readFileSync('src/App.tsx','utf8')
+  const patch = css.slice(css.indexOf('/* v2.6.5 — Mobile Notes use page scrolling normally'))
+  expect(app).toContain("const APP_VERSION = '2.6.5'")
+  expect(notes).toContain('const [mobileNaturalHeight,setMobileNaturalHeight]=useState(520)')
+  expect(notes).toContain("split.querySelector<HTMLTextAreaElement>('textarea')?.scrollHeight")
+  expect(notes).toContain("mobileViewport?.keyboardOpen?' keyboard-open':''")
+  expect(patch).toContain('.note-split.mobile-edit,.note-split.mobile-preview{height:var(--note-natural-height,520px);min-height:320px;overflow:visible}')
+  expect(patch).toContain('.note-split.keyboard-open{height:var(--note-split-height,60dvh);min-height:320px;overflow:hidden}')
+  expect(patch).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:hidden}')
 })

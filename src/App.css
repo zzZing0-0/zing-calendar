@@ -4986,11 +4986,15 @@ button {
 }
 
 
-/* v2.6.4 — Mobile Notes size the editor to the visible space below its actual on-screen top. */
+/* v2.6.5 — Mobile Notes use page scrolling normally; only keyboard editing owns an internal viewport. */
 @media(max-width:700px){
-  .note-split.mobile-edit,.note-split.mobile-preview{height:var(--note-split-height,60dvh);min-height:320px;overflow:hidden}
-  .note-split.mobile-edit .note-edit-pane,.note-split.mobile-preview .note-preview-pane{height:100%;overflow:auto;-webkit-overflow-scrolling:touch}
-  .note-split.mobile-edit .zing-md-editor,.note-split.mobile-edit .zing-md-editor .w-md-editor{height:100%!important;min-height:0;overflow:hidden}
+  .note-split.mobile-edit,.note-split.mobile-preview{height:var(--note-natural-height,520px);min-height:320px;overflow:visible}
+  .note-split.mobile-edit .note-edit-pane,.note-split.mobile-preview .note-preview-pane{height:100%;overflow:visible}
+  .note-split.mobile-edit .zing-md-editor,.note-split.mobile-edit .zing-md-editor .w-md-editor{height:100%!important;min-height:0;overflow:visible}
   .note-split.mobile-edit .zing-md-editor .w-md-editor{display:flex;flex-direction:column}
-  .note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch}
+  .note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:hidden}
+  .note-split.keyboard-open{height:var(--note-split-height,60dvh);min-height:320px;overflow:hidden}
+  .note-split.keyboard-open .note-edit-pane,.note-split.keyboard-open .note-preview-pane{height:100%;overflow:auto;-webkit-overflow-scrolling:touch}
+  .note-split.keyboard-open .zing-md-editor,.note-split.keyboard-open .zing-md-editor .w-md-editor{height:100%!important;overflow:hidden}
+  .note-split.keyboard-open .zing-md-editor .w-md-editor-content{overflow:auto;-webkit-overflow-scrolling:touch}
 }
