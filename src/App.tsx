@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.5.26'
+const APP_VERSION = '2.5.28'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -60,7 +60,7 @@ import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedInco
 import { buildAttachmentLifecycle, referencedAttachmentKeys } from './domain/attachments'
 import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, moveInboxSortKey, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
 import type { InboxSortKey } from './domain/inbox'
-import { ensureDefaultNotebook, normalizeNotes } from './domain/notes'
+import { ensureDefaultNotebook, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
 import { NotesPage } from './features/notes/NotesPage'
 
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
@@ -289,7 +289,7 @@ function App() {
   const inboxSortDragRef = useRef<InboxSortKey | null>(null)
   const [inboxSortDropTarget, setInboxSortDropTarget] = useState<InboxSortKey | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
-  const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'anniversary'|'focus'>('all')
+  const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'note'|'anniversary'|'focus'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [dayDetailOpen, setDayDetailOpen] = useState(false)
@@ -1250,6 +1250,7 @@ function App() {
     | { key:string; entity:'task'; kind:'series'|'occurrence'|'future'; task:Task; occurrenceDate?:string; trashedAt:string }
     | { key:string; entity:'journal'; journal:JournalEntry; trashedAt:string }
     | { key:string; entity:'anniversary'; anniversary:Anniversary; trashedAt:string }
+    | { key:string; entity:'note'; note:Note; trashedAt:string }
     | { key:string; entity:'focus'; session:FocusSession; trashedAt:string }
   const trashItems = useMemo<TrashItem[]>(() => {
     const items:TrashItem[]=[]
@@ -1262,9 +1263,10 @@ function App() {
     })
     journalEntries.forEach(journal => { if (journal.trashedAt) items.push({key:`journal:${journal.id}`,entity:'journal',journal,trashedAt:journal.trashedAt}) })
     anniversaries.forEach(anniversary => { if (anniversary.trashedAt) items.push({key:`anniversary:${anniversary.id}`,entity:'anniversary',anniversary,trashedAt:anniversary.trashedAt}) })
+    notes.forEach(note => { if (note.trashedAt) items.push({key:`note:${note.id}`,entity:'note',note,trashedAt:note.trashedAt}) })
     focusSessions.forEach(session => { if (session.trashedAt) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
-  },[tasks,journalEntries,anniversaries,focusSessions])
+  },[tasks,journalEntries,anniversaries,notes,focusSessions])
   const trashTaskStatus = (item: Extract<TrashItem,{entity:'task'}>): TaskStatus => item.kind === 'occurrence' && item.occurrenceDate
     ? (item.task.recurrenceExceptions?.[item.occurrenceDate]?.status ?? item.task.status)
     : item.task.status
@@ -2060,6 +2062,7 @@ function App() {
   const restoreTrashItem = (item: TrashItem) => {
     if(item.entity==='focus') { const now=new Date().toISOString(); setFocusSessions(current=>current.map(session=>session.id===item.session.id?restoreFocusSession(session,now):session)); setAutoSyncToast('✓ 已恢复专注'); return }
     if(item.entity==='journal') { const now=new Date().toISOString(); setJournalEntries(current=>current.map(entry=>entry.id===item.journal.id?{...entry,trashedAt:undefined,updatedAt:now}:entry)); setAutoSyncToast('✓ 已恢复记录'); return }
+    if(item.entity==='note') { const now=new Date().toISOString(); setNotes(current=>current.map(note=>note.id===item.note.id?restoreNote(note,now):note)); setAutoSyncToast('✓ 已恢复笔记'); return }
     if(item.entity==='anniversary') { const now=new Date().toISOString(); setAnniversaries(current=>current.map(a=>a.id===item.anniversary.id?{...a,trashedAt:undefined,updatedAt:now}:a)); setAutoSyncToast('✓ 已恢复纪念日'); return }
     const now=new Date().toISOString()
     setTasks(current=>current.map(task=>{
@@ -2075,6 +2078,7 @@ function App() {
   const permanentlyDeleteTrashItem = (item: TrashItem) => {
     if(item.entity==='focus') { setFocusSessions(current=>permanentlyDeleteFocusSession(current,item.session.id)); return }
     if(item.entity==='journal') { setJournalEntries(current=>current.filter(entry=>entry.id!==item.journal.id)); return }
+    if(item.entity==='note') { setNotes(current=>permanentlyDeleteNote(current,item.note.id)); return }
     if(item.entity==='anniversary') { setAnniversaries(current=>current.filter(a=>a.id!==item.anniversary.id)); return }
     const now=new Date().toISOString()
     if(item.kind==='series') { setTasks(current=>current.filter(task=>task.id!==item.task.id)); return }
@@ -2091,6 +2095,7 @@ function App() {
     const now = new Date().toISOString()
     setJournalEntries(current => current.filter(entry => !entry.trashedAt))
     setAnniversaries(current => current.filter(anniversary => !anniversary.trashedAt))
+    setNotes(current => purgeTrashedNotes(current))
     setFocusSessions(current => purgeTrashedFocusSessions(current))
     setTasks(current => current.flatMap(task => {
       if (task.trashedAt) return []
@@ -4248,14 +4253,14 @@ function App() {
             <div className="editor-body overdue-inbox-body">
               {trashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <>
                 <div className="trash-filter-row" role="group" aria-label="回收站类型筛选">
-                  {([['all','全部'],['task','任务'],['journal','记录'],['anniversary','纪念日'],['focus','专注']] as const).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
+                  {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['focus','专注']] as const).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
                 </div>
                 {visibleTrashItems.length===0 ? <p className="page-empty compact">这一类还没有内容。</p> : <div className="overdue-inbox-list trash-inbox-list">
                   {(trashTaskGroups ? [
                     {label:'未完成',items:trashTaskGroups.active},
                     ...(showEndedTasks ? [{label:'已完成',items:trashTaskGroups.ended}] : []),
                   ] : [{label:'',items:visibleTrashItems}]).map(group=>group.items.length>0&&<div className="trash-task-group" key={group.label||'all'}>{group.label&&<div className="trash-task-group-label">{group.label} · {group.items.length}</div>}{group.items.map(item=><article key={item.key} className={`trash-inbox-item${item.entity==='task'&&trashTaskStatus(item)!=='todo'?' completed':''}`}>
-                    <div className="trash-inbox-main"><strong>{item.entity==='task'&&trashTaskStatus(item)!=='todo'&&<span className="trash-task-status" aria-label="已完成">✓</span>}{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='anniversary'?item.anniversary.title:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+                    <div className="trash-inbox-main"><strong>{item.entity==='task'&&trashTaskStatus(item)!=='todo'&&<span className="trash-task-status" aria-label="已完成">✓</span>}{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='note'?item.note.title:item.entity==='anniversary'?item.anniversary.title:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='note'?`${notebooks.find(book=>book.id===item.note.notebookId)?.name??'默认'} · 笔记`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
                     <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
                   </article>)}</div>)}
                 </div>}

@@ -42,3 +42,19 @@ export function removeNotebook(rows: Note[], notebookId: string, now: string): N
   if (notebookId===DEFAULT_NOTEBOOK_ID) return rows
   return rows.map(row=>row.notebookId===notebookId?{...row,notebookId:DEFAULT_NOTEBOOK_ID,updatedAt:now}:row)
 }
+
+export function trashNote(note: Note, now: string): Note {
+  return { ...note, trashedAt: now, updatedAt: now }
+}
+
+export function restoreNote(note: Note, now: string): Note {
+  return { ...note, trashedAt: undefined, updatedAt: now }
+}
+
+export function permanentlyDeleteNote(rows: Note[], noteId: string): Note[] {
+  return rows.filter(note => note.id !== noteId)
+}
+
+export function purgeTrashedNotes(rows: Note[]): Note[] {
+  return rows.filter(note => !note.trashedAt)
+}

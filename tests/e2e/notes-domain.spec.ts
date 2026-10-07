@@ -25,3 +25,16 @@ test('notes regression › note attachment participates in lifecycle and trash k
  expect(buildAttachmentLifecycle([],[],[active])[0]).toMatchObject({state:'active',activeRefs:1})
  expect(buildAttachmentLifecycle([],[],[{...active,trashedAt:'2'}])[0]).toMatchObject({state:'trash',trashRefs:1})
 })
+
+test('notes trash lifecycle keeps soft delete restorable and permanent delete explicit', async () => {
+  const { trashNote, restoreNote, permanentlyDeleteNote, purgeTrashedNotes } = await import('../../src/domain/notes')
+  const base:any = { id:'n1', notebookId:'notebook:default', title:'Shell', content:'git status --short', active:true, activeOrder:0, createdAt:'2026-10-01T00:00:00.000Z', updatedAt:'2026-10-01T00:00:00.000Z' }
+  const trashed = trashNote(base, '2026-10-07T10:00:00.000Z')
+  expect(trashed.trashedAt).toBe('2026-10-07T10:00:00.000Z')
+  expect(trashed.updatedAt).toBe('2026-10-07T10:00:00.000Z')
+  const restored = restoreNote(trashed, '2026-10-07T11:00:00.000Z')
+  expect(restored.trashedAt).toBeUndefined()
+  expect(restored.updatedAt).toBe('2026-10-07T11:00:00.000Z')
+  expect(permanentlyDeleteNote([restored], 'n1')).toEqual([])
+  expect(purgeTrashedNotes([base, trashed]).map(note => note.id)).toEqual(['n1'])
+})

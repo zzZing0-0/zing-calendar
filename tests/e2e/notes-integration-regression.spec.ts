@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { planSyncDiff } from '../../src/domain/sync'
 
 const appSource = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
 
@@ -170,4 +171,27 @@ test('notes desktop browser regression › the mounted UIW editor drives preview
   const scroller = actualScroller.nth(index)
   await scroller.evaluate(el => { const h=el as HTMLElement; const max=h.scrollHeight-h.clientHeight; h.scrollTop=max*0.6; h.dispatchEvent(new Event('scroll')) })
   await expect.poll(() => preview.evaluate(el => (el as HTMLElement).scrollTop)).toBeGreaterThan(0)
+})
+
+test('notes trash integration regression › Notes joins unified Trash restore and permanent-delete lifecycle', () => {
+  const notesPage = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(notesPage).toContain('trashNote(row,now)')
+  expect(notesPage).toContain('笔记将移入回收站')
+  expect(appSource).toContain("entity:'note'")
+  expect(appSource).toContain("setAutoSyncToast('✓ 已恢复笔记')")
+  expect(appSource).toContain('permanentlyDeleteNote(current,item.note.id)')
+  expect(appSource).toContain('purgeTrashedNotes(current)')
+})
+
+test('notes search and sync lifecycle regression › trashed Notes stay searchable-off while soft delete remains a sync upsert', () => {
+  const searchSource = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/search.ts'), 'utf8')
+  expect(appSource).toContain('activeNotes: notes.filter(note=>!note.trashedAt)')
+  expect(searchSource).toContain("if (searchFilter === 'all' || searchFilter === 'note')")
+  expect(appSource).toContain("recordSyncDiff('note',previous,notes)")
+
+  const liveNote = { id: 'note-1', title: 'Reference', content: 'keep me', updatedAt: 1 }
+  const trashedNote = { ...liveNote, trashedAt: 2, updatedAt: 2 }
+  expect(planSyncDiff('note', [liveNote], [trashedNote])).toEqual([
+    { entityType: 'note', entityId: 'note-1', operation: 'upsert' },
+  ])
 })
