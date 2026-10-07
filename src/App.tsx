@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.6.0'
+const APP_VERSION = '2.6.3'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -60,7 +60,7 @@ import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedInco
 import { buildAttachmentLifecycle, referencedAttachmentKeys } from './domain/attachments'
 import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, moveInboxSortKey, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
 import type { InboxSortKey } from './domain/inbox'
-import { ensureDefaultNotebook, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
+import { ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
 import { NotesPage } from './features/notes/NotesPage'
 
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
@@ -323,7 +323,8 @@ function App() {
   const [orphanCleanupBusy, setOrphanCleanupBusy] = useState(false)
   const [orphanCleanupOpen, setOrphanCleanupOpen] = useState(false)
   const [orphanAttachments, setOrphanAttachments] = useState<{key:string;url:string;contentType:string;size:number}[]>([])
-  const [imageLibraryTarget, setImageLibraryTarget] = useState<'task'|'journal'|null>(null)
+  const [imageLibraryTarget, setImageLibraryTarget] = useState<'task'|'journal'|'note'|null>(null)
+  const [imageLibraryNoteId, setImageLibraryNoteId] = useState<string|null>(null)
   const [backupExporting, setBackupExporting] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
   const [githubSyncOpen, setGithubSyncOpen] = useState(false)
@@ -2489,6 +2490,9 @@ function App() {
         if (current.attachments.some(a => a.storageKey === source.storageKey) || current.attachments.filter(a => a.type === 'image').length >= 9) return current
         return { ...current, attachments: [...current.attachments, linked] }
       })
+    } else if (imageLibraryTarget === 'note' && imageLibraryNoteId) {
+      const now = new Date().toISOString()
+      setNotes(current => linkImageAttachmentToNote(current, imageLibraryNoteId, source, now, linked.id))
     }
   }
 
@@ -3414,7 +3418,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} />}
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">
@@ -4883,7 +4887,11 @@ function App() {
           <section className="storage-browser attachment-library-modal">
             <header className="storage-browser-header"><div><span className="eyebrow">IMAGE LIBRARY</span><h2>从图片库选择</h2><small>复用已有图片，不会重复占用存储空间</small></div><button className="close-button" type="button" onClick={()=>setImageLibraryTarget(null)}>×</button></header>
             {libraryImages.length===0 ? <p className="page-empty">图片库还是空的。</p> : <div className="storage-image-grid selectable-library-grid">{libraryImages.map(attachment => {
-              const selected = imageLibraryTarget==='task' ? draft.attachments.some(a=>a.storageKey===attachment.storageKey) : journalDraft.attachments.some(a=>a.storageKey===attachment.storageKey)
+              const selected = imageLibraryTarget==='task'
+                ? draft.attachments.some(a=>a.storageKey===attachment.storageKey)
+                : imageLibraryTarget==='journal'
+                  ? journalDraft.attachments.some(a=>a.storageKey===attachment.storageKey)
+                  : notes.find(note=>note.id===imageLibraryNoteId)?.attachments?.some(a=>a.storageKey===attachment.storageKey) ?? false
               return <div className={`library-pick-item ${selected?'selected':''}`} key={attachment.storageKey}><StorageImage attachment={attachment} onPreview={()=>chooseLibraryImage(attachment)} />{selected && <span className="library-picked-mark">✓ 已引用</span>}</div>
             })}</div>}
           </section>

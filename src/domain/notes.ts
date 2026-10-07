@@ -1,4 +1,4 @@
-import type { Note, Notebook } from '../types'
+import type { Attachment, Note, Notebook } from '../types'
 
 export const DEFAULT_NOTEBOOK_ID = 'notebook:default'
 export const DEFAULT_NOTEBOOK_NAME = '默认'
@@ -41,6 +41,21 @@ export function reorderActiveNotes(rows: Note[], orderedIds: string[], now: stri
 export function removeNotebook(rows: Note[], notebookId: string, now: string): Note[] {
   if (notebookId===DEFAULT_NOTEBOOK_ID) return rows
   return rows.map(row=>row.notebookId===notebookId?{...row,notebookId:DEFAULT_NOTEBOOK_ID,updatedAt:now}:row)
+}
+
+
+export function linkImageAttachmentToNote(rows: Note[], noteId: string, source: Attachment, now: string, linkId: string): Note[] {
+  if (source.type !== 'image') return rows
+  return rows.map(note => {
+    if (note.id !== noteId || note.trashedAt) return note
+    const attachments = note.attachments ?? []
+    if (attachments.some(item => item.storageKey === source.storageKey)) return note
+    if (attachments.filter(item => item.type === 'image').length >= 9) return note
+    const tombstones = { ...(note.attachmentLinkTombstones ?? {}) }
+    delete tombstones[source.storageKey]
+    const linked: Attachment = { ...source, id: linkId, createdAt: now }
+    return { ...note, attachments: [...attachments, linked], attachmentLinkTombstones: tombstones, updatedAt: now }
+  })
 }
 
 export function trashNote(note: Note, now: string): Note {

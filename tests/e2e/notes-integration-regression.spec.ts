@@ -214,3 +214,16 @@ test('notes attachments integration › Notes remain inside shared attachment li
   expect(appSource).toContain('referencedAttachmentKeys(tasks, journalEntries, notes)')
   expect(appSource).toContain('const allStoredAttachments = useMemo(() => attachmentLifecycle.map(row => row.attachment)')
 })
+
+
+test('notes image library integration › Notes can reuse an existing library image without duplicating binary storage', () => {
+  const notesPage=fs.readFileSync(path.resolve(process.cwd(),'src/features/notes/NotesPage.tsx'),'utf8')
+  const notesDomain=fs.readFileSync(path.resolve(process.cwd(),'src/domain/notes.ts'),'utf8')
+  expect(notesPage).toContain('▧ 从图片库选择')
+  expect(notesPage).toContain('onOpenImageLibrary(editing.id)')
+  expect(appSource).toContain("useState<'task'|'journal'|'note'|null>(null)")
+  expect(appSource).toContain("setImageLibraryTarget('note')")
+  expect(appSource).toContain('linkImageAttachmentToNote(current, imageLibraryNoteId, source, now, linked.id)')
+  expect(notesDomain).toContain('storageKey === source.storageKey')
+  expect(notesDomain).toContain("attachments.filter(item => item.type === 'image').length >= 9")
+})

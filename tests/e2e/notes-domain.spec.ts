@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { activeNotes, DEFAULT_NOTEBOOK_ID, ensureDefaultNotebook, normalizeNotes, removeNotebook, reorderActiveNotes } from '../../src/domain/notes'
+import { activeNotes, DEFAULT_NOTEBOOK_ID, ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, removeNotebook, reorderActiveNotes } from '../../src/domain/notes'
 import { buildAttachmentLifecycle } from '../../src/domain/attachments'
 
 test('notes regression › default notebook is stable and missing notebook ownership heals to default',()=>{
@@ -44,4 +44,26 @@ test('notes attachments regression › unlink tombstones keep removed binary lin
   const normalized=normalizeNotes([note],new Set([DEFAULT_NOTEBOOK_ID]))[0]
   expect(normalized.attachmentLinkTombstones?.['attachment:a']).toBe('2026-10-07T11:00:00.000Z')
   expect(buildAttachmentLifecycle([],[],[{...normalized,attachments:[]}])[0]).toBeUndefined()
+})
+
+
+test('notes image library regression › linking an existing image reuses binary storage without duplicate references',()=>{
+ const source:any={id:'source-link',type:'image',filename:'library.png',mimeType:'image/png',size:321,storageKey:'attachment:shared-image',createdAt:'2026-10-01T00:00:00.000Z'}
+ const base:any={id:'note-1',notebookId:DEFAULT_NOTEBOOK_ID,title:'Plan',content:'',active:true,createdAt:'1',updatedAt:'1',attachments:[],attachmentLinkTombstones:{'attachment:shared-image':'2026-10-06T00:00:00.000Z'}}
+ const linked=linkImageAttachmentToNote([base],'note-1',source,'2026-10-07T12:00:00.000Z','note-link-1')[0]
+ expect(linked.attachments).toHaveLength(1)
+ expect(linked.attachments?.[0]).toMatchObject({id:'note-link-1',storageKey:'attachment:shared-image',filename:'library.png'})
+ expect(linked.updatedAt).toBe('2026-10-07T12:00:00.000Z')
+ expect(linked.attachmentLinkTombstones?.['attachment:shared-image']).toBeUndefined()
+ const duplicate=linkImageAttachmentToNote([linked],'note-1',source,'2026-10-07T13:00:00.000Z','note-link-2')[0]
+ expect(duplicate).toEqual(linked)
+})
+
+test('notes image library regression › library linking respects image limit and ignores non-image attachments',()=>{
+ const images=Array.from({length:9},(_,index)=>({id:`i${index}`,type:'image',filename:`${index}.png`,mimeType:'image/png',size:1,storageKey:`attachment:${index}`,createdAt:'1'}))
+ const note:any={id:'note-1',notebookId:DEFAULT_NOTEBOOK_ID,title:'Plan',content:'',active:false,createdAt:'1',updatedAt:'1',attachments:images}
+ const extra:any={id:'extra',type:'image',filename:'extra.png',mimeType:'image/png',size:1,storageKey:'attachment:extra',createdAt:'1'}
+ expect(linkImageAttachmentToNote([note],'note-1',extra,'2','new')[0]).toEqual(note)
+ const audio:any={...extra,type:'audio',mimeType:'audio/webm'}
+ expect(linkImageAttachmentToNote([{...note,attachments:[]}],'note-1',audio,'2','new')[0].attachments).toEqual([])
 })

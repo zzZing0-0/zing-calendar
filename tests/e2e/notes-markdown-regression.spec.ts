@@ -48,8 +48,20 @@ test('notes mobile regression › editor follows the visual viewport while the k
   expect(notes).toContain("viewport?.addEventListener('scroll',update)")
   expect(notes).toContain("document.body.style.overflow='hidden'")
   expect(css).toContain('.note-editor-overlay{top:var(--note-vv-top,0px);bottom:auto;height:var(--note-vv-height,100dvh);overflow:hidden}')
-  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:relative;z-index:3')
+  expect(css).toContain('.note-editor-overlay .note-editor{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;display:block}')
+  expect(css).toContain('.note-editor>header,.note-meta,.note-mobile-tabs,.note-attachments{position:static;flex:none}')
+  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:sticky;top:0;z-index:6')
   expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch}')
+})
+
+test('notes mobile layout regression › keyboard editing pins only the Markdown toolbar', () => {
+  const css = readFileSync('src/App.css','utf8')
+  const mobilePatch = css.slice(css.indexOf('/* v2.6.3'))
+  expect(mobilePatch).toContain('.note-editor>header,.note-meta,.note-mobile-tabs,.note-attachments{position:static;flex:none}')
+  expect(mobilePatch).toContain('.w-md-editor-toolbar{position:sticky;top:0')
+  expect(mobilePatch).not.toContain('.note-attachments{position:sticky')
+  expect(mobilePatch).not.toContain('.note-mobile-tabs{position:sticky')
+  expect(mobilePatch).not.toContain('.note-meta{position:sticky')
 })
 
 test('notes mobile regression › visual viewport listeners and page scroll lock are cleaned up', () => {
