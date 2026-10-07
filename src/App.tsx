@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.7.4'
+const APP_VERSION = '2.7.6'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3428,7 +3428,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} />}
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">

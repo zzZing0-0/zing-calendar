@@ -5050,3 +5050,28 @@ button {
 .note-row[draggable="true"]:active{cursor:grabbing}
 .note-row.is-drag-over{outline:2px solid rgba(63,128,106,.22);outline-offset:2px}
 @media(max-width:700px){.note-row-meta{gap:4px}.note-row-meta .note-row-tag{font-size:11px;padding:3px 6px}.note-active-dot{width:12px;height:12px;min-width:12px}}
+
+/* Notes metadata + editor tag scrolling v2.7.5 */
+.note-active-dot{
+  box-shadow:0 0 0 5px rgba(63,128,106,.14),0 0 10px 3px rgba(63,128,106,.34),0 0 20px 5px rgba(63,128,106,.16);
+}
+.note-row-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap}
+.note-row-meta-tags{display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden}
+.note-row-meta>small{margin-left:auto;white-space:nowrap;flex:0 0 auto}
+.note-tag-editor{min-width:0}
+.note-tag-editor-scroll{
+  display:flex;
+  flex-wrap:nowrap !important;
+  gap:8px;
+  min-width:0;
+  overflow-x:auto;
+  overflow-y:hidden;
+  overscroll-behavior-x:contain;
+  scrollbar-width:thin;
+  -webkit-overflow-scrolling:touch;
+}
+.note-tag-editor-scroll>button{flex:0 0 auto}
+@media(max-width:700px){
+  .note-row-meta{gap:8px}
+  .note-row-meta-tags{gap:4px}
+}

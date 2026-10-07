@@ -382,3 +382,36 @@ test('notes card regression › active cards use a dot, show at most three tags 
   expect(page).not.toContain('>↓</button>')
   expect(page).not.toContain("n.active?'● 已激活':'○ 激活'")
 })
+
+
+test('notes card regression › metadata separates tags left from notebook/date right and uses global date formatting', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(page).toContain('className="note-row-meta-tags"')
+  expect(page).toContain("formatUiDate(new Date(n.updatedAt))")
+  expect(page).not.toContain("new Date(n.updatedAt).toLocaleDateString()")
+})
+
+test('notes editor regression › desktop tag selector scrolls horizontally while editor active control stays textual', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  expect(page).toContain('className="note-tag-editor-scroll" onWheel={scrollTagFilter}')
+  expect(css).toContain('.note-tag-editor-scroll')
+  expect(css).toContain('overflow-x:auto')
+  expect(page).toContain("editing.active?'● 已激活':'○ 激活'")
+})
+
+test('notes editor regression › editor timestamp uses the shared UI date formatter', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(page).toContain("formatUiDate(new Date(editing.updatedAt))")
+  expect(page).not.toContain("new Date(editing.updatedAt).toLocaleString()")
+})
+
+
+test('notes integration regression › shared UI date formatter is declared and destructured by NotesPage', () => {
+  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(app).toContain('formatUiDate={formatUiDate}')
+  expect(page).toContain('formatUiDate:(date:Date)=>string')
+  expect(page).toContain('onPreviewImage,formatUiDate}:Props)')
+  expect(page).toContain('formatUiDate(new Date(n.updatedAt))')
+})
