@@ -38,3 +38,11 @@ test('notes markdown polish › toolbar title wrapper accepts UIW nullable butto
   expect(adapter).toContain('buttonProps?: ButtonHTMLAttributes<HTMLButtonElement> | null')
   expect(adapter).toContain('...(command.buttonProps ?? {})')
 })
+
+
+test('notes mobile regression › long-note editor keeps toolbar fixed and scrolls content below it', () => {
+  const css = readFileSync('src/App.css','utf8')
+  expect(css).toContain('.note-split.mobile-edit .note-edit-pane{overflow:hidden}')
+  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:sticky;top:0;z-index:3')
+  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto}')
+})

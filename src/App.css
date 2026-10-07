@@ -4954,3 +4954,13 @@ button {
 .zing-markdown .zing-table-scroll table{width:max-content;min-width:100%;margin:0}
 .zing-md-editor .w-md-editor-toolbar button[title]{position:relative}
 @media(max-width:700px){.zing-code-block-bar{position:sticky;left:0}.zing-markdown .zing-table-scroll table{min-width:560px}}
+
+/* v2.5.23 — keep the mobile Markdown toolbar available while editing long notes */
+@media(max-width:700px){
+  .note-split.mobile-edit .note-edit-pane{overflow:hidden}
+  .note-split.mobile-edit .zing-md-editor,
+  .note-split.mobile-edit .zing-md-editor .w-md-editor{height:100%!important;min-height:0}
+  .note-split.mobile-edit .zing-md-editor .w-md-editor{display:flex;flex-direction:column;overflow:hidden}
+  .note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:sticky;top:0;z-index:3;flex:0 0 auto;overflow-x:auto;overflow-y:hidden;white-space:nowrap;-webkit-overflow-scrolling:touch;background:var(--color-canvas-default,#fff)}
+  .note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto}
+}
