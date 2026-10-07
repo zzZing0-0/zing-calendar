@@ -434,3 +434,25 @@ test('notes active ordering regression › Active home source remains active-onl
   expect(page).toContain('const baseShown=selectedNotebook?notesInNotebook(notes,selectedNotebook):active')
   expect(page).toContain('const active=useMemo(()=>activeNotes(notes),[notes])')
 })
+
+
+test('notes mobile polish regression › drag handle sits top-right and long titles ellipsize without overlap', () => {
+  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  expect(css).toContain('.note-row-title{min-width:0;padding-right:38px}')
+  expect(css).toContain('text-overflow:ellipsis')
+  expect(css).toContain('white-space:nowrap')
+  expect(css).toContain('position:absolute')
+  expect(css).toContain('top:9px')
+  expect(css).toContain('right:9px')
+})
+
+test('notes presentation regression › redundant Active subtitle is removed and navigation controls share neutral styling', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  expect(page).not.toContain('已激活笔记 · 当前工作集')
+  expect(page).toContain('className="notes-secondary-action" onClick={()=>setNotebookOpen(true)}')
+  expect(page).toContain('className="notes-back notes-secondary-action"')
+  expect(page).toContain('className="notebook-add notes-secondary-action"')
+  expect(css).toContain('.notes-secondary-action')
+  expect(css).toContain('.notebook-row{border-bottom:')
+})

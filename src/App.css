@@ -5083,3 +5083,51 @@ button {
   .note-drag-handle{display:flex}
   .note-drag-handle:active{cursor:grabbing;color:#617069}
 }
+
+/* Notes interaction polish v2.7.9 */
+.notes-secondary-action{
+  border:1px solid rgba(86,103,95,.20)!important;
+  background:#f4f7f5!important;
+  color:#435149!important;
+  border-radius:12px!important;
+  box-shadow:none!important;
+  font-weight:600;
+}
+.notes-secondary-action:active{background:#e9efeb!important}
+.notes-back{margin-top:16px;color:#435149!important}
+.notebook-drawer{
+  border:1px solid rgba(86,103,95,.12);
+  box-shadow:0 18px 60px rgba(39,55,47,.16);
+}
+.notebook-drawer header{padding-bottom:10px;border-bottom:1px solid rgba(86,103,95,.10)}
+.notebook-drawer header h3{margin:0;color:#26312c}
+.notebook-drawer header button{color:#718078;border-radius:10px!important}
+.notebook-row{border-bottom:1px solid rgba(86,103,95,.08)}
+.notebook-row:last-of-type{border-bottom:0}
+.notebook-row>button:first-child{color:#2d3832;border-radius:10px}
+.notebook-row>button:first-child:active{background:#f3f6f4}
+.notebook-row>button:first-child span{color:#98a29d;font-variant-numeric:tabular-nums}
+.notebook-add{margin-top:14px}
+
+@media(max-width:700px){
+  .note-row{position:relative}
+  .note-row-title{min-width:0;padding-right:38px}
+  .note-row-title strong{
+    display:block;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .note-drag-handle{
+    position:absolute;
+    top:9px;
+    right:9px;
+    width:40px;
+    height:40px;
+    padding:0;
+    align-self:auto;
+    border-radius:10px;
+    z-index:2;
+  }
+}
