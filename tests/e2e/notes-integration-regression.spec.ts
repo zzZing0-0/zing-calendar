@@ -376,7 +376,7 @@ test('notes card regression › active cards use a dot, show at most three tags 
   expect(page).toContain('visibleTags.slice(0,3)')
   expect(page).toContain('visibleTags.length>3')
   expect(page).toContain('className="note-row-meta"')
-  expect(page).toContain('draggable={!selectedNotebook&&!selectedTagId}')
+  expect(page).toContain('draggable={canReorderActive}')
   expect(page).toContain('dropActiveNote(n.id)')
   expect(page).not.toContain('>↑</button>')
   expect(page).not.toContain('>↓</button>')
@@ -414,4 +414,23 @@ test('notes integration regression › shared UI date formatter is declared and 
   expect(page).toContain('formatUiDate:(date:Date)=>string')
   expect(page).toContain('onPreviewImage,formatUiDate}:Props)')
   expect(page).toContain('formatUiDate(new Date(n.updatedAt))')
+})
+
+
+test('notes active ordering regression › only unfiltered Active page exposes sorting and mobile gets a touch handle', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  expect(page).toContain('canReorderActive=!selectedNotebook&&!selectedTagId')
+  expect(page).toContain('className="note-drag-handle"')
+  expect(page).toContain('onPointerDown={e=>startTouchActiveDrag(e,n.id)}')
+  expect(page).toContain('onPointerMove={moveTouchActiveDrag}')
+  expect(page).toContain('onPointerUp={finishTouchActiveDrag}')
+  expect(page).toContain('data-note-id={n.id}')
+  expect(css).toContain('touch-action:none')
+})
+
+test('notes active ordering regression › Active home source remains active-only even before tag filtering', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(page).toContain('const baseShown=selectedNotebook?notesInNotebook(notes,selectedNotebook):active')
+  expect(page).toContain('const active=useMemo(()=>activeNotes(notes),[notes])')
 })

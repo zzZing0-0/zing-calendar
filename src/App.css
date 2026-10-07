@@ -5075,3 +5075,11 @@ button {
   .note-row-meta{gap:8px}
   .note-row-meta-tags{gap:4px}
 }
+
+/* Active Notes touch sorting v2.7.7 */
+.note-drag-handle{display:none;border:0;background:transparent;color:#9aa49f;padding:8px 4px 8px 10px;align-self:stretch;align-items:center;justify-content:center;font-size:22px;line-height:1;cursor:grab;touch-action:none}
+@media(max-width:700px){
+  .note-row[draggable="true"]{cursor:default}
+  .note-drag-handle{display:flex}
+  .note-drag-handle:active{cursor:grabbing;color:#617069}
+}

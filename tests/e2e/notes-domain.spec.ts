@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { activeNotes, DEFAULT_NOTEBOOK_ID, ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, removeNotebook, reorderActiveNotes } from '../../src/domain/notes'
+import { activeNotes, DEFAULT_NOTEBOOK_ID, ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, removeNotebook, reorderActiveNotes, notesInNotebook } from '../../src/domain/notes'
 import { buildAttachmentLifecycle } from '../../src/domain/attachments'
 
 test('notes regression › default notebook is stable and missing notebook ownership heals to default',()=>{
@@ -66,4 +66,15 @@ test('notes image library regression › library linking respects image limit an
  expect(linkImageAttachmentToNote([note],'note-1',extra,'2','new')[0]).toEqual(note)
  const audio:any={...extra,type:'audio',mimeType:'audio/webm'}
  expect(linkImageAttachmentToNote([{...note,attachments:[]}],'note-1',audio,'2','new')[0].attachments).toEqual([])
+})
+
+
+test('notes ordering regression › notebook keeps active notes first by activeOrder then ordinary notes by newest update',()=>{
+ const rows:any[]=[
+  {id:'ordinary-new',notebookId:'book',active:false,updatedAt:'2026-10-07T12:00:00.000Z',createdAt:'2026-10-01T00:00:00.000Z'},
+  {id:'active-2',notebookId:'book',active:true,activeOrder:2,updatedAt:'2026-10-01T00:00:00.000Z',createdAt:'2026-09-01T00:00:00.000Z'},
+  {id:'ordinary-old',notebookId:'book',active:false,updatedAt:'2026-10-05T12:00:00.000Z',createdAt:'2026-10-01T00:00:00.000Z'},
+  {id:'active-0',notebookId:'book',active:true,activeOrder:0,updatedAt:'2026-09-01T00:00:00.000Z',createdAt:'2026-08-01T00:00:00.000Z'},
+ ]
+ expect(notesInNotebook(rows,'book').map(note=>note.id)).toEqual(['active-0','active-2','ordinary-new','ordinary-old'])
 })

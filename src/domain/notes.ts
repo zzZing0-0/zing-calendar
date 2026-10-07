@@ -28,7 +28,11 @@ export function activeNotes(rows: Note[]) {
 }
 
 export function notesInNotebook(rows: Note[], notebookId: string) {
-  return rows.filter(row => row.notebookId===notebookId && !row.trashedAt).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))
+  return rows.filter(row => row.notebookId===notebookId && !row.trashedAt).sort((a,b)=>{
+    if (a.active !== b.active) return a.active ? -1 : 1
+    if (a.active) return (a.activeOrder??Number.MAX_SAFE_INTEGER)-(b.activeOrder??Number.MAX_SAFE_INTEGER)||a.createdAt.localeCompare(b.createdAt)
+    return b.updatedAt.localeCompare(a.updatedAt)
+  })
 }
 
 export function nextActiveOrder(rows: Note[]) { return Math.max(-1, ...rows.filter(row=>row.active&&!row.trashedAt).map(row=>row.activeOrder??-1)) + 1 }
