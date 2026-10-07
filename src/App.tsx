@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.6.18'
+const APP_VERSION = '2.7.1'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -39,7 +39,7 @@ import {
 import { attachmentExtension, csvCell, makeZip, parseBackupEntries, readZingZip, safeBackupFilename } from './domain/backup'
 import type { ZipEntry } from './domain/backup'
 import {
-  cleanupJournalTagIdsAfterDelete, cleanupTaskTagIdsAfterDelete, focusSelectableTags, managedTagRows,
+  cleanupJournalTagIdsAfterDelete, cleanupNoteTagIdsAfterDelete, cleanupTaskTagIdsAfterDelete, focusSelectableTags, managedTagRows,
   normalizedTagName, singleOrdinaryTagIds, sortTagsByColor, tagDateFromKey, tagNameTaken, tagScopeLabel,
   tagsFor, toggleJournalTagIds, toggleTaskTagIds,
 } from './domain/tags'
@@ -2218,8 +2218,9 @@ function App() {
     const taskCount = tasks.filter(task => (task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => (exception.tagIds ?? []).includes(id))).length
     const focusCount = focusSessions.filter(session => (session.tagIds ?? []).includes(id)).length
     const journalCount = journalEntries.filter(entry => (entry.tagIds ?? []).includes(id)).length
-    const linked = taskCount + focusCount + journalCount
-    if (linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？\n\n关联任务 ${taskCount} 条 · 专注 ${focusCount} 条 · 记录 ${journalCount} 条\n关联内容会保留。`)) return
+    const noteCount = notes.filter(note => !note.trashedAt && (note.tagIds ?? []).includes(id)).length
+    const linked = taskCount + focusCount + journalCount + noteCount
+    if (linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？\n\n关联任务 ${taskCount} 条 · 专注 ${focusCount} 条 · 记录 ${journalCount} 条 · 笔记 ${noteCount} 条\n关联内容会保留。`)) return
     if (!linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？`)) return
     const now = new Date().toISOString()
     setTags(current => current.filter(item => item.id !== id))
@@ -2231,6 +2232,7 @@ function App() {
     })))
     setFocusSessions(current => current.map(session => (session.tagIds ?? []).includes(id) ? {...session,tagIds:cleanupTaskTagIdsAfterDelete(session.tagIds,id),updatedAt:now} : session))
     setJournalEntries(current => current.map(entry => (entry.tagIds ?? []).includes(id) ? {...entry,tagIds:cleanupJournalTagIdsAfterDelete(entry.tagIds,id),updatedAt:now} : entry))
+    setNotes(current => current.map(note => (note.tagIds ?? []).includes(id) ? {...note,tagIds:cleanupNoteTagIdsAfterDelete(note.tagIds,id),updatedAt:now} : note))
     setSelectedTagManageId(null)
     setAutoSyncToast(`✓ #${tag?.name ?? '标签'} 已删除`)
   }
@@ -3418,7 +3420,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} />}
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">
@@ -4398,7 +4400,7 @@ function App() {
             <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => {setSelectedTagManageId(null);setTagEditDraft(null);setTagManagerOpen(false)}}>×</button></div>
             <div className="editor-body">
               <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
-                {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
+                {([['both','共享'],['task','任务'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
               </div>
 
               <div className="compact-tag-create">
@@ -4433,7 +4435,7 @@ function App() {
               <label className="field"><span>名称</span><input value={tagEditDraft?.name ?? tag.name} onChange={e=>setTagEditDraft(current=>current?{...current,name:e.target.value}:current)} autoFocus /></label>
               <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
               <div className="field"><span>分类</span><div className="tag-detail-scope">
-                {([['both','共享'],['task','任务'],['journal','记录']] as const).map(([scope,label])=><button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>)}
+                {([['both','共享'],['task','任务'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>)}
               </div></div>
             </div>
             <div className="editor-actions compact-tag-edit-actions">

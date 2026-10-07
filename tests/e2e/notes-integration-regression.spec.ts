@@ -337,3 +337,23 @@ test('notes image library integration › Notes can reuse an existing library im
   expect(notesDomain).toContain('storageKey === source.storageKey')
   expect(notesDomain).toContain("attachments.filter(item => item.type === 'image').length >= 9")
 })
+
+
+test('notes tags integration regression › Notes receives shared tag state and exposes color-sorted filter plus multi-select editor', () => {
+  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const notesPage = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(app).toContain('<NotesPage notes={notes} notebooks={notebooks} tags={tags}')
+  expect(notesPage).toContain('noteSelectableTags(tags)')
+  expect(notesPage).toContain('toggleNoteTagIds(editing.tagIds,tagId)')
+  expect(notesPage).toContain('className="notes-tag-filter"')
+  expect(notesPage).toContain("current===tag.id?null:tag.id")
+})
+
+
+test('notes tags integration regression › deleting a tag removes Note references without inventing a default Note tag', () => {
+  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const tagsDomain = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/tags.ts'), 'utf8')
+  expect(app).toContain('const noteCount = notes.filter')
+  expect(app).toContain('tagIds:cleanupNoteTagIdsAfterDelete(note.tagIds,id)')
+  expect(tagsDomain).toContain("return (ids ?? []).filter(tagId => tagId !== deletedId)")
+})

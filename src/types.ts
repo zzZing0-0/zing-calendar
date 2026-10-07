@@ -155,7 +155,7 @@ export type AnniversaryDraft = {
   notes: string
 }
 
-export type TagScope = 'task' | 'journal' | 'both'
+export type TagScope = 'task' | 'journal' | 'note' | 'both'
 export type Tag = { id: string; name: string; color: string; scope: TagScope; sortOrder?: number; archived?: boolean; archivedAt?: string; system?: boolean; systemKind?: 'default' | 'import-source'; sourceKey?: string; updatedAt: string }
 
 export type JournalDraft = {

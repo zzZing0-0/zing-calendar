@@ -23,7 +23,7 @@ export function toggleJournalTagIds(ids: string[], id: string) {
 }
 
 export function tagScopeLabel(scope: TagScope) {
-  return scope === 'both' ? '共享标签' : scope === 'task' ? '任务标签' : '记录标签'
+  return scope === 'both' ? '共享标签' : scope === 'task' ? '任务标签' : scope === 'journal' ? '记录标签' : '笔记标签'
 }
 
 export function normalizedTagName(name: string) {
@@ -51,11 +51,27 @@ export function sortTagsByColor(rows: Tag[], allTags: Tag[] = rows) {
   })
 }
 
-export function tagsFor(tags: Tag[], kind: 'task' | 'journal') {
+export function tagsFor(tags: Tag[], kind: 'task' | 'journal' | 'note') {
   return sortTagsByColor(
     tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.scope === 'both' || tag.scope === kind)),
     tags,
   )
+}
+
+export function noteSelectableTags(tags: Tag[]) {
+  return sortTagsByColor(
+    tags.filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag) && !tag.archived && (tag.scope === 'both' || tag.scope === 'note')),
+    tags,
+  )
+}
+
+export function toggleNoteTagIds(ids: string[] | undefined, id: string) {
+  const current = (ids ?? []).filter(tagId => tagId !== DEFAULT_TAG_ID && !isImportSourceTagId(tagId))
+  return current.includes(id) ? current.filter(tagId => tagId !== id) : [...current, id]
+}
+
+export function cleanupNoteTagIdsAfterDelete(ids: string[] | undefined, deletedId: string) {
+  return (ids ?? []).filter(tagId => tagId !== deletedId)
 }
 
 export function focusSelectableTags(tags: Tag[]) {

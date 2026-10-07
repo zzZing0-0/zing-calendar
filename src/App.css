@@ -5020,3 +5020,18 @@ button {
   .zing-mobile-md-toolbar-shell{position:-webkit-sticky;position:sticky;top:0;z-index:8;width:100%;background:#fff;border-bottom:1px solid #e5e9e6}
   .zing-mobile-md-toolbar{position:static;display:flex;align-items:center;gap:2px;width:100%;min-height:40px;padding:4px 6px;border-bottom:0;background:#fff;overflow-x:auto;overflow-y:hidden;white-space:nowrap;-webkit-overflow-scrolling:touch}
 }
+
+/* Notes tags v2.7 */
+.notes-tag-filter{display:flex;gap:7px;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none;padding:2px 0 12px;white-space:nowrap}
+.notes-tag-filter::-webkit-scrollbar{display:none}
+.notes-tag-filter button,.note-tag-editor button{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;border:1px solid #dfe5e1;background:#fff;color:#66716b;border-radius:999px;padding:6px 10px;font:inherit;font-size:12px}
+.notes-tag-filter button i,.note-tag-editor button i,.note-row-tags i{width:8px;height:8px;border-radius:50%;background:var(--note-tag-color,#aab4ae);display:inline-block;flex:0 0 auto}
+.notes-tag-filter button.active,.note-tag-editor button.active{border-color:var(--note-tag-color,#72887b);background:color-mix(in srgb,var(--note-tag-color,#72887b) 11%,white);color:#35423b}
+.notes-tag-filter button:first-child.active{border-color:#8d9892;background:#f1f4f2}
+.note-row-tags{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0}
+.note-row-tags span{display:inline-flex;align-items:center;gap:5px;border-radius:999px;background:color-mix(in srgb,var(--note-tag-color) 10%,white);padding:3px 7px;font-size:11px;color:#5f6b65}
+.note-tag-editor{display:flex;align-items:flex-start;gap:12px;padding:8px 18px;border-bottom:1px solid #eee}
+.note-tag-editor>span{flex:0 0 auto;padding-top:6px;color:#888;font-size:12px}
+.note-tag-editor>div{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
+.note-tag-editor>div::-webkit-scrollbar{display:none}
+@media(max-width:700px){.notes-tag-filter{margin-right:-12px;padding-right:12px}.note-tag-editor{padding:7px 12px}.note-tag-editor>div{padding-right:8px}}

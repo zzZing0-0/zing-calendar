@@ -63,3 +63,9 @@ test('tag edits are drafts: close discards them and save commits them', async ({
   await expect(editor).toBeHidden()
   await expect(manager.getByRole('button', { name: `${name}-已保存`, exact: true })).toBeVisible()
 })
+
+
+test('tag manager regression › note is a first-class tag scope beside shared task and journal', () => {
+  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  expect(app).toContain("['note','笔记']")
+})

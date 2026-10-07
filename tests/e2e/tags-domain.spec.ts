@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import type { Tag } from '../../src/types'
 import {
-  cleanupJournalTagIdsAfterDelete,
+  cleanupJournalTagIdsAfterDelete, cleanupNoteTagIdsAfterDelete,
   cleanupTaskTagIdsAfterDelete,
-  focusSelectableTags,
+  focusSelectableTags, noteSelectableTags, toggleNoteTagIds,
   managedTagRows,
   normalizedTagName,
   singleOrdinaryTagIds,
@@ -57,6 +57,7 @@ test.describe('tags domain regression', () => {
     expect(tagScopeLabel('both')).toBe('共享标签')
     expect(tagScopeLabel('task')).toBe('任务标签')
     expect(tagScopeLabel('journal')).toBe('记录标签')
+    expect(tagScopeLabel('note')).toBe('笔记标签')
   })
 
   test('visible and focus-selectable tags exclude archived and import-source tags while respecting scope', () => {
@@ -71,6 +72,21 @@ test.describe('tags domain regression', () => {
     expect(tagsFor(tags, 'task').map(tag => tag.id)).toEqual([DEFAULT_TAG_ID, 'task', 'both'])
     expect(tagsFor(tags, 'journal').map(tag => tag.id)).toEqual([DEFAULT_TAG_ID, 'journal', 'both'])
     expect(focusSelectableTags(tags).map(tag => tag.id)).toEqual([DEFAULT_TAG_ID, 'task', 'both'])
+  })
+
+  test('note tags are multi-select and accept only shared plus note scope in palette order', () => {
+    const tags = [
+      makeTag({ id: DEFAULT_TAG_ID, name: '默认', system: true, systemKind: 'default' }),
+      makeTag({ id: 'task', name: '任务', scope: 'task', color: TAG_COLORS[0] }),
+      makeTag({ id: 'note-b', name: '笔记B', scope: 'note', color: TAG_COLORS[2] }),
+      makeTag({ id: 'shared', name: '共享', scope: 'both', color: TAG_COLORS[1] }),
+      makeTag({ id: 'note-a', name: '笔记A', scope: 'note', color: TAG_COLORS[1], sortOrder: 9 }),
+    ]
+    expect(noteSelectableTags(tags).map(tag => tag.id)).toEqual(['shared', 'note-a', 'note-b'])
+    expect(toggleNoteTagIds([], 'shared')).toEqual(['shared'])
+    expect(toggleNoteTagIds(['shared'], 'note-b')).toEqual(['shared', 'note-b'])
+    expect(toggleNoteTagIds(['shared', 'note-b'], 'shared')).toEqual(['note-b'])
+    expect(cleanupNoteTagIdsAfterDelete(['shared', 'note-b'], 'shared')).toEqual(['note-b'])
   })
 
   test('tag ordering keeps default first, palette order stable, and managed rows exclude system/import tags', () => {
