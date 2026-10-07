@@ -1,9 +1,9 @@
-import type { Attachment, JournalEntry, Task } from '../types'
+import type { Attachment, JournalEntry, Note, Task } from '../types'
 
 export type AttachmentLifecycleState = 'active' | 'trash'
 export type AttachmentLifecycleRow = { attachment: Attachment; state: AttachmentLifecycleState; activeRefs: number; trashRefs: number }
 
-export function buildAttachmentLifecycle(tasks: Task[], journals: JournalEntry[]): AttachmentLifecycleRow[] {
+export function buildAttachmentLifecycle(tasks: Task[], journals: JournalEntry[], notes: Note[] = []): AttachmentLifecycleRow[] {
   const rows = new Map<string, AttachmentLifecycleRow>()
   const add = (items: Attachment[] | undefined, state: AttachmentLifecycleState) => {
     for (const attachment of items ?? []) {
@@ -24,9 +24,10 @@ export function buildAttachmentLifecycle(tasks: Task[], journals: JournalEntry[]
     }
   }
   for (const journal of journals) add(journal.attachments, journal.trashedAt ? 'trash' : 'active')
+  for (const note of notes) add(note.attachments, note.trashedAt ? 'trash' : 'active')
   return [...rows.values()]
 }
 
-export function referencedAttachmentKeys(tasks: Task[], journals: JournalEntry[]): string[] {
-  return buildAttachmentLifecycle(tasks, journals).map(row => row.attachment.storageKey)
+export function referencedAttachmentKeys(tasks: Task[], journals: JournalEntry[], notes: Note[] = []): string[] {
+  return buildAttachmentLifecycle(tasks, journals, notes).map(row => row.attachment.storageKey)
 }

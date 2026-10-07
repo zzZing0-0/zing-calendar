@@ -1,7 +1,9 @@
 const DB_NAME = 'zing-calendar'
-const DB_VERSION = 10
+const DB_VERSION = 11
 const TASK_STORE = 'tasks'
 const JOURNAL_STORE = 'journalEntries'
+const NOTE_STORE = 'notes'
+const NOTEBOOK_STORE = 'notebooks'
 const MOOD_STORE = 'dailyMoods'
 const ENERGY_STORE = 'dailyEnergy'
 const ENVIRONMENT_STORE = 'dailyEnvironment'
@@ -23,6 +25,8 @@ function openDatabase(): Promise<IDBDatabase> {
       const db = request.result
       if (!db.objectStoreNames.contains(TASK_STORE)) db.createObjectStore(TASK_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(JOURNAL_STORE)) db.createObjectStore(JOURNAL_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(NOTE_STORE)) db.createObjectStore(NOTE_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(NOTEBOOK_STORE)) db.createObjectStore(NOTEBOOK_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(MOOD_STORE)) db.createObjectStore(MOOD_STORE, { keyPath: 'date' })
       if (!db.objectStoreNames.contains(ENERGY_STORE)) db.createObjectStore(ENERGY_STORE, { keyPath: 'date' })
       if (!db.objectStoreNames.contains(ENVIRONMENT_STORE)) db.createObjectStore(ENVIRONMENT_STORE, { keyPath: 'date' })
@@ -92,6 +96,11 @@ export const saveDailyEnvironment = <T,>(rows: T[]) => replaceAll(ENVIRONMENT_ST
 export const loadMenstrualPeriods = <T,>() => loadAll<T>(PERIOD_STORE)
 export const saveMenstrualPeriods = <T,>(rows: T[]) => replaceAll(PERIOD_STORE, rows)
 
+export const loadNotes = <T,>() => loadAll<T>(NOTE_STORE)
+export const saveNotes = <T,>(rows: T[]) => replaceAll(NOTE_STORE, rows)
+export const loadNotebooks = <T,>() => loadAll<T>(NOTEBOOK_STORE)
+export const saveNotebooks = <T,>(rows: T[]) => replaceAll(NOTEBOOK_STORE, rows)
+
 export const loadTags = <T,>() => loadAll<T>(TAG_STORE)
 export const saveTags = <T,>(rows: T[]) => replaceAll(TAG_STORE, rows)
 export const loadFocusSessions = <T,>() => loadAll<T>(FOCUS_STORE)
@@ -124,7 +133,7 @@ export async function getStorageStats(): Promise<ZingStorageStats> {
     let images=0, audio=0
     blobs.forEach(blob => { if (blob.type.startsWith('image/')) images += blob.size; else if (blob.type.startsWith('audio/')) audio += blob.size })
     let data=0
-    for (const storeName of [TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,SETTINGS_STORE]) {
+    for (const storeName of [TASK_STORE,JOURNAL_STORE,NOTE_STORE,NOTEBOOK_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,SETTINGS_STORE]) {
       const rows = await loadAll<any>(storeName)
       data += new Blob([JSON.stringify(rows)]).size
     }
@@ -163,7 +172,7 @@ export async function cleanupOrphanAttachmentBlobs(referencedKeys: string[]): Pr
 // working exactly as before. Later sync releases can use this metadata without
 // changing the user's task/journal data model or exposing credentials client-side.
 
-export type SyncEntityType = 'task' | 'journal' | 'mood' | 'energy' | 'environment' | 'period' | 'tag' | 'anniversary' | 'focus' | 'settings'
+export type SyncEntityType = 'task' | 'journal' | 'note' | 'notebook' | 'mood' | 'energy' | 'environment' | 'period' | 'tag' | 'anniversary' | 'focus' | 'settings'
 export type SyncOperation = 'upsert' | 'delete'
 
 export type SyncChange = {
@@ -355,6 +364,8 @@ export type SyncBundle = {
 function entityStoreName(entityType: SyncEntityType): string {
   if (entityType === 'task') return TASK_STORE
   if (entityType === 'journal') return JOURNAL_STORE
+  if (entityType === 'note') return NOTE_STORE
+  if (entityType === 'notebook') return NOTEBOOK_STORE
   if (entityType === 'mood') return MOOD_STORE
   if (entityType === 'energy') return ENERGY_STORE
   if (entityType === 'environment') return ENVIRONMENT_STORE
@@ -377,7 +388,7 @@ function entityUpdatedAt(row: any): string {
 // bookkeeping must have one wire representation; otherwise a device that hydrates
 // defaults can create a cloud diff even when the user changed nothing.
 function canonicalSyncPayload(entityType: SyncEntityType, row: any): any {
-  if (entityType === 'task' || entityType === 'journal') {
+  if (entityType === 'task' || entityType === 'journal' || entityType === 'note') {
     return { ...row, attachments: Array.isArray(row.attachments) ? row.attachments : [], attachmentLinkTombstones: row.attachmentLinkTombstones ?? {} }
   }
   return row
@@ -387,7 +398,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
   const tombstones = await loadSyncTombstones()
   if (!tombstones.length) return 0
   const liveTimes = new Map<string, number>()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'settings']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'note', 'notebook', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'settings']
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
     rows.forEach(row => liveTimes.set(`${entityType}:${entityIdOf(entityType, row)}`, Date.parse(entityUpdatedAt(row)) || 0))
@@ -402,7 +413,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
 export async function createSyncBundle(): Promise<SyncBundle> {
   const deviceId = getOrCreateDeviceId()
   await pruneStaleSyncTombstones()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'settings']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'note', 'notebook', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'settings']
   const records: SyncEntityRecord[] = []
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
@@ -465,7 +476,7 @@ function mergeConcurrentSettings(localRecord: SyncEntityRecord, remoteRecord: Sy
 }
 
 function mergeConcurrentAttachments(localRecord: SyncEntityRecord, remoteRecord: SyncEntityRecord): SyncEntityRecord {
-  if (!['task','journal'].includes(localRecord.entityType) || localRecord.entityType !== remoteRecord.entityType) {
+  if (!['task','journal','note'].includes(localRecord.entityType) || localRecord.entityType !== remoteRecord.entityType) {
     return (Date.parse(remoteRecord.updatedAt)||0) > (Date.parse(localRecord.updatedAt)||0) ? remoteRecord : localRecord
   }
   const localTime = Date.parse(localRecord.updatedAt) || 0
@@ -563,7 +574,7 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
 
 export async function applySyncMerge(plan: SyncMergePlan): Promise<void> {
   const db = await openDatabase()
-  const stores = [TASK_STORE, JOURNAL_STORE, MOOD_STORE, ENERGY_STORE, ENVIRONMENT_STORE, PERIOD_STORE, TAG_STORE, ANNIVERSARY_STORE, FOCUS_STORE, SETTINGS_STORE, SYNC_TOMBSTONE_STORE]
+  const stores = [TASK_STORE, JOURNAL_STORE, NOTE_STORE, NOTEBOOK_STORE, MOOD_STORE, ENERGY_STORE, ENVIRONMENT_STORE, PERIOD_STORE, TAG_STORE, ANNIVERSARY_STORE, FOCUS_STORE, SETTINGS_STORE, SYNC_TOMBSTONE_STORE]
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(stores, 'readwrite')
@@ -1002,7 +1013,7 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
   if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
   const remote = await readGitHubBundleFile(config)
   const local = await createSyncBundle()
-  const types: SyncEntityType[] = ['task','journal','mood','energy','environment','period','tag','anniversary','focus','settings']
+  const types: SyncEntityType[] = ['task','journal','note','notebook','mood','energy','environment','period','tag','anniversary','focus','settings']
 
   if (!remote.bundle) {
     const normalRows = types.map(entityType => {
@@ -1223,7 +1234,7 @@ export async function replaceZingData(payload: {
   attachments:{key:string;blob:Blob}[]
 }): Promise<void> {
   const db=await openDatabase()
-  const stores=[TASK_STORE,JOURNAL_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,ATTACHMENT_STORE]
+  const stores=[TASK_STORE,JOURNAL_STORE,NOTE_STORE,NOTEBOOK_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,ATTACHMENT_STORE]
   try {
     await new Promise<void>((resolve,reject)=>{
       const tx=db.transaction(stores,'readwrite')

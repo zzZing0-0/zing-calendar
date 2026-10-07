@@ -1,16 +1,16 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, KeyboardEvent } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadNotes, loadNotebooks, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveNotes, saveNotebooks, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.4.5'
+const APP_VERSION = '2.5.20'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
   CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EmotionGroup, EmotionOption, EnergyLevel, EnvironmentOption, FocusSession,
-  JournalDraft, JournalEntry, JournalImpact, JournalMessage, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
+  JournalDraft, JournalEntry, JournalImpact, JournalMessage, Note, Notebook, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
   RecurrenceException, RecurrenceUnit, SyncedUserSettings, Tag, TagScope, Task, TaskDraft,
   TaskPriority, TaskStatus,
 } from './types'
@@ -60,6 +60,8 @@ import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedInco
 import { buildAttachmentLifecycle, referencedAttachmentKeys } from './domain/attachments'
 import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, moveInboxSortKey, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
 import type { InboxSortKey } from './domain/inbox'
+import { ensureDefaultNotebook, normalizeNotes } from './domain/notes'
+import { NotesPage } from './features/notes/NotesPage'
 
 function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
   try {
@@ -291,7 +293,7 @@ function App() {
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [dayDetailOpen, setDayDetailOpen] = useState(false)
-  const [mainView, setMainView] = useState<'calendar' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
+  const [mainView, setMainView] = useState<'calendar' | 'notes' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
   const [weatherOptions, setWeatherOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:weatherOptions', DEFAULT_WEATHER_OPTIONS))
   const [thermalOptions, setThermalOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:thermalOptions', DEFAULT_THERMAL_OPTIONS))
@@ -461,6 +463,11 @@ function App() {
   const [anniversaryEditorOpen, setAnniversaryEditorOpen] = useState(false)
   const [editingAnniversaryId, setEditingAnniversaryId] = useState<string | null>(null)
   const [anniversaryDraft, setAnniversaryDraft] = useState<AnniversaryDraft>(() => emptyAnniversaryDraft(today))
+  const [notes, setNotes] = useState<Note[]>([])
+  const [notebooks, setNotebooks] = useState<Notebook[]>([])
+  const [notesHydrated, setNotesHydrated] = useState(false)
+  const [notebooksHydrated, setNotebooksHydrated] = useState(false)
+  const [requestedNoteId, setRequestedNoteId] = useState<string | null>(null)
   const [journalHydrated, setJournalHydrated] = useState(false)
   const [moodsHydrated, setMoodsHydrated] = useState(false)
   const [journalEditorOpen, setJournalEditorOpen] = useState(false)
@@ -487,8 +494,8 @@ function App() {
   const [journalDraft, setJournalDraft] = useState<JournalDraft>(() => emptyJournalDraft(today))
   const [tags, setTags] = useState<Tag[]>([DEFAULT_TAG])
   const [tagsHydrated, setTagsHydrated] = useState(false)
-  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], mood: [], energy: [], environment: [], period: [], tag: [], anniversary: [], focus: [], settings: [] })
-  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, mood: false, energy: false, environment: false, period: false, tag: false, anniversary: false, focus: false, settings: false })
+  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], note: [], notebook: [], mood: [], energy: [], environment: [], period: [], tag: [], anniversary: [], focus: [], settings: [] })
+  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, note: false, notebook: false, mood: false, energy: false, environment: false, period: false, tag: false, anniversary: false, focus: false, settings: false })
   const settingsSyncReadyRef = useRef(false)
   const suppressNextSettingsSyncRef = useRef(false)
   const settingsWordClockRef = useRef<{added:Record<string,string>;removed:Record<string,string>}>({added:{},removed:{}})
@@ -1002,6 +1009,12 @@ function App() {
 
   useEffect(() => {
     let active = true
+    Promise.all([loadNotebooks<Notebook>(), loadNotes<Note>()]).then(([bookRows,noteRows])=>{
+      if(!active) return
+      const books=ensureDefaultNotebook(bookRows)
+      setNotebooks(books); setNotes(normalizeNotes(noteRows,new Set(books.map(book=>book.id))))
+      setNotebooksHydrated(true); setNotesHydrated(true)
+    }).catch(error=>{console.error('Failed to load notes',error);if(active){setNotebooks(ensureDefaultNotebook([]));setNotebooksHydrated(true);setNotesHydrated(true)}})
     loadJournalEntries<JournalEntry>().then(rows => {
       if (!active) return
       setJournalEntries(rows.map(entry => entry.title ? entry : ({ ...entry, title: entry.content?.slice(0, 60) || '记录', content: '' })))
@@ -1082,6 +1095,19 @@ function App() {
       void recordSyncDiff('anniversary', previous, anniversaries).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record anniversary sync changes', error))
     }
   }, [anniversaries, anniversariesHydrated])
+
+  useEffect(()=>{
+    if(!notebooksHydrated)return
+    saveNotebooks(notebooks).catch(error=>console.error('Failed to save notebooks',error))
+    if(!syncSnapshotReadyRef.current.notebook){syncSnapshotsRef.current.notebook=notebooks;syncSnapshotReadyRef.current.notebook=true}
+    else {const previous=syncSnapshotsRef.current.notebook;syncSnapshotsRef.current.notebook=notebooks;void recordSyncDiff('notebook',previous,notebooks).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}
+  },[notebooks,notebooksHydrated])
+  useEffect(()=>{
+    if(!notesHydrated)return
+    saveNotes(notes).catch(error=>console.error('Failed to save notes',error))
+    if(!syncSnapshotReadyRef.current.note){syncSnapshotsRef.current.note=notes;syncSnapshotReadyRef.current.note=true}
+    else {const previous=syncSnapshotsRef.current.note;syncSnapshotsRef.current.note=notes;void recordSyncDiff('note',previous,notes).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}
+  },[notes,notesHydrated])
 
   useEffect(() => {
     if (!journalHydrated) return
@@ -1191,7 +1217,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
   useEffect(() => {
     if (mainView !== 'settings' || !tasksHydrated || !journalHydrated) return
-    const referencedKeys = referencedAttachmentKeys(tasks, journalEntries)
+    const referencedKeys = referencedAttachmentKeys(tasks, journalEntries, notes)
     cleanupOrphanAttachmentBlobs(referencedKeys)
       .then(() => getStorageStats())
       .then(setStorageStats)
@@ -2259,10 +2285,11 @@ function App() {
     activeTasks,
     activeJournalEntries,
     activeAnniversaries,
+    activeNotes: notes.filter(note=>!note.trashedAt),
     managedTags,
     tagUsage,
     today,
-  }), [normalizedSearch, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, managedTags, tagUsage])
+  }), [normalizedSearch, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, notes, managedTags, tagUsage])
 
   const searchDateLabel = (result: SearchResult) => {
     if (result.kind === 'tag') return ''
@@ -2291,6 +2318,7 @@ function App() {
     if (result.kind === 'tag') return <span className="search-tag-marker" style={{background:result.item.color}} />
     if (result.kind === 'task') return <span className={`search-task-marker priority-${result.item.priority} status-${result.item.status}`}>{result.item.status === 'completed' ? '✓' : result.item.status === 'abandoned' ? '×' : ''}</span>
     if (result.kind === 'journal') return <span className={`search-journal-marker impact-${result.item.impact}`} />
+    if (result.kind === 'note') return <span className="search-anniversary-marker">▤</span>
     return <span className="search-anniversary-marker">{anniversaryIcon(result.item.type)}</span>
   }
 
@@ -2334,7 +2362,14 @@ function App() {
         if(result.kind==='task') openTaskDetail(result.item)
         else setViewingJournalId(result.id)
       },0)
-    } else openAnniversaryEditor(result.item)
+      return
+    }
+    if (result.kind === 'note') {
+      setMainView('notes')
+      setRequestedNoteId(result.id)
+      return
+    }
+    openAnniversaryEditor(result.item)
   }
 
   useEffect(() => {
@@ -2369,7 +2404,7 @@ function App() {
 
   const anniversaryPageRows = useMemo(() => buildAnniversaryPageRows(activeAnniversaries, today), [activeAnniversaries])
 
-  const attachmentLifecycle = useMemo(() => buildAttachmentLifecycle(tasks, journalEntries), [tasks, journalEntries])
+  const attachmentLifecycle = useMemo(() => buildAttachmentLifecycle(tasks, journalEntries, notes), [tasks, journalEntries, notes])
   const allStoredAttachments = useMemo(() => attachmentLifecycle.map(row => row.attachment), [attachmentLifecycle])
   const activeStoredAttachments = useMemo(() => attachmentLifecycle.filter(row => row.state === 'active').map(row => row.attachment), [attachmentLifecycle])
   const trashedStoredAttachments = useMemo(() => attachmentLifecycle.filter(row => row.state === 'trash').map(row => row.attachment), [attachmentLifecycle])
@@ -2384,7 +2419,7 @@ function App() {
     if (orphanCleanupBusy) return
     setOrphanCleanupBusy(true)
     try {
-      const referencedKeys=referencedAttachmentKeys(tasks, journalEntries)
+      const referencedKeys=referencedAttachmentKeys(tasks, journalEntries, notes)
       const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'preview',referencedKeys})})
       const payload:any=await response.json().catch(()=>({}))
       if(!response.ok) throw new Error(String(payload?.error||`HTTP ${response.status}`))
@@ -2410,7 +2445,7 @@ function App() {
     if(!window.confirm(`永久删除这 ${orphanAttachments.length} 个孤儿附件？删除后无法恢复。`))return
     setOrphanCleanupBusy(true)
     try{
-      const referencedKeys=referencedAttachmentKeys(tasks,journalEntries)
+      const referencedKeys=referencedAttachmentKeys(tasks,journalEntries,notes)
       const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'delete',referencedKeys,orphanKeys:orphanAttachments.map(item=>item.key)})})
       const payload:any=await response.json().catch(()=>({}))
       if(!response.ok)throw new Error(String(payload?.error||`HTTP ${response.status}`))
@@ -2668,7 +2703,7 @@ function App() {
       // Clear user data and create sync tombstones in one IndexedDB transaction.
       // This makes “清空所有数据” a real cross-device deletion on the next GitHub sync.
       await clearZingUserDataWithSync(REQUIRED_SYSTEM_TAGS)
-      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], mood:[], energy:[], environment:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
+      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], note:notes, notebook:notebooks, mood:[], energy:[], environment:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
       syncSnapshotsRef.current = cleared
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
@@ -2853,7 +2888,7 @@ function App() {
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
-      syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
+      syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:notes, notebook:notebooks, mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks(restoredTasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
@@ -2915,8 +2950,8 @@ function App() {
           : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
-      const [nextTasks,nextJournals,nextMoods,nextEnergy,nextEnvironment,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings] = await Promise.all([
-        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadDailyEnvironment<DailyEnvironment>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>()
+      const [nextTasks,nextJournals,nextNotes,nextNotebooks,nextMoods,nextEnergy,nextEnvironment,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings] = await Promise.all([
+        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadNotes<Note>(), loadNotebooks<Notebook>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadDailyEnvironment<DailyEnvironment>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>()
       ])
       const normalizedNextTasks = nextTasks.map(normalizeTaskScheduling)
       if (JSON.stringify(normalizedNextTasks) !== JSON.stringify(nextTasks)) await saveTasks(normalizedNextTasks)
@@ -2934,6 +2969,8 @@ function App() {
       syncSnapshotsRef.current = {
         task: normalizedNextTasks,
         journal: nextJournals,
+        note: nextNotes,
+        notebook: nextNotebooks,
         mood: nextMoods,
         energy: nextEnergy,
         environment: nextEnvironment,
@@ -2943,8 +2980,8 @@ function App() {
         focus: nextFocusSessions,
         settings: nextSettings,
       }
-      syncSnapshotReadyRef.current = { task:true, journal:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, settings:true }
-      setTasks(normalizedNextTasks); setJournalEntries(nextJournals); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setDailyEnvironment(nextEnvironment); setMenstrualPeriods(nextPeriods)
+      syncSnapshotReadyRef.current = { task:true, journal:true, note:true, notebook:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, settings:true }
+      setTasks(normalizedNextTasks); setJournalEntries(nextJournals); setNotes(nextNotes); setNotebooks(ensureDefaultNotebook(nextNotebooks)); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setDailyEnvironment(nextEnvironment); setMenstrualPeriods(nextPeriods)
       setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
       setFocusSessions(nextFocusSessions)
@@ -2974,7 +3011,7 @@ function App() {
     }
   }
 
-  const switchMainView = (view: 'calendar' | 'statistics' | 'anniversaries' | 'settings') => {
+  const switchMainView = (view: 'calendar' | 'notes' | 'statistics' | 'anniversaries' | 'settings') => {
     if (view === 'calendar' && isMobileCalendar) {
       // A calendar entry is a fresh navigation to Today. Reset the finite month
       // window before mounting the page so the IntersectionObserver cannot inherit
@@ -3050,12 +3087,12 @@ function App() {
         {mobileSearchVisible && <button className="mobile-search-backdrop" type="button" aria-label="关闭搜索" onClick={()=>{setMobileSearchVisible(false);setSearchOpen(false)}} />}
         <div className={`global-search-wrap${mobileSearchVisible ? ' mobile-open' : ''}`} ref={searchWrapRef}>
           <span className="global-search-icon">⌕</span>
-          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、纪念日；#标签…" aria-label="全局搜索" />
+          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、笔记、纪念日；#标签…" aria-label="全局搜索" />
           {searchQuery && <button type="button" className="search-clear" onClick={() => setSearchQuery('')} aria-label="清空搜索">×</button>}
           {searchOpen && normalizedSearch && (
             <div className="search-panel">
               {tagSearchMode ? <div className="search-tag-mode"># 标签搜索</div> : <div className="search-filters">
-                {([['all','全部'],['task','任务'],['journal','记录'],['anniversary','纪念日']] as const).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
+                {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日']] as const).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
               </div>}
               <div className="search-results">
                 {searchResults.length === 0 ? <p className="search-empty">没有找到结果。</p> : searchResults.map(result => (
@@ -3349,6 +3386,8 @@ function App() {
           </section>
         </section>
       )}
+
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">
@@ -3828,6 +3867,7 @@ function App() {
       {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4.5 8.5h15M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" /></svg>日历</button>
+        <button type="button" className={mainView==='notes'?'active':''} onClick={() => switchMainView('notes')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3V4.5Zm3 0V20M11 9h5M11 13h5" /></svg>笔记</button>
         <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10h12v10H6zM4 10h16M12 10v10M8.5 7.5c-1.8 0-3-1-3-2.3C5.5 4 6.4 3.4 7.4 3.4c1.7 0 3.2 2 4.6 4.1M15.5 7.5c1.8 0 3-1 3-2.3 0-1.2-.9-1.8-1.9-1.8-1.7 0-3.2 2-4.6 4.1" /></svg>纪念日</button>
         <button type="button" className={mainView==='statistics'?'active':''} onClick={() => switchMainView('statistics')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11h3v9M10.5 20V5h3v15M16 20v-7h3v7M3.5 20.5h17" /></svg>统计</button>
         <button type="button" className={mainView==='settings'?'active':''} onClick={() => switchMainView('settings')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /></svg>设置</button>

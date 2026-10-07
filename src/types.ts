@@ -95,6 +95,14 @@ export type MenstrualPeriod = {
   updatedAt: string
 }
 
+
+export type Notebook = { id:string; name:string; order:number; system?:boolean; createdAt:string; updatedAt:string; deletedAt?:string }
+export type Note = {
+  id:string; notebookId:string; title:string; content:string; active:boolean; activeOrder?:number;
+  tagIds?:string[]; attachments?:Attachment[]; attachmentLinkTombstones?:AttachmentLinkTombstones;
+  createdAt:string; updatedAt:string; trashedAt?:string
+}
+
 export type JournalMessage = {
   id: string
   content: string

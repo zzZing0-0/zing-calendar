@@ -117,7 +117,7 @@ test('bottom navigation uses one SVG icon system instead of emoji or character g
   const start=app.indexOf('<nav className="bottom-nav"')
   const end=app.indexOf('</nav>',start)
   const nav=app.slice(start,end)
-  expect((nav.match(/className="bottom-nav-icon"/g)??[]).length).toBe(4)
+  expect((nav.match(/className="bottom-nav-icon"/g)??[]).length).toBe(5)
   expect(nav).not.toContain('🎂')
   expect(nav).not.toContain('<span>▦</span>')
   expect(nav).not.toContain('<span>⌁</span>')

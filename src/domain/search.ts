@@ -1,14 +1,15 @@
-import type { Anniversary, JournalEntry, Tag, Task } from '../types'
+import type { Anniversary, JournalEntry, Note, Tag, Task } from '../types'
 import { anniversaryOccurrence } from './calendar'
 import { toDateKey } from './task'
 
-export type SearchFilter = 'all' | 'task' | 'journal' | 'anniversary'
+export type SearchFilter = 'all' | 'task' | 'journal' | 'note' | 'anniversary'
 
 export type TagSearchUsage = { tasks: number; journals: number; days: number }
 
 export type SearchResult =
   | { kind: 'task'; id: string; title: string; date: string; snippet: string; item: Task }
   | { kind: 'journal'; id: string; title: string; date: string; snippet: string; item: JournalEntry }
+  | { kind: 'note'; id: string; title: string; date: string; snippet: string; item: Note }
   | { kind: 'anniversary'; id: string; title: string; date: string; snippet: string; item: Anniversary; nextOccurrence?: Date }
   | { kind: 'tag'; id: string; title: string; date: string; snippet: string; item: Tag }
 
@@ -40,6 +41,7 @@ export function buildSearchResults({
   activeTasks,
   activeJournalEntries,
   activeAnniversaries,
+  activeNotes = [],
   managedTags,
   tagUsage,
   today,
@@ -49,6 +51,7 @@ export function buildSearchResults({
   activeTasks: Task[]
   activeJournalEntries: JournalEntry[]
   activeAnniversaries: Anniversary[]
+  activeNotes?: Note[]
   managedTags: Tag[]
   tagUsage: Map<string, TagSearchUsage>
   today: Date
@@ -88,6 +91,12 @@ export function buildSearchResults({
       if (hay.includes(normalizedSearch)) {
         results.push({ kind: 'journal', id: entry.id, title: entry.title, date: entry.date, snippet: searchSnippet(searchableText, normalizedSearch), item: entry })
       }
+    })
+  }
+  if (searchFilter === 'all' || searchFilter === 'note') {
+    activeNotes.forEach(note => {
+      const hay = `${note.title} ${note.content}`.toLocaleLowerCase()
+      if (hay.includes(normalizedSearch)) results.push({ kind:'note', id:note.id, title:note.title, date:note.updatedAt, snippet:searchSnippet(note.content,normalizedSearch), item:note })
     })
   }
   if (searchFilter === 'all' || searchFilter === 'anniversary') {

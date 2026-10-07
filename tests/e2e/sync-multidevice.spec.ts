@@ -33,6 +33,22 @@ async function tombstoneTask(page: Page, id: string, deletedAt: string, deviceId
 }
 
 test.describe('multi-device sync integration regression', () => {
+  test('notes and notebooks participate in the sync transaction and converge across devices', async ({ browser }) => {
+    const remote = { bundle: emptyRemote() }, a = await browser.newContext(), b = await browser.newContext()
+    await attachFakeSyncServer(a, remote); await attachFakeSyncServer(b, remote)
+    const pa = await a.newPage(), pb = await b.newPage(); await pa.goto('/'); await pb.goto('/'); await pa.waitForTimeout(250); await pb.waitForTimeout(250)
+    await moduleCall(pa, `(async()=>{
+      await db.saveNotebooks([{id:'nb-sync',name:'计划',order:1,createdAt:'2026-10-07T01:00:00.000Z',updatedAt:'2026-10-07T01:00:00.000Z'}]);
+      await db.saveNotes([{id:'note-sync',notebookId:'nb-sync',title:'英语计划',content:'# Plan',active:true,activeOrder:1,tagIds:[],attachments:[],createdAt:'2026-10-07T01:01:00.000Z',updatedAt:'2026-10-07T01:01:00.000Z'}]);
+    })()`);
+    await sync(pa); await sync(pb)
+    const notebooks = await moduleCall<any[]>(pb, 'db.loadNotebooks()')
+    const notes = await moduleCall<any[]>(pb, 'db.loadNotes()')
+    expect(notebooks.find(x => x.id === 'nb-sync')?.name).toBe('计划')
+    expect(notes.find(x => x.id === 'note-sync')?.content).toBe('# Plan')
+    await a.close(); await b.close()
+  })
+
   test('device A upload is pulled by isolated device B', async ({ browser }) => {
     const remote = { bundle: emptyRemote() }, a = await browser.newContext(), b = await browser.newContext()
     await attachFakeSyncServer(a, remote); await attachFakeSyncServer(b, remote)
