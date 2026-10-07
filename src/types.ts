@@ -95,6 +95,12 @@ export type MenstrualPeriod = {
   updatedAt: string
 }
 
+export type JournalMessage = {
+  id: string
+  content: string
+  createdAt: string
+}
+
 export type JournalEntry = {
   id: string
   date: string
@@ -103,6 +109,7 @@ export type JournalEntry = {
   content: string
   impact: JournalImpact
   emotionIds?: string[]
+  messages?: JournalMessage[]
   createdAt: string
   updatedAt: string
   tagIds?: string[]

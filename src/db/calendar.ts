@@ -493,7 +493,17 @@ function mergeConcurrentAttachments(localRecord: SyncEntityRecord, remoteRecord:
     return !deletedAt || (Date.parse(a.createdAt)||0) > (Date.parse(deletedAt)||0)
   }).map(([,a])=>a).sort((a,b)=>(Date.parse(a.createdAt)||0)-(Date.parse(b.createdAt)||0))
 
-  return { ...newer, updatedAt: new Date(Math.max(localTime,remoteTime)).toISOString(), payload: { ...newer.payload, attachments: merged, attachmentLinkTombstones: deletes } }
+  const messages = localRecord.entityType === 'journal' ? (() => {
+    const byId = new Map<string, any>()
+    ;[...(Array.isArray(localRecord.payload?.messages)?localRecord.payload.messages:[]), ...(Array.isArray(remoteRecord.payload?.messages)?remoteRecord.payload.messages:[])].forEach((message:any)=>{
+      const id=String(message?.id??'').trim(), content=String(message?.content??'').trim(), createdAt=String(message?.createdAt??'')
+      if(id&&content&&Number.isFinite(Date.parse(createdAt))&&!byId.has(id)) byId.set(id,{id,content,createdAt})
+    })
+    return [...byId.values()].sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))||String(a.id).localeCompare(String(b.id)))
+  })() : undefined
+  const payload:any = { ...newer.payload, attachments: merged, attachmentLinkTombstones: deletes }
+  if(localRecord.entityType==='journal') payload.messages=messages
+  return { ...newer, updatedAt: new Date(Math.max(localTime,remoteTime)).toISOString(), payload }
 }
 
 export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> {

@@ -5,12 +5,12 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.3.4'
+const APP_VERSION = '2.4.0'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
   CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EmotionGroup, EmotionOption, EnergyLevel, EnvironmentOption, FocusSession,
-  JournalDraft, JournalEntry, JournalImpact, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
+  JournalDraft, JournalEntry, JournalImpact, JournalMessage, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
   RecurrenceException, RecurrenceUnit, SyncedUserSettings, Tag, TagScope, Task, TaskDraft,
   TaskPriority, TaskStatus,
 } from './types'
@@ -45,7 +45,7 @@ import {
 } from './domain/tags'
 import {
   ENERGIES, IMPACTS, MOODS, activeJournalEntries as filterActiveJournalEntries, emptyJournalDraft,
-  energyMap, journalEntriesForDate, moodMap, toggleDailyEnergy, toggleDailyMood,
+  appendJournalMessage, energyMap, journalEntriesForDate, moodMap, normalizeJournalMessages, toggleDailyEnergy, toggleDailyMood,
 } from './domain/journal'
 import { EMOTION_GROUP_LABEL, createEmotionOption, deleteEmotionOption, emotionGroupOrder, emotionNameTaken, sortEmotionOptionsBuiltinsFirst, normalizeEmotionOptions, sanitizeEmotionIds, toggleEmotionId, updateEmotionOption } from './domain/emotions'
 import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVisualForDate, patchPeriodDayLog, periodForDate as findPeriodForDate } from './domain/menstrual'
@@ -466,6 +466,7 @@ function App() {
   const [journalEditorOpen, setJournalEditorOpen] = useState(false)
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null)
   const [viewingJournalId, setViewingJournalId] = useState<string | null>(null)
+  const [journalMessageDraft, setJournalMessageDraft] = useState('')
   const [viewingTask, setViewingTask] = useState<Task | null>(null)
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([])
@@ -872,6 +873,15 @@ function App() {
   const closeJournalEditor = () => {
   setJournalEditorOpen(false)
   setEditingJournalId(null)
+  }
+
+  const sendJournalMessage = (journalId:string) => {
+    const content=journalMessageDraft.trim()
+    if(!content) return
+    const now=new Date().toISOString()
+    const message:JournalMessage={id:crypto.randomUUID(),content,createdAt:now}
+    setJournalEntries(current=>current.map(entry=>entry.id===journalId?{...entry,messages:appendJournalMessage(entry.messages,message),updatedAt:now}:entry))
+    setJournalMessageDraft('')
   }
 
   const saveJournal = () => {
@@ -1334,6 +1344,7 @@ function App() {
   }, [selectedDate, activeJournalEntries])
 
   const viewingJournal = viewingJournalId ? activeJournalEntries.find(entry => entry.id === viewingJournalId) ?? null : null
+  useEffect(()=>{ setJournalMessageDraft('') },[viewingJournalId])
   const selectedMood = selectedDate ? dailyMoods.find(mood => mood.date === toDateKey(selectedDate)) : undefined
   const selectedImpactTotal = selectedJournalEntries.reduce((sum, entry) => sum + entry.impact, 0)
   const moodsByDate = useMemo(() => moodMap(dailyMoods), [dailyMoods])
@@ -4510,6 +4521,25 @@ function App() {
               {(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).length>0 && <div className="entry-tags journal-view-tags">{(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).map(id=>{const tag=tags.find(item=>item.id===id);return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null})}</div>}
               {(viewingJournal.attachments ?? []).some(a=>a.type==='image') && <div className="attachment-list">{(viewingJournal.attachments ?? []).filter(a=>a.type==='image').map(attachment=><AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />)}</div>}
               {(viewingJournal.attachments ?? []).filter(a=>a.type==='audio').map(attachment=><AudioAttachment key={attachment.id} attachment={attachment}/>)}
+              <section className="journal-thread" aria-label="记录后续对话">
+                <div className="journal-thread-divider"><span>后续</span></div>
+                <div className="journal-message-list">
+                  {normalizeJournalMessages(viewingJournal.messages).map((message,index,rows)=>{
+                    const previous=rows[index-1]
+                    const showTime=!previous || Date.parse(message.createdAt)-Date.parse(previous.createdAt)>=5*60*1000
+                    return <Fragment key={message.id}>
+                      {showTime&&<div className="journal-message-time">{new Date(message.createdAt).toLocaleString([], {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>}
+                      <div className="journal-message-row"><div className="journal-message-bubble">{message.content}</div></div>
+                    </Fragment>
+                  })}
+                  {normalizeJournalMessages(viewingJournal.messages).length===0&&<div className="journal-thread-empty">想到什么，就在这里继续说。</div>}
+                </div>
+                <div className="journal-message-composer">
+                  <textarea aria-label="继续说" rows={1} value={journalMessageDraft} onChange={event=>setJournalMessageDraft(event.target.value)} placeholder="继续说点什么…" />
+                  <button type="button" onClick={()=>sendJournalMessage(viewingJournal.id)} disabled={!journalMessageDraft.trim()}>发送</button>
+                </div>
+                <small className="journal-message-note">发送后不可修改或删除</small>
+              </section>
             </div>
             <div className="editor-footer">
               <div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={()=>deleteJournal(viewingJournal.id)}>删除记录</button></div>

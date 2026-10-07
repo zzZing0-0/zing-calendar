@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { activeJournalEntries, emptyJournalDraft, energyMap, journalEntriesForDate, moodMap, toggleDailyEnergy, toggleDailyMood } from '../../src/domain/journal'
+import { activeJournalEntries, appendJournalMessage, emptyJournalDraft, energyMap, journalEntriesForDate, mergeJournalMessages, moodMap, normalizeJournalMessages, toggleDailyEnergy, toggleDailyMood } from '../../src/domain/journal'
 import type { DailyEnergy, DailyMood, JournalEntry } from '../../src/types'
 
 test.describe('journal / mood / energy domain regression', () => {
@@ -49,4 +49,20 @@ test.describe('journal / mood / energy domain regression', () => {
     expect(moodMap(moods).get('2026-10-04')?.level).toBe(5)
     expect(energyMap(energies).get('2026-10-04')?.level).toBe(2)
   })
+})
+
+
+test('journal messages are append-only immutable snapshots ordered by creation time', () => {
+  const first = { id:'m1', content:'我现在真的很生气', createdAt:'2026-10-06T14:03:00.000Z' }
+  const second = { id:'m2', content:'她回来了，但是我突然不想说了', createdAt:'2026-10-06T14:41:00.000Z' }
+  const rows = appendJournalMessage([first], second)
+  expect(rows).toEqual([first, second])
+  expect(rows.every(row => !('updatedAt' in row) && !('deletedAt' in row))).toBe(true)
+  expect(normalizeJournalMessages([{...first,content:'  我现在真的很生气  '}])).toEqual([first])
+})
+
+test('concurrent journal message streams merge by id without losing either device append', () => {
+  const a = { id:'a', content:'A设备的一句', createdAt:'2026-10-06T14:03:00.000Z' }
+  const b = { id:'b', content:'B设备的一句', createdAt:'2026-10-06T14:03:00.000Z' }
+  expect(mergeJournalMessages([b], [a]).map(row=>row.id)).toEqual(['a','b'])
 })

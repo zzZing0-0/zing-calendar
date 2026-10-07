@@ -1,4 +1,4 @@
-import type { DailyEnergy, DailyMood, EnergyLevel, JournalDraft, JournalEntry, JournalImpact, MoodLevel } from '../types'
+import type { DailyEnergy, DailyMood, EnergyLevel, JournalDraft, JournalEntry, JournalImpact, JournalMessage, MoodLevel } from '../types'
 import { toDateKey } from './task'
 import { DEFAULT_TAG_ID } from './preferences'
 
@@ -52,4 +52,25 @@ export function moodMap(rows: DailyMood[]): Map<string, DailyMood> {
 
 export function energyMap(rows: DailyEnergy[]): Map<string, DailyEnergy> {
   return new Map(rows.map(row => [row.date, row]))
+}
+
+
+export function normalizeJournalMessages(rows: JournalMessage[] | undefined): JournalMessage[] {
+  const byId = new Map<string, JournalMessage>()
+  ;(Array.isArray(rows) ? rows : []).forEach(row => {
+    const id = String(row?.id ?? '').trim()
+    const content = String(row?.content ?? '').trim()
+    const createdAt = String(row?.createdAt ?? '')
+    if (!id || !content || !Number.isFinite(Date.parse(createdAt))) return
+    if (!byId.has(id)) byId.set(id, { id, content, createdAt })
+  })
+  return [...byId.values()].sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+}
+
+export function appendJournalMessage(rows: JournalMessage[] | undefined, message: JournalMessage): JournalMessage[] {
+  return normalizeJournalMessages([...(rows ?? []), message])
+}
+
+export function mergeJournalMessages(local: JournalMessage[] | undefined, remote: JournalMessage[] | undefined): JournalMessage[] {
+  return normalizeJournalMessages([...(local ?? []), ...(remote ?? [])])
 }

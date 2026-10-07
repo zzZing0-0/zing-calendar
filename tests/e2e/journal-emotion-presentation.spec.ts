@@ -72,3 +72,16 @@ test('reordered settings still render inside the normal app shell', async ({ pag
   await expect(calendarTask.getByText('重复任务显示',{exact:true})).toBeVisible()
   await expect(calendarTask.getByText('新任务默认优先级',{exact:true})).toBeVisible()
 })
+
+test('record viewer exposes a text-only append-only chat thread with no message edit or delete actions',()=>{
+  const start=app.indexOf('{viewingJournal &&')
+  const end=app.indexOf('{journalEditorOpen &&',start)
+  const viewer=app.slice(start,end)
+  expect(viewer).toContain('className="journal-thread"')
+  expect(viewer).toContain('aria-label="继续说"')
+  expect(viewer).toContain('sendJournalMessage(viewingJournal.id)')
+  expect(viewer).toContain('发送后不可修改或删除')
+  expect(viewer).not.toContain('编辑消息')
+  expect(viewer).not.toContain('删除消息')
+  expect(viewer).not.toContain('message.attachments')
+})
