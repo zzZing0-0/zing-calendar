@@ -9,8 +9,8 @@ test('notes markdown regression › desktop preview is a bounded scroll containe
 test('notes markdown regression › UIW adapter reports real editor scroll progress to Notes preview', () => {
   const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
   const notes = readFileSync('src/features/notes/NotesPage.tsx', 'utf8')
-  expect(adapter).toContain("root.addEventListener('scroll', report, { capture: true, passive: true })")
-  expect(adapter).toContain('event.target as HTMLElement | null')
+  expect(adapter).toMatch(/root\.addEventListener\('scroll',\s*report,\s*\{\s*capture:\s*true,\s*passive:\s*true\s*\}\)/)
+  expect(adapter).toMatch(/event\.target as HTMLElement\s*\|\s*null/)
   expect(notes).toContain('onScrollRatio={syncPreviewScroll}')
   expect(notes).toContain('ref={previewRef} className="note-preview-pane"')
 })
@@ -35,62 +35,45 @@ test('notes markdown polish › toolbar exposes Chinese purpose labels for forma
 
 test('notes markdown polish › toolbar title wrapper accepts UIW nullable button props', () => {
   const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
-  expect(adapter).toContain('buttonProps?: ButtonHTMLAttributes<HTMLButtonElement> | null')
-  expect(adapter).toContain('...(command.buttonProps ?? {})')
+  expect(adapter).toMatch(/buttonProps\?:\s*ButtonHTMLAttributes<HTMLButtonElement>\s*\|\s*null/)
+  expect(adapter).toMatch(/\.\.\.\(command\.buttonProps\s*\?\?\s*\{\}\)/)
 })
 
 
-test('notes mobile regression › editor follows the visual viewport while the keyboard is open', () => {
-  const css = readFileSync('src/App.css','utf8')
+test('notes mobile architecture regression › mobile editing is independent of UIW viewport and scroll containers', () => {
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx','utf8')
   const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
-  expect(notes).toContain('window.visualViewport')
-  expect(notes).toContain("viewport?.addEventListener('resize',update)")
-  expect(notes).toContain("viewport?.addEventListener('scroll',update)")
-  expect(notes).toContain("if(!keyboardOpen)return")
-  expect(notes).toContain("document.body.style.overflow='hidden'")
-  expect(css).toContain('.note-editor-overlay{top:var(--note-vv-top,0px);bottom:auto;height:var(--note-vv-height,100dvh);overflow:hidden}')
-  expect(css).toContain('.note-editor-overlay .note-editor{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;display:block}')
-  expect(css).toContain('.note-editor>header,.note-meta,.note-mobile-tabs,.note-attachments{position:static;flex:none}')
-  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:sticky;top:0;z-index:6')
-  expect(css).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch}')
-})
-
-test('notes mobile layout regression › keyboard editing pins only the Markdown toolbar', () => {
   const css = readFileSync('src/App.css','utf8')
-  const mobilePatch = css.slice(css.indexOf('/* v2.6.3 — On mobile'))
-  expect(mobilePatch).toContain('.note-editor>header,.note-meta,.note-mobile-tabs,.note-attachments{position:static;flex:none}')
-  expect(mobilePatch).toContain('.w-md-editor-toolbar{position:sticky;top:0')
-  expect(mobilePatch).not.toContain('.note-attachments{position:sticky')
-  expect(mobilePatch).not.toContain('.note-mobile-tabs{position:sticky')
-  expect(mobilePatch).not.toContain('.note-meta{position:sticky')
+  expect(adapter).toContain('if(isMobile)return <MobileMarkdownEditor')
+  expect(adapter).toContain('data-mobile-single-layer="true"')
+  expect(adapter).toContain('className="zing-mobile-md-textarea"')
+  expect(adapter).toContain('<MDEditor value={value}')
+  expect(adapter).not.toContain('highlightEnable=')
+  expect(notes).not.toContain('visualViewport')
+  expect(notes).not.toContain('mobileNaturalHeight')
+  expect(notes).not.toContain('keyboard-open')
+  expect(css).toContain('.zing-mobile-md-toolbar{position:sticky;top:0')
+  expect(css).toContain('.zing-mobile-md-textarea{display:block;box-sizing:border-box;width:100%;min-height:320px;height:auto;overflow:hidden;resize:none')
 })
 
-test('notes mobile regression › visual viewport listeners and page scroll lock are cleaned up', () => {
-  const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
-  expect(notes).toContain("viewport?.removeEventListener('resize',update)")
-  expect(notes).toContain("viewport?.removeEventListener('scroll',update)")
-  expect(notes).toContain('document.body.style.overflow=previousBodyOverflow')
-  expect(notes).toContain('document.documentElement.style.overflow=previousOverflow')
-})
-
-
-test('notes mobile caret regression › mobile edit disables UIW highlight overlay while desktop keeps it', async () => {
-  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
-  expect(adapter).toContain("window.matchMedia('(max-width: 700px)')")
-  expect(adapter).toContain('highlightEnable={!isMobileEditor}')
-})
-
-
-test('notes mobile scroll ownership regression › page scrolls normally and keyboard mode alone constrains the editor', () => {
+test('notes mobile layout regression › the headless toolbar is the only sticky editor control', () => {
   const css = readFileSync('src/App.css','utf8')
-  const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
-  const app = readFileSync('src/App.tsx','utf8')
-  const patch = css.slice(css.indexOf('/* v2.6.5 — Mobile Notes use page scrolling normally'))
-  expect(app).toContain("const APP_VERSION = '2.6.5'")
-  expect(notes).toContain('const [mobileNaturalHeight,setMobileNaturalHeight]=useState(520)')
-  expect(notes).toContain("split.querySelector<HTMLTextAreaElement>('textarea')?.scrollHeight")
-  expect(notes).toContain("mobileViewport?.keyboardOpen?' keyboard-open':''")
-  expect(patch).toContain('.note-split.mobile-edit,.note-split.mobile-preview{height:var(--note-natural-height,520px);min-height:320px;overflow:visible}')
-  expect(patch).toContain('.note-split.keyboard-open{height:var(--note-split-height,60dvh);min-height:320px;overflow:hidden}')
-  expect(patch).toContain('.note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:hidden}')
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx','utf8')
+  expect(adapter).toContain('className="zing-mobile-md-toolbar"')
+  expect(css).toContain('.zing-mobile-md-toolbar{position:sticky;top:0')
+  expect(css).not.toContain('.zing-mobile-md-textarea{position:sticky')
+})
+
+test('notes mobile toolbar regression › headless toolbar keeps core Markdown commands and cursor checklist toggle', () => {
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx','utf8')
+  expect(adapter).toContain("toggleMarkdownTaskAtOffset(value,sel.start)")
+  expect(adapter).toContain("wrap('**')")
+  expect(adapter).toContain("wrap('*')")
+  expect(adapter).toContain("wrap('~~')")
+  expect(adapter).toContain("prefix('- ')")
+  expect(adapter).toContain("prefix('1. ')")
+  expect(adapter).toContain("prefix('> ')")
+  expect(adapter).toContain("'](https://)'")
+  expect(adapter).toContain("'| 列 1 | 列 2 |\\n| --- | --- |\\n| 内容 | 内容 |\\n'")
+  expect(adapter).toContain("wrap('```\\n','\\n```','代码')")
 })

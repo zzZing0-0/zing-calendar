@@ -78,10 +78,11 @@ test('notes markdown regression › Chinese emphasis has visual breathing room',
 test('Notes editor owns checklist completion toggling while Preview stays read-only', async () => {
   const editor=fs.readFileSync(path.resolve(process.cwd(), 'src/components/markdown/MarkdownEditorAdapter.tsx'),'utf8')
   const renderer=fs.readFileSync(path.resolve(process.cwd(), 'src/components/markdown/MarkdownRenderer.tsx'),'utf8')
-  expect(editor).toContain('toggleMarkdownTaskAtOffset(value, cursor)')
+  expect(editor).toMatch(/toggleMarkdownTaskAtOffset\(value,\s*(?:cursor|sel\.start)\)/)
   expect(editor).toContain('切换当前清单完成状态')
-  expect(editor).toContain('onMouseDown: (event: any) => event.preventDefault()')
-  expect(editor).toContain('focus({ preventScroll: true })')
+  expect(editor).toContain('toggleTask=')
+  expect(editor).toMatch(/onMouseDown:\s*\(event:\s*any\)\s*=>\s*event\.preventDefault\(\)/)
+  expect(editor).toMatch(/focus\(\{\s*preventScroll:\s*true\s*\}\)/)
   expect(renderer).not.toContain('onChange')
 })
 
@@ -94,10 +95,10 @@ test('Markdown preview gives GFM tables an explicit visible table treatment', as
 test('notes markdown regression › checklist toggle preserves viewport state and uses a toolbar-consistent icon', () => {
   const editor = fs.readFileSync(path.resolve(process.cwd(), 'src/components/markdown/MarkdownEditorAdapter.tsx'), 'utf8')
   const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
-  expect(editor).toContain('const scrollSnapshots = root')
-  expect(editor).toContain('.map(el => ({ el, top: el.scrollTop, left: el.scrollLeft }))')
-  expect(editor).toContain('focus({ preventScroll: true })')
-  expect(editor).toContain('snapshot.el.scrollTop = snapshot.top')
+  expect(editor).toMatch(/const scrollSnapshots\s*=\s*root/)
+  expect(editor).toMatch(/\.map\(el\s*=>\s*\(\{\s*el,\s*top:\s*el\.scrollTop,\s*left:\s*el\.scrollLeft\s*\}\)\)/)
+  expect(editor).toMatch(/focus\(\{\s*preventScroll:\s*true\s*\}\)/)
+  expect(editor).toMatch(/snapshot\.el\.scrollTop\s*=\s*snapshot\.top/)
   expect(editor).toContain('className="zing-toggle-task-command"')
   expect(css).toContain('.zing-toggle-task-command{width:15px;height:15px')
 })
@@ -114,9 +115,9 @@ test('notes desktop regression › editor adapter reports scroll progress and No
   const editor = fs.readFileSync(path.resolve(process.cwd(), 'src/components/markdown/MarkdownEditorAdapter.tsx'), 'utf8')
   expect(notesPage).toContain('onScrollRatio={syncPreviewScroll}')
   expect(notesPage).toContain('preview.scrollTop=max>0?ratio*max:0')
-  expect(editor).toContain("root.addEventListener('scroll', report, { capture: true, passive: true })")
-  expect(editor).toContain('const scroller = event.target as HTMLElement | null')
-  expect(editor).toContain('if (max > 1) onScrollRatio(scroller.scrollTop / max)')
+  expect(editor).toMatch(/root\.addEventListener\('scroll',\s*report,\s*\{\s*capture:\s*true,\s*passive:\s*true\s*\}\)/)
+  expect(editor).toMatch(/const scroller\s*=\s*event\.target as HTMLElement\s*\|\s*null/)
+  expect(editor).toMatch(/if\s*\(max\s*>\s*1\)\s*onScrollRatio\(scroller\.scrollTop\s*\/\s*max\)/)
 })
 
 test('notes markdown browser regression › clean GFM table renders as a real table', async ({ page }) => {
@@ -132,7 +133,8 @@ test('notes markdown browser regression › clean GFM table renders as a real ta
 })
 
 
-test('notes markdown browser regression › checklist toggle keeps the real UIW scroll container in place', async ({ page }) => {
+test('notes markdown browser regression › desktop checklist toggle keeps the real UIW scroll container in place', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/')
   await page.locator('.bottom-nav').getByRole('button', { name: '笔记' }).click()
   await page.getByRole('button', { name: '＋ 新建' }).click()
@@ -150,6 +152,21 @@ test('notes markdown browser regression › checklist toggle keeps the real UIW 
     const after = await scroller.evaluate(el => (el as HTMLElement).scrollTop)
     return Math.abs(after - before)
   }).toBeLessThan(8)
+})
+
+test('notes mobile browser regression › single-layer checklist toggle edits the cursor line without UIW', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.locator('.bottom-nav').getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('button', { name: '＋ 新建' }).click()
+  const textarea = page.locator('.note-editor .zing-mobile-md-textarea')
+  const source = ['- [ ] duplicate', 'middle', '- [ ] duplicate'].join('\n')
+  await textarea.fill(source)
+  const offset = source.lastIndexOf('- [ ] duplicate') + 3
+  await textarea.evaluate((el, pos) => { const t=el as HTMLTextAreaElement; t.focus(); t.setSelectionRange(pos,pos) }, offset)
+  await page.getByRole('button', { name: '插入/切换清单' }).click()
+  await expect(textarea).toHaveValue('- [ ] duplicate\nmiddle\n- [x] duplicate')
+  await expect(page.locator('.note-editor .w-md-editor')).toHaveCount(0)
 })
 
 test('notes desktop browser regression › the mounted UIW editor drives preview scrolling', async ({ page }) => {
