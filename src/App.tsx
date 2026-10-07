@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.4.0'
+const APP_VERSION = '2.4.3'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -1348,7 +1348,8 @@ function App() {
   const selectedMood = selectedDate ? dailyMoods.find(mood => mood.date === toDateKey(selectedDate)) : undefined
   const selectedImpactTotal = selectedJournalEntries.reduce((sum, entry) => sum + entry.impact, 0)
   const moodsByDate = useMemo(() => moodMap(dailyMoods), [dailyMoods])
-  const journalDates = useMemo(() => new Set(activeJournalEntries.map(entry => entry.date)), [journalEntries])
+  const journalDates = useMemo(() => new Set(activeJournalEntries.map(entry => entry.date)), [activeJournalEntries])
+  const journalThreadDates = useMemo(() => new Set(activeJournalEntries.filter(entry => normalizeJournalMessages(entry.messages).length > 0).map(entry => entry.date)), [activeJournalEntries])
   const moodDays = useMemo(() => buildMonth(moodMonth.getFullYear(), moodMonth.getMonth(), weekStartsMonday), [moodMonth, weekStartsMonday])
 
   const renderCalendarMonthGrid = (month: Date) => {
@@ -3383,7 +3384,7 @@ function App() {
 
           <div className="settings-group calendar-task-settings">
             <div className="settings-group-title"><h3>日历任务</h3></div>
-            <label className="setting-row">
+            <label className="setting-row personalization-settings">
               <span><strong>顶部问候语</strong><small>显示在左上角品牌标记旁。</small></span>
               <input className="setting-text-input" value={greeting} onChange={e => setGreeting(e.target.value)} onBlur={() => { if (!greeting.trim()) setGreeting('Hello, Zing') }} />
             </label>
@@ -3826,10 +3827,10 @@ function App() {
 
       {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && (
       <nav className="bottom-nav" aria-label="主要功能">
-        <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><span>▦</span>日历</button>
-        <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><span>🎂</span>纪念日</button>
-        <button type="button" className={mainView==='statistics'?'active':''} onClick={() => switchMainView('statistics')}><span>⌁</span>统计</button>
-        <button type="button" className={mainView==='settings'?'active':''} onClick={() => switchMainView('settings')}><span>⚙</span>设置</button>
+        <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4.5 8.5h15M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" /></svg>日历</button>
+        <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10h12v10H6zM4 10h16M12 10v10M8.5 7.5c-1.8 0-3-1-3-2.3C5.5 4 6.4 3.4 7.4 3.4c1.7 0 3.2 2 4.6 4.1M15.5 7.5c1.8 0 3-1 3-2.3 0-1.2-.9-1.8-1.9-1.8-1.7 0-3.2 2-4.6 4.1" /></svg>纪念日</button>
+        <button type="button" className={mainView==='statistics'?'active':''} onClick={() => switchMainView('statistics')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11h3v9M10.5 20V5h3v15M16 20v-7h3v7M3.5 20.5h17" /></svg>统计</button>
+        <button type="button" className={mainView==='settings'?'active':''} onClick={() => switchMainView('settings')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /></svg>设置</button>
       </nav>
       )}
 
@@ -4067,7 +4068,9 @@ function App() {
                     >
                       {status && inCurrentMonth && <span className={`mood-run mood-${status.level}${joinLeft ? ' join-left' : ''}${joinRight ? ' join-right' : ''}`} />}
                       <span className="mini-day-number">{date.getDate()}</span>
-                      {inCurrentMonth && journalDates.has(key) && <span className="mini-journal-dot" aria-label="当天有记录" />}
+                      {inCurrentMonth && journalDates.has(key) && (journalThreadDates.has(key)
+                        ? <span className="mini-journal-thread-dot" aria-label="当天记录有后续" />
+                        : <span className="mini-journal-dot" aria-label="当天有记录" />)}
                     </button>
                   )
                 })}
@@ -4512,11 +4515,13 @@ function App() {
               <button className="close-button" type="button" onClick={() => setViewingJournalId(null)} aria-label="关闭">×</button>
             </div>
             <div className="editor-body">
-              <div className="journal-view-meta">
-                <span>属于 {viewingJournal.date} · 记录于 {new Date(viewingJournal.createdAt).toLocaleString()}</span>
+              <div className="journal-view-date-meta" aria-label={`事件日期 ${viewingJournal.date}`}>
+                <span className="journal-view-date"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4.5 8.5h15M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" /></svg>{formatUiDate(fromDateKey(viewingJournal.date))}</span>
+              </div>
+              <div className="journal-view-feeling-row">
+                {(viewingJournal.emotionIds??[]).map(id=>{const item=emotionOptions.find(row=>row.id===id);return item?<span key={id} className={`emotion-chip emotion-${item.group}`}>{item.name}</span>:null})}
                 <span className={`impact-badge impact-${viewingJournal.impact}`}>{viewingJournal.impact > 0 ? '+' : ''}{viewingJournal.impact}</span>
               </div>
-              {(viewingJournal.emotionIds??[]).length>0 && <div className="journal-view-emotions">{(viewingJournal.emotionIds??[]).map(id=>{const item=emotionOptions.find(row=>row.id===id);return item?<span key={id} className={`emotion-chip emotion-${item.group}`}>{item.name}</span>:null})}</div>}
               {viewingJournal.content && <div className="journal-view-content">{viewingJournal.content}</div>}
               {(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).length>0 && <div className="entry-tags journal-view-tags">{(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).map(id=>{const tag=tags.find(item=>item.id===id);return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null})}</div>}
               {(viewingJournal.attachments ?? []).some(a=>a.type==='image') && <div className="attachment-list">{(viewingJournal.attachments ?? []).filter(a=>a.type==='image').map(attachment=><AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />)}</div>}
@@ -4528,7 +4533,7 @@ function App() {
                     const previous=rows[index-1]
                     const showTime=!previous || Date.parse(message.createdAt)-Date.parse(previous.createdAt)>=5*60*1000
                     return <Fragment key={message.id}>
-                      {showTime&&<div className="journal-message-time">{new Date(message.createdAt).toLocaleString([], {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>}
+                      {showTime&&<div className="journal-message-time">{formatUiDate(new Date(message.createdAt))} · {new Date(message.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>}
                       <div className="journal-message-row"><div className="journal-message-bubble">{message.content}</div></div>
                     </Fragment>
                   })}

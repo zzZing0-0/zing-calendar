@@ -15,8 +15,29 @@ test('record editor order is title, score, emotions, body, images, audio, tags w
   expect(editor).not.toContain('<span>时间</span>')
 })
 
-test('record viewer distinguishes calendar ownership date from actual creation timestamp',()=>{
-  expect(app).toContain('属于 {viewingJournal.date} · 记录于 {new Date(viewingJournal.createdAt).toLocaleString()}')
+test('record viewer keeps ownership date subtle and groups emotions with impact score',()=>{
+  const start=app.indexOf('{viewingJournal &&')
+  const end=app.indexOf('{journalEditorOpen &&',start)
+  const viewer=app.slice(start,end)
+  expect(viewer).toContain('className="journal-view-date-meta"')
+  expect(viewer).not.toContain('journal-view-date-rule')
+  expect(viewer).toContain('formatUiDate(fromDateKey(viewingJournal.date))')
+  expect(viewer).not.toContain('记录于')
+  expect(viewer).not.toContain('属于 {viewingJournal.date}')
+  expect(viewer).toContain('className="journal-view-feeling-row"')
+  expect(viewer.indexOf('emotion-chip')).toBeLessThan(viewer.indexOf('impact-badge'))
+})
+
+
+test('record and message dates share the global English date-format preference',()=>{
+  const start=app.indexOf('{viewingJournal &&')
+  const end=app.indexOf('{journalEditorOpen &&',start)
+  const viewer=app.slice(start,end)
+  expect(app).toContain("dateFormat === 'mdy'")
+  expect(app).toContain('`${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`')
+  expect(viewer).toContain('formatUiDate(fromDateKey(viewingJournal.date))')
+  expect(viewer).toContain('formatUiDate(new Date(message.createdAt))')
+  expect(viewer).toContain("toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})")
 })
 
 test('record editor opens emotions in a dedicated picker instead of rendering the vocabulary inline',()=>{
@@ -66,11 +87,41 @@ test('reordered settings still render inside the normal app shell', async ({ pag
   await expect(groupTitles).toHaveText(['日历任务','专注','标签','天气与情绪','鼓励语','词云','云同步','数据','友情链接'])
   const calendarTask=settings.locator('.calendar-task-settings')
   await expect(calendarTask).toBeVisible()
-  await expect(calendarTask.getByText('顶部问候语',{exact:true})).toBeVisible()
+  await expect(calendarTask.getByText('顶部问候语',{exact:true})).toBeHidden()
   await expect(calendarTask.getByText('每周开始日',{exact:true})).toBeVisible()
   await expect(calendarTask.getByText('日期格式',{exact:true})).toBeVisible()
   await expect(calendarTask.getByText('重复任务显示',{exact:true})).toBeVisible()
   await expect(calendarTask.getByText('新任务默认优先级',{exact:true})).toBeVisible()
+})
+
+test('mobile hides only the greeting setting while keeping calendar-task controls visible', async ({ page }) => {
+  await page.setViewportSize({width:390,height:844})
+  await page.goto('/')
+  await page.locator('.bottom-nav').getByRole('button',{name:/设置/}).click()
+  const calendarTask=page.locator('.calendar-task-settings')
+  await expect(calendarTask).toBeVisible()
+  await expect(calendarTask.getByText('顶部问候语',{exact:true})).toBeHidden()
+  await expect(calendarTask.getByText('每周开始日',{exact:true})).toBeVisible()
+  await expect(calendarTask.getByText('日期格式',{exact:true})).toBeVisible()
+  await expect(calendarTask.getByText('重复任务显示',{exact:true})).toBeVisible()
+  await expect(calendarTask.getByText('新任务默认优先级',{exact:true})).toBeVisible()
+})
+
+test('mood calendar distinguishes records with follow-up messages using a square thread marker',()=>{
+  expect(app).toContain('journalThreadDates.has(key)')
+  expect(app).toContain('className="mini-journal-thread-dot"')
+  expect(app).toContain('aria-label="当天记录有后续"')
+})
+
+test('bottom navigation uses one SVG icon system instead of emoji or character glyphs',()=>{
+  const start=app.indexOf('<nav className="bottom-nav"')
+  const end=app.indexOf('</nav>',start)
+  const nav=app.slice(start,end)
+  expect((nav.match(/className="bottom-nav-icon"/g)??[]).length).toBe(4)
+  expect(nav).not.toContain('🎂')
+  expect(nav).not.toContain('<span>▦</span>')
+  expect(nav).not.toContain('<span>⌁</span>')
+  expect(nav).not.toContain('<span>⚙</span>')
 })
 
 test('record viewer exposes a text-only append-only chat thread with no message edit or delete actions',()=>{
