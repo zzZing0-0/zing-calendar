@@ -80,8 +80,19 @@ test('notes mobile toolbar regression › headless toolbar keeps core Markdown c
   expect(adapter).toContain("wrap('```\\n','\\n```','代码')")
 })
 
-test('notes mobile toolbar scroll regression › toolbar commits snapshot scroll before changing markdown', () => {
+test('notes mobile toolbar scroll regression › toolbar commits preserve scroll and selection focus state before changing markdown', () => {
   const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
-  expect(adapter).toContain('const commit=(next:string,nextSelection:Selection)=>{snapshotScroll();pendingSelection.current=nextSelection;onChange(next)}')
+  expect(adapter).toContain('const commit=(next:string,nextSelection:Selection)=>{snapshotScroll();')
+  expect(adapter).toContain('pendingSelection.current={...nextSelection,restoreFocus:document.activeElement===textareaRef.current}')
   expect(adapter).toContain('el.setSelectionRange(sel.start,sel.end);if(pendingScroll.current){restoreScroll()')
+})
+
+
+test('notes mobile toolbar touch source regression › touch pointer-down is intercepted before a button can steal editor focus', () => {
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
+  expect(adapter).toContain('onPointerDownCapture={preserveToolbarFocus}')
+  expect(adapter).toContain("closest('button')")
+  expect(adapter).toContain('event.preventDefault()')
+  expect(adapter).toContain('restoreFocus:document.activeElement===textareaRef.current')
+  expect(adapter).toContain('if(sel.restoreFocus&&document.activeElement!==el)')
 })

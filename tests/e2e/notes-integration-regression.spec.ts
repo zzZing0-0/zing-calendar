@@ -236,6 +236,32 @@ test('notes mobile browser regression › toolbar command preserves edit positio
   expect(selection).toEqual({start:start+2,end:start+2+target.length})
 })
 
+
+test('notes mobile touch regression › pointer-down on a toolbar button keeps textarea focused and position pinned', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.locator('.bottom-nav').getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('button', { name: '＋ 新建' }).click()
+  const textarea = page.locator('.note-editor .zing-mobile-md-textarea')
+  const source = Array.from({length: 120}, (_, i) => `line ${i + 1} touch toolbar content`).join('\n\n')
+  await textarea.fill(source)
+  const editor = page.locator('.note-editor')
+  const toolbar = page.locator('.note-editor .zing-mobile-md-toolbar-shell')
+  await editor.evaluate(el => { (el as HTMLElement).scrollTop = 1200 })
+  await expect.poll(() => editor.evaluate(el => (el as HTMLElement).scrollTop)).toBeGreaterThan(500)
+  const before = await editor.evaluate(el => (el as HTMLElement).scrollTop)
+  const pinnedY = await toolbar.evaluate(el => el.getBoundingClientRect().top)
+  const target = 'line 90'
+  const start = source.indexOf(target)
+  await textarea.evaluate((el, range) => { const t=el as HTMLTextAreaElement; t.focus({preventScroll:true}); t.setSelectionRange(range.start,range.end) }, {start,end:start+target.length})
+  await expect(textarea).toBeFocused()
+  const bold = page.getByTitle('粗体')
+  await bold.dispatchEvent('pointerdown', { pointerType: 'touch', isPrimary: true, button: 0 })
+  await expect(textarea).toBeFocused()
+  await expect.poll(async () => Math.abs((await editor.evaluate(el => (el as HTMLElement).scrollTop)) - before)).toBeLessThan(8)
+  await expect.poll(async () => Math.abs((await toolbar.evaluate(el => el.getBoundingClientRect().top)) - pinnedY)).toBeLessThan(2)
+})
+
 test('notes desktop browser regression › the mounted UIW editor drives preview scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 850 })
   await page.goto('/')

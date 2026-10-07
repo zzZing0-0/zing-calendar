@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ButtonHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import MDEditor, { commands } from '@uiw/react-md-editor'
 import { toggleMarkdownTaskAtOffset } from '../../domain/markdown'
 
@@ -19,16 +19,17 @@ function lineBounds(value:string,offset:number){const start=value.lastIndexOf('\
 
 function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:string)=>void}){
  const textareaRef=useRef<HTMLTextAreaElement>(null)
- const pendingSelection=useRef<Selection|null>(null)
+ const pendingSelection=useRef<(Selection&{restoreFocus:boolean})|null>(null)
  const pendingScroll=useRef<{scroller:HTMLElement|null;top:number;pageX:number;pageY:number}|null>(null)
  const resize=()=>{const el=textareaRef.current;if(!el)return;el.style.height='auto';el.style.height=`${Math.max(320,el.scrollHeight)}px`}
  const restoreScroll=()=>{const snapshot=pendingScroll.current;if(!snapshot)return;if(snapshot.scroller?.isConnected)snapshot.scroller.scrollTop=snapshot.top;window.scrollTo(snapshot.pageX,snapshot.pageY)}
  useLayoutEffect(()=>{resize();if(!pendingScroll.current)return;restoreScroll();requestAnimationFrame(()=>{restoreScroll();requestAnimationFrame(()=>{restoreScroll();pendingScroll.current=null})})},[value])
- useLayoutEffect(()=>{const sel=pendingSelection.current,el=textareaRef.current;if(!sel||!el)return;pendingSelection.current=null;el.focus({preventScroll:true});el.setSelectionRange(sel.start,sel.end);if(pendingScroll.current){restoreScroll();requestAnimationFrame(()=>{restoreScroll();requestAnimationFrame(restoreScroll)})}},[value])
+ useLayoutEffect(()=>{const sel=pendingSelection.current,el=textareaRef.current;if(!sel||!el)return;pendingSelection.current=null;if(sel.restoreFocus&&document.activeElement!==el)el.focus({preventScroll:true});el.setSelectionRange(sel.start,sel.end);if(pendingScroll.current){restoreScroll();requestAnimationFrame(()=>{restoreScroll();requestAnimationFrame(restoreScroll)});setTimeout(restoreScroll,0)}},[value])
  const selection=():Selection=>{const el=textareaRef.current;return {start:el?.selectionStart??0,end:el?.selectionEnd??0}}
  const snapshotScroll=()=>{const el=textareaRef.current;const scroller=el?.closest<HTMLElement>('.note-editor')??null;pendingScroll.current={scroller,top:scroller?.scrollTop??0,pageX:window.scrollX,pageY:window.scrollY}}
+ const preserveToolbarFocus=(event:ReactPointerEvent<HTMLDivElement>|ReactMouseEvent<HTMLDivElement>)=>{if(!(event.target as HTMLElement).closest('button'))return;snapshotScroll();event.preventDefault()}
  const handleInputChange=(next:string)=>{snapshotScroll();onChange(next)}
- const commit=(next:string,nextSelection:Selection)=>{snapshotScroll();pendingSelection.current=nextSelection;onChange(next)}
+ const commit=(next:string,nextSelection:Selection)=>{snapshotScroll();pendingSelection.current={...nextSelection,restoreFocus:document.activeElement===textareaRef.current};onChange(next)}
  const wrap=(before:string,after=before,placeholder='文本')=>{const sel=selection();const chosen=value.slice(sel.start,sel.end)||placeholder;const replacement=before+chosen+after;commit(replaceSelection(value,sel,replacement),{start:sel.start+before.length,end:sel.start+before.length+chosen.length})}
  const prefix=(mark:string)=>{const sel=selection();const bounds=lineBounds(value,sel.start);const line=value.slice(bounds.start,bounds.end);const nextLine=line.startsWith(mark)?line.slice(mark.length):mark+line;const delta=nextLine.length-line.length;commit(value.slice(0,bounds.start)+nextLine+value.slice(bounds.end),{start:Math.max(bounds.start,sel.start+delta),end:Math.max(bounds.start,sel.end+delta)})}
  const insert=(text:string,cursorOffset=text.length)=>{const sel=selection();commit(replaceSelection(value,sel,text),{start:sel.start+cursorOffset,end:sel.start+cursorOffset})}
@@ -36,23 +37,23 @@ function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:str
  const heading=(level:number)=>{const sel=selection();const bounds=lineBounds(value,sel.start);const line=value.slice(bounds.start,bounds.end);const clean=line.replace(/^#{1,6}\s+/,'');const mark='#'.repeat(level)+' ';const next=value.slice(0,bounds.start)+mark+clean+value.slice(bounds.end);commit(next,{start:bounds.start+mark.length,end:bounds.start+mark.length+clean.length})}
  return <div className="zing-mobile-md-editor" data-mobile-single-layer="true">
   <div className="zing-mobile-md-toolbar-shell">
-   <div className="zing-mobile-md-toolbar" role="toolbar" aria-label="Markdown 工具栏">
+   <div className="zing-mobile-md-toolbar" role="toolbar" aria-label="Markdown 工具栏" onPointerDownCapture={preserveToolbarFocus} onMouseDownCapture={preserveToolbarFocus}>
    <select aria-label="标题" defaultValue="" onChange={e=>{const n=Number(e.target.value);if(n)heading(n);e.currentTarget.value='' }}><option value="">H⌄</option>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>H{n}</option>)}</select>
-   <button type="button" title="粗体" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('**')}>B</button>
-   <button type="button" title="斜体" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('*')}><i>I</i></button>
-   <button type="button" title="删除线" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('~~')}><s>S</s></button>
+   <button type="button" title="粗体" onClick={()=>wrap('**')}>B</button>
+   <button type="button" title="斜体" onClick={()=>wrap('*')}><i>I</i></button>
+   <button type="button" title="删除线" onClick={()=>wrap('~~')}><s>S</s></button>
    <span className="divider"/>
-   <button type="button" title="无序列表" onMouseDown={e=>e.preventDefault()} onClick={()=>prefix('- ')}>•≡</button>
-   <button type="button" title="有序列表" onMouseDown={e=>e.preventDefault()} onClick={()=>prefix('1. ')}>1.</button>
-   <button type="button" aria-label="插入/切换清单" title="插入/切换清单" onMouseDown={e=>e.preventDefault()} onClick={toggleTask}>☑</button>
-   <button type="button" title="引用" onMouseDown={e=>e.preventDefault()} onClick={()=>prefix('> ')}>❯</button>
+   <button type="button" title="无序列表" onClick={()=>prefix('- ')}>•≡</button>
+   <button type="button" title="有序列表" onClick={()=>prefix('1. ')}>1.</button>
+   <button type="button" aria-label="插入/切换清单" title="插入/切换清单" onClick={toggleTask}>☑</button>
+   <button type="button" title="引用" onClick={()=>prefix('> ')}>❯</button>
    <span className="divider"/>
-   <button type="button" title="插入链接" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('[','](https://)','链接')}>🔗</button>
-   <button type="button" title="插入表格" onMouseDown={e=>e.preventDefault()} onClick={()=>insert('| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n')}>▦</button>
+   <button type="button" title="插入链接" onClick={()=>wrap('[','](https://)','链接')}>🔗</button>
+   <button type="button" title="插入表格" onClick={()=>insert('| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n')}>▦</button>
    <span className="divider"/>
-   <button type="button" title="行内代码" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('`')}>{'</>'}</button>
-   <button type="button" title="代码块" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('```\n','\n```','代码')}>▣</button>
-   <button type="button" title="分隔线" onMouseDown={e=>e.preventDefault()} onClick={()=>insert('\n---\n')}>—</button>
+   <button type="button" title="行内代码" onClick={()=>wrap('`')}>{'</>'}</button>
+   <button type="button" title="代码块" onClick={()=>wrap('```\n','\n```','代码')}>▣</button>
+   <button type="button" title="分隔线" onClick={()=>insert('\n---\n')}>—</button>
    </div>
   </div>
   <textarea ref={textareaRef} className="zing-mobile-md-textarea" aria-label="Markdown 正文" value={value} onChange={e=>handleInputChange(e.target.value)} spellCheck={false}/>
