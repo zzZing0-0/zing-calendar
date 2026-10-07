@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.4.3'
+const APP_VERSION = '2.4.5'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -2700,9 +2700,9 @@ function App() {
   const exportJournalsCsv = () => {
     const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
     const rows=[
-      ['id','date','title','event_impact','emotions','tags','body_markdown','image_count','audio_count','created_at','updated_at'],
+      ['id','date','title','event_impact','emotions','tags','body_markdown','message_count','messages','image_count','audio_count','created_at','updated_at'],
       ...activeJournalEntries.map(entry=>[
-        entry.id,entry.date,entry.title,entry.impact,(entry.emotionIds??[]).map(id=>emotionOptions.find(item=>item.id===id)?.name??id).join(' | '),(entry.tagIds??[]).map(tagName).join(' | '),entry.content??'',
+        entry.id,entry.date,entry.title,entry.impact,(entry.emotionIds??[]).map(id=>emotionOptions.find(item=>item.id===id)?.name??id).join(' | '),(entry.tagIds??[]).map(tagName).join(' | '),entry.content??'',(entry.messages??[]).length,(entry.messages??[]).map(message=>`[${message.createdAt}] ${message.content}`).join('\n\n'),
         (entry.attachments??[]).filter(item=>item.type==='image').length,(entry.attachments??[]).filter(item=>item.type==='audio').length,entry.createdAt,entry.updatedAt
       ])
     ]
@@ -3198,7 +3198,7 @@ function App() {
             <div className="impact-distribution">
               {statistics.journals.length ? statistics.impactCounts.map(row=><div key={row.value} className={`impact-stat impact-${row.value<0?'negative':row.value>0?'positive':'neutral'}`}><span>{impactLabel(row.value)}</span><strong>{row.count}</strong></div>) : <p className="page-empty compact">这个时间范围还没有 Journal，暂不统计 Event Impact。</p>}
             </div>
-            <div className="stats-subblock"><h4>词云</h4><p className="stats-note">来自当前时间范围内 Journal 的标题与正文；字体越大，出现越频繁。点击词语可屏蔽。</p>
+            <div className="stats-subblock"><h4>词云</h4><p className="stats-note">来自当前时间范围内 Journal 的标题、正文与后续消息；字体越大，出现越频繁。点击词语可屏蔽。</p>
               {statistics.words.length ? <div className="journal-word-cloud">{statistics.words.map(({word,count},index)=>{
                 const max=statistics.words[0]?.count||1
                 const frequencyScale=Math.sqrt(count/max)
@@ -4102,7 +4102,7 @@ function App() {
                       <span className={`impact-badge impact-${entry.impact}`}>{entry.impact > 0 ? '+' : ''}{entry.impact}</span>
                       <span className="journal-card-bottom">
                         <span className="entry-tags">{visibleTags.map(id => { const tag = tags.find(item => item.id === id); return tag ? <span key={id} className="mini-tag" style={{ '--tag-color': tag.color } as any}>#{tag.name}</span> : null })}{extraTags > 0 && <span className="extra-tags">+{extraTags}</span>}</span>
-                        <span className="journal-markers">{entry.content && <span title="有正文" aria-label="有正文">≡</span>}{images > 0 && <span title="有图片" aria-label="有图片">▧</span>}{hasAudio && <span title="有录音" aria-label="有录音">●</span>}</span>
+                        <span className="journal-markers">{entry.content && <span title="有正文" aria-label="有正文">≡</span>}{normalizeJournalMessages(entry.messages).length > 0 && <span className="journal-thread-list-marker" title="有后续" aria-label="有后续">■</span>}{images > 0 && <span title="有图片" aria-label="有图片">▧</span>}{hasAudio && <span title="有录音" aria-label="有录音">●</span>}</span>
                       </span>
                     </button>
                   })}

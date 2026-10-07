@@ -136,3 +136,16 @@ test('record viewer exposes a text-only append-only chat thread with no message 
   expect(viewer).not.toContain('删除消息')
   expect(viewer).not.toContain('message.attachments')
 })
+
+
+test('record list exposes a follow-up marker when a journal has messages',()=>{
+  expect(app).toContain('className="journal-thread-list-marker"')
+  expect(app).toContain('title="有后续" aria-label="有后续"')
+})
+
+test('journal CSV export preserves follow-up message count, timestamps, and content',()=>{
+  expect(app).toContain("'message_count','messages'")
+  expect(app).toContain('(entry.messages??[]).length')
+  expect(app).toContain('message.createdAt')
+  expect(app).toContain('message.content')
+})

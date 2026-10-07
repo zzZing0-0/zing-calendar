@@ -309,7 +309,7 @@ export function buildStatistics({
   }
   const wordCounts=new Map<string,number>()
   journals.forEach(entry=>{
-    const source=`${entry.title} ${entry.content}`.replace(/[#>*_`~\[\]()!]/g,' ')
+    const source=`${entry.title} ${entry.content} ${(entry.messages??[]).map(message=>message.content).join(' ')}`.replace(/[#>*_`~\[\]()!]/g,' ')
     const latin=source.toLowerCase().match(/[a-z][a-z'-]{2,}/g)??[]
     latin.forEach(word=>{if(!stop.has(word))wordCounts.set(word,(wordCounts.get(word)??0)+1)})
     segmentChinese(source).forEach(word=>{if(!stop.has(word))wordCounts.set(word,(wordCounts.get(word)??0)+1)})

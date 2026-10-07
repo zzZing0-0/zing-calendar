@@ -4893,3 +4893,6 @@ button {
   .calendar-task-settings .personalization-settings{display:none!important}
   .bottom-nav button span{font-size:inherit}
 }
+
+/* v2.4.5 record-thread integration */
+.journal-markers .journal-thread-list-marker { font-size:6px; color:#c35f5f; }

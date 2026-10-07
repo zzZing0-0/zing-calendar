@@ -69,6 +69,18 @@ test.describe('search domain regression', () => {
     expect(journalResult[0]).toMatchObject({ kind: 'journal', id: 'journal:test', date: '2026-10-03' })
   })
 
+
+  test('journal search includes follow-up message content and returns a message-context snippet', () => {
+    const result = buildSearchResults({
+      ...base,
+      normalizedSearch: 'resolved',
+      searchFilter: 'journal',
+      activeJournalEntries: [journal({ messages: [{ id: 'm1', content: 'Later we resolved the misunderstanding.', createdAt: '2026-10-04T10:00:00.000Z' }] })],
+    })[0]
+    expect(result).toMatchObject({ kind: 'journal', id: 'journal:test' })
+    expect(result?.snippet).toContain('resolved')
+  })
+
   test('tag mode ignores entity filter and reports stable usage summary', () => {
     const english = tag()
     const results = buildSearchResults({

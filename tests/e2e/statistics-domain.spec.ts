@@ -124,6 +124,30 @@ test.describe('statistics domain regression', () => {
     expect(result.defaultTagImpactRow.impacts.find(row => row.value === -1)?.count).toBe(1)
   })
 
+  test('journal word cloud includes follow-up message content and respects ignored words', () => {
+    const result = stats({
+      activeJournalEntries: [
+        journal({
+          id: 'threaded-journal',
+          date: '2026-10-04',
+          title: '普通记录',
+          content: '今天写下正文',
+          messages: [
+            { id: 'message-1', content: '后来继续学习 radiology radiology', createdAt: '2026-10-04T13:00:00.000Z' },
+            { id: 'message-2', content: '再次学习 radiology', createdAt: '2026-10-04T14:00:00.000Z' },
+          ],
+        }),
+      ],
+    })
+    expect(result.words.find(row => row.word === 'radiology')?.count).toBe(3)
+
+    const ignored = stats({
+      activeJournalEntries: [journal({ id: 'threaded-journal', date: '2026-10-04', messages: [{ id: 'message-1', content: 'radiology radiology', createdAt: now }] })],
+      wordCloudIgnored: ['radiology'],
+    })
+    expect(ignored.words.some(row => row.word === 'radiology')).toBe(false)
+  })
+
   test('task completion, overdue, abandonment, and postpone aggregates preserve existing semantics', () => {
     const result = stats({
       activeTasks: [

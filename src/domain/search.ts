@@ -82,9 +82,11 @@ export function buildSearchResults({
   }
   if (searchFilter === 'all' || searchFilter === 'journal') {
     activeJournalEntries.forEach(entry => {
-      const hay = `${entry.title} ${entry.content}`.toLocaleLowerCase()
+      const messages = (entry.messages ?? []).map(message => message.content).join(' \n')
+      const searchableText = `${entry.content} ${messages}`.trim()
+      const hay = `${entry.title} ${searchableText}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) {
-        results.push({ kind: 'journal', id: entry.id, title: entry.title, date: entry.date, snippet: searchSnippet(entry.content, normalizedSearch), item: entry })
+        results.push({ kind: 'journal', id: entry.id, title: entry.title, date: entry.date, snippet: searchSnippet(searchableText, normalizedSearch), item: entry })
       }
     })
   }
