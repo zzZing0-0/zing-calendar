@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.5.28'
+const APP_VERSION = '2.6.0'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -931,6 +931,28 @@ function App() {
       added.push({ id, type: 'image', filename: file.name, mimeType: blob.type || 'image/webp', size: blob.size, storageKey, createdAt: new Date().toISOString() })
     }
     if (added.length) setJournalDraft(current => ({ ...current, attachments: [...current.attachments, ...added] }))
+  }
+
+  const addNoteImages = async (noteId: string, files: FileList | null) => {
+    if (!files?.length) return
+    const note = notes.find(row => row.id === noteId && !row.trashedAt)
+    if (!note) return
+    const room = Math.max(0, 9 - (note.attachments ?? []).filter(a => a.type === 'image').length)
+    const added: Attachment[] = []
+    for (const file of Array.from(files).filter(file => file.type.startsWith('image/')).slice(0, room)) {
+      const blob = await compressImage(file)
+      const id = crypto.randomUUID(), storageKey = `attachment:${id}`, createdAt = new Date().toISOString()
+      await putAttachmentBlob(storageKey, blob)
+      added.push({ id, type: 'image', filename: file.name, mimeType: blob.type || 'image/webp', size: blob.size, storageKey, createdAt })
+    }
+    if (!added.length) return
+    const now = new Date().toISOString()
+    setNotes(rows => rows.map(row => {
+      if (row.id !== noteId) return row
+      const tombstones = { ...(row.attachmentLinkTombstones ?? {}) }
+      added.forEach(item => { delete tombstones[item.storageKey] })
+      return { ...row, attachments: [...(row.attachments ?? []), ...added], attachmentLinkTombstones: tombstones, updatedAt: now }
+    }))
   }
 
   const removeJournalAttachment = async (attachment: Attachment) => {
@@ -3392,7 +3414,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} />}
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">

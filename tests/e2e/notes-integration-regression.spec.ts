@@ -195,3 +195,22 @@ test('notes search and sync lifecycle regression › trashed Notes stay searchab
     { entityType: 'note', entityId: 'note-1', operation: 'upsert' },
   ])
 })
+
+test('notes attachments integration › Notes UI supports device images and one audio recording through shared blob storage', () => {
+  const notesPage=fs.readFileSync(path.resolve(process.cwd(),'src/features/notes/NotesPage.tsx'),'utf8')
+  expect(notesPage).toContain('图片 · 最多 9 张')
+  expect(notesPage).toContain('录音 · 最多 1 条 / 30 分钟')
+  expect(notesPage).toContain("navigator.mediaDevices.getUserMedia({audio:true})")
+  expect(notesPage).toContain('await putAttachmentBlob(storageKey,blob)')
+  expect(notesPage).toContain('attachmentLinkTombstones:tombstones')
+  expect(appSource).toContain('const addNoteImages = async (noteId: string, files: FileList | null)')
+  expect(appSource).toContain('await putAttachmentBlob(storageKey, blob)')
+})
+
+test('notes attachments integration › Notes remain inside shared attachment lifecycle, backup, sync and B2 GC reference enumeration', () => {
+  const attachments=fs.readFileSync(path.resolve(process.cwd(),'src/domain/attachments.ts'),'utf8')
+  expect(attachments).toContain("for (const note of notes) add(note.attachments, note.trashedAt ? 'trash' : 'active')")
+  expect(appSource).toContain('buildAttachmentLifecycle(tasks, journalEntries, notes)')
+  expect(appSource).toContain('referencedAttachmentKeys(tasks, journalEntries, notes)')
+  expect(appSource).toContain('const allStoredAttachments = useMemo(() => attachmentLifecycle.map(row => row.attachment)')
+})

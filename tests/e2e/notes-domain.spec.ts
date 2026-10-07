@@ -38,3 +38,10 @@ test('notes trash lifecycle keeps soft delete restorable and permanent delete ex
   expect(permanentlyDeleteNote([restored], 'n1')).toEqual([])
   expect(purgeTrashedNotes([base, trashed]).map(note => note.id)).toEqual(['n1'])
 })
+
+test('notes attachments regression › unlink tombstones keep removed binary links from concurrent resurrection', async () => {
+  const note:any={id:'n',notebookId:DEFAULT_NOTEBOOK_ID,title:'x',content:'',active:false,createdAt:'1',updatedAt:'1',attachments:[{id:'a',type:'image',filename:'x.png',mimeType:'image/png',size:1,storageKey:'attachment:a',createdAt:'2026-10-07T10:00:00.000Z'}],attachmentLinkTombstones:{'attachment:a':'2026-10-07T11:00:00.000Z'}}
+  const normalized=normalizeNotes([note],new Set([DEFAULT_NOTEBOOK_ID]))[0]
+  expect(normalized.attachmentLinkTombstones?.['attachment:a']).toBe('2026-10-07T11:00:00.000Z')
+  expect(buildAttachmentLifecycle([],[],[{...normalized,attachments:[]}])[0]).toBeUndefined()
+})
