@@ -211,6 +211,31 @@ test('notes mobile browser regression › sticky toolbar stays pinned while long
   await expect.poll(async () => Math.abs((await toolbar.evaluate(el => el.getBoundingClientRect().top)) - pinnedY)).toBeLessThan(2)
 })
 
+test('notes mobile browser regression › toolbar command preserves edit position and sticky toolbar', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.locator('.bottom-nav').getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('button', { name: '＋ 新建' }).click()
+  const textarea = page.locator('.note-editor .zing-mobile-md-textarea')
+  const source = Array.from({length: 120}, (_, i) => `line ${i + 1} toolbar command content`).join('\n\n')
+  await textarea.fill(source)
+  const editor = page.locator('.note-editor')
+  const toolbar = page.locator('.note-editor .zing-mobile-md-toolbar-shell')
+  await editor.evaluate(el => { (el as HTMLElement).scrollTop = 1200 })
+  await expect.poll(() => editor.evaluate(el => (el as HTMLElement).scrollTop)).toBeGreaterThan(500)
+  const pinnedY = await toolbar.evaluate(el => el.getBoundingClientRect().top)
+  const before = await editor.evaluate(el => (el as HTMLElement).scrollTop)
+  const target = 'line 90'
+  const start = source.indexOf(target)
+  await textarea.evaluate((el, range) => { const t=el as HTMLTextAreaElement; t.focus({preventScroll:true}); t.setSelectionRange(range.start,range.end) }, {start,end:start+target.length})
+  await page.getByTitle('粗体').click()
+  await expect(textarea).toHaveValue(source.slice(0,start) + `**${target}**` + source.slice(start+target.length))
+  await expect.poll(async () => Math.abs((await editor.evaluate(el => (el as HTMLElement).scrollTop)) - before)).toBeLessThan(8)
+  await expect.poll(async () => Math.abs((await toolbar.evaluate(el => el.getBoundingClientRect().top)) - pinnedY)).toBeLessThan(2)
+  const selection = await textarea.evaluate(el => ({start:(el as HTMLTextAreaElement).selectionStart,end:(el as HTMLTextAreaElement).selectionEnd}))
+  expect(selection).toEqual({start:start+2,end:start+2+target.length})
+})
+
 test('notes desktop browser regression › the mounted UIW editor drives preview scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 850 })
   await page.goto('/')

@@ -79,3 +79,9 @@ test('notes mobile toolbar regression › headless toolbar keeps core Markdown c
   expect(adapter).toContain("'| 列 1 | 列 2 |\\n| --- | --- |\\n| 内容 | 内容 |\\n'")
   expect(adapter).toContain("wrap('```\\n','\\n```','代码')")
 })
+
+test('notes mobile toolbar scroll regression › toolbar commits snapshot scroll before changing markdown', () => {
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
+  expect(adapter).toContain('const commit=(next:string,nextSelection:Selection)=>{snapshotScroll();pendingSelection.current=nextSelection;onChange(next)}')
+  expect(adapter).toContain('el.setSelectionRange(sel.start,sel.end);if(pendingScroll.current){restoreScroll()')
+})
