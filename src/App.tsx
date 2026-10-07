@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.7.1'
+const APP_VERSION = '2.7.4'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -73,6 +73,14 @@ function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const SYNC_ENTITY_LABELS: Record<SyncEntityType | 'trash', string> = {
+  task:'任务', journal:'日记', note:'笔记', notebook:'笔记本', mood:'心情', energy:'能量', environment:'天气/体感', period:'月经', tag:'标签', anniversary:'纪念日', focus:'专注', settings:'设置', trash:'回收站',
+}
+function syncEntityLabel(entityType: string) {
+  return Object.prototype.hasOwnProperty.call(SYNC_ENTITY_LABELS, entityType)
+    ? SYNC_ENTITY_LABELS[entityType as SyncEntityType | 'trash']
+    : '其他'
+}
 function MoodFace({ level }: { level: MoodLevel }) {
   const common = { viewBox: '0 0 64 64', className: `mood-face-svg mood-face-${level}`, 'aria-hidden': true } as const
 
@@ -3148,7 +3156,7 @@ function App() {
             <button className="nav-button" type="button" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
-            <button className="today-button" type="button" onClick={goToday}>Today</button>
+            <button className="today-button" type="button" onClick={goToday}>今天</button>
             <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='task'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
@@ -3187,7 +3195,7 @@ function App() {
             <div className="stat-number-card"><span>完成任务</span><strong>{statistics.completed}</strong><small>{statistics.eligibleTasks.length} 个已进入执行期</small></div>
             <div className="stat-number-card"><span>完成率</span><strong>{statistics.eligibleTasks.length?statsPercent(statistics.completionRate):'—'}</strong><small>{statistics.eligibleTasks.length?`${statistics.completed} / ${statistics.eligibleTasks.length}`:'暂无可统计任务'}</small></div>
             <div className="stat-number-card"><span>记录</span><strong>{statistics.journals.length}</strong><small>{statistics.journalDays} 天写过 Journal</small></div>
-            <div className="stat-number-card"><span>心情记录</span><strong>{statistics.moodDays}</strong><small>Daily Mood 天数</small></div>
+            <div className="stat-number-card"><span>心情记录</span><strong>{statistics.moodDays}</strong><small>记录天数</small></div>
           </div>
 
           <section className="stats-section">
@@ -3602,17 +3610,16 @@ function App() {
             <div className="editor-body">
               <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
               {(() => {
-                const labels:any={task:'任务',journal:'日记',mood:'心情',energy:'能量',environment:'天气/体感',period:'月经',tag:'标签',anniversary:'纪念日',focus:'专注',settings:'设置',trash:'回收站'}
                 const changedRows=githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount)
                 return changedRows.length ? <>
                   <div className="sync-summary-grid">
-                    {changedRows.map(row=><div className="sync-summary-row sync-preview-count-row" key={row.entityType}><b>{labels[row.entityType]||row.entityType}</b><span>本机 {row.localCount}</span><span>服务器 {row.remoteCount}</span><span>合并后 {row.mergedCount}</span></div>)}
+                    {changedRows.map(row=><div className="sync-summary-row sync-preview-count-row" key={row.entityType}><b>{syncEntityLabel(row.entityType)}</b><span>本机 {row.localCount}</span><span>服务器 {row.remoteCount}</span><span>合并后 {row.mergedCount}</span></div>)}
                   </div>
                   <div className="sync-change-summary">
                     <b>本次变化</b>
                     {changedRows.map(row=>{
                       const changes=[row.added?`增加 ${row.added}`:'',row.updated?`更新 ${row.updated}`:'',row.deleted?`删除 ${row.deleted}`:''].filter(Boolean)
-                      return changes.length?<div className="sync-change-row" key={row.entityType}><span>{labels[row.entityType]||row.entityType}</span><span>{changes.join('　')}</span></div>:null
+                      return changes.length?<div className="sync-change-row" key={row.entityType}><span>{syncEntityLabel(row.entityType)}</span><span>{changes.join('　')}</span></div>:null
                     })}
                   </div>
                 </> : <div className="sync-summary-empty"><b>两端数据一致，无需合并</b></div>

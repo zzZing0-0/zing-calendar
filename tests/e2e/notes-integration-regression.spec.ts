@@ -357,3 +357,28 @@ test('notes tags integration regression › deleting a tag removes Note referenc
   expect(app).toContain('tagIds:cleanupNoteTagIdsAfterDelete(note.tagIds,id)')
   expect(tagsDomain).toContain("return (ids ?? []).filter(tagId => tagId !== deletedId)")
 })
+
+
+test('notes tags desktop regression › overflowing tag pills can scroll horizontally with a normal mouse wheel', () => {
+  const notesPage = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  expect(notesPage).toContain('onWheel={scrollTagFilter}')
+  expect(notesPage).toContain('row.scrollWidth<=row.clientWidth')
+  expect(notesPage).toContain('row.scrollLeft+=delta')
+  expect(notesPage).toContain('event.preventDefault()')
+  expect(css).toContain('.notes-tag-filter{display:flex;gap:7px;overflow-x:auto')
+})
+
+
+test('notes card regression › active cards use a dot, show at most three tags before metadata, and drag instead of arrows', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(page).toContain('className="note-active-dot"')
+  expect(page).toContain('visibleTags.slice(0,3)')
+  expect(page).toContain('visibleTags.length>3')
+  expect(page).toContain('className="note-row-meta"')
+  expect(page).toContain('draggable={!selectedNotebook&&!selectedTagId}')
+  expect(page).toContain('dropActiveNote(n.id)')
+  expect(page).not.toContain('>↑</button>')
+  expect(page).not.toContain('>↓</button>')
+  expect(page).not.toContain("n.active?'● 已激活':'○ 激活'")
+})

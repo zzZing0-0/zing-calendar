@@ -5022,7 +5022,7 @@ button {
 }
 
 /* Notes tags v2.7 */
-.notes-tag-filter{display:flex;gap:7px;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none;padding:2px 0 12px;white-space:nowrap}
+.notes-tag-filter{display:flex;gap:7px;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none;padding:2px 0 12px;white-space:nowrap;scroll-behavior:smooth;cursor:ew-resize}
 .notes-tag-filter::-webkit-scrollbar{display:none}
 .notes-tag-filter button,.note-tag-editor button{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;border:1px solid #dfe5e1;background:#fff;color:#66716b;border-radius:999px;padding:6px 10px;font:inherit;font-size:12px}
 .notes-tag-filter button i,.note-tag-editor button i,.note-row-tags i{width:8px;height:8px;border-radius:50%;background:var(--note-tag-color,#aab4ae);display:inline-block;flex:0 0 auto}
@@ -5035,3 +5035,18 @@ button {
 .note-tag-editor>div{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
 .note-tag-editor>div::-webkit-scrollbar{display:none}
 @media(max-width:700px){.notes-tag-filter{margin-right:-12px;padding-right:12px}.note-tag-editor{padding:7px 12px}.note-tag-editor>div{padding-right:8px}}
+
+/* Notes card compactness + drag ordering v2.7.3 */
+.note-row-main{min-width:0;flex:1}
+.note-row-title{display:flex;align-items:center;gap:9px;min-width:0}
+.note-row-title strong{min-width:0}
+.note-active-dot{width:13px;height:13px;min-width:13px;border:0;border-radius:50%;padding:0;background:#3f806a;box-shadow:0 0 0 5px rgba(63,128,106,.10),0 0 13px rgba(63,128,106,.48);cursor:pointer}
+.note-row-meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-top:7px}
+.note-row-meta .note-row-tag{display:inline-flex;align-items:center;gap:5px;border-radius:999px;background:color-mix(in srgb,var(--note-tag-color) 10%,white);padding:3px 7px;font-size:11px;color:#5f6b65}
+.note-row-meta .note-row-tag i{width:8px;height:8px;border-radius:50%;background:var(--note-tag-color,#aab4ae);display:inline-block;flex:0 0 auto}
+.note-row-tags-more{color:#89918d;font-size:13px;line-height:1}
+.note-row-meta small{margin-left:3px;color:#9aa19d}
+.note-row[draggable="true"]{cursor:grab}
+.note-row[draggable="true"]:active{cursor:grabbing}
+.note-row.is-drag-over{outline:2px solid rgba(63,128,106,.22);outline-offset:2px}
+@media(max-width:700px){.note-row-meta{gap:4px}.note-row-meta .note-row-tag{font-size:11px;padding:3px 6px}.note-active-dot{width:12px;height:12px;min-width:12px}}
