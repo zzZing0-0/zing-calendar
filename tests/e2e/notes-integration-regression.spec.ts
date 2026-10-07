@@ -169,6 +169,25 @@ test('notes mobile browser regression › single-layer checklist toggle edits th
   await expect(page.locator('.note-editor .w-md-editor')).toHaveCount(0)
 })
 
+test('notes mobile browser regression › typing in a long single-layer note preserves outer scroll position', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.locator('.bottom-nav').getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('button', { name: '＋ 新建' }).click()
+  const textarea = page.locator('.note-editor .zing-mobile-md-textarea')
+  const source = Array.from({length: 100}, (_, i) => `line ${i + 1} long mobile note content`).join('\n\n')
+  await textarea.fill(source)
+  const editor = page.locator('.note-editor')
+  await editor.evaluate(el => { (el as HTMLElement).scrollTop = 1200 })
+  const before = await editor.evaluate(el => (el as HTMLElement).scrollTop)
+  expect(before).toBeGreaterThan(500)
+  const offset = source.indexOf('line 70') + 'line 70'.length
+  await textarea.evaluate((el, pos) => { const t=el as HTMLTextAreaElement; t.focus({preventScroll:true}); t.setSelectionRange(pos,pos) }, offset)
+  await textarea.press('d')
+  await expect(textarea).toHaveValue(source.slice(0,offset) + 'd' + source.slice(offset))
+  await expect.poll(async () => Math.abs((await editor.evaluate(el => (el as HTMLElement).scrollTop)) - before)).toBeLessThan(8)
+})
+
 test('notes desktop browser regression › the mounted UIW editor drives preview scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 850 })
   await page.goto('/')

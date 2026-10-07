@@ -20,10 +20,13 @@ function lineBounds(value:string,offset:number){const start=value.lastIndexOf('\
 function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:string)=>void}){
  const textareaRef=useRef<HTMLTextAreaElement>(null)
  const pendingSelection=useRef<Selection|null>(null)
+ const pendingScroll=useRef<{scroller:HTMLElement|null;top:number;pageX:number;pageY:number}|null>(null)
  const resize=()=>{const el=textareaRef.current;if(!el)return;el.style.height='auto';el.style.height=`${Math.max(320,el.scrollHeight)}px`}
- useLayoutEffect(resize,[value])
+ const restoreScroll=()=>{const snapshot=pendingScroll.current;if(!snapshot)return;if(snapshot.scroller?.isConnected)snapshot.scroller.scrollTop=snapshot.top;window.scrollTo(snapshot.pageX,snapshot.pageY)}
+ useLayoutEffect(()=>{resize();if(!pendingScroll.current)return;restoreScroll();requestAnimationFrame(()=>{restoreScroll();requestAnimationFrame(()=>{restoreScroll();pendingScroll.current=null})})},[value])
  useLayoutEffect(()=>{const sel=pendingSelection.current,el=textareaRef.current;if(!sel||!el)return;pendingSelection.current=null;el.focus({preventScroll:true});el.setSelectionRange(sel.start,sel.end)},[value])
  const selection=():Selection=>{const el=textareaRef.current;return {start:el?.selectionStart??0,end:el?.selectionEnd??0}}
+ const handleInputChange=(next:string)=>{const el=textareaRef.current;const scroller=el?.closest<HTMLElement>('.note-editor')??null;pendingScroll.current={scroller,top:scroller?.scrollTop??0,pageX:window.scrollX,pageY:window.scrollY};onChange(next)}
  const commit=(next:string,nextSelection:Selection)=>{pendingSelection.current=nextSelection;onChange(next)}
  const wrap=(before:string,after=before,placeholder='文本')=>{const sel=selection();const chosen=value.slice(sel.start,sel.end)||placeholder;const replacement=before+chosen+after;commit(replaceSelection(value,sel,replacement),{start:sel.start+before.length,end:sel.start+before.length+chosen.length})}
  const prefix=(mark:string)=>{const sel=selection();const bounds=lineBounds(value,sel.start);const line=value.slice(bounds.start,bounds.end);const nextLine=line.startsWith(mark)?line.slice(mark.length):mark+line;const delta=nextLine.length-line.length;commit(value.slice(0,bounds.start)+nextLine+value.slice(bounds.end),{start:Math.max(bounds.start,sel.start+delta),end:Math.max(bounds.start,sel.end+delta)})}
@@ -49,7 +52,7 @@ function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:str
    <button type="button" title="代码块" onMouseDown={e=>e.preventDefault()} onClick={()=>wrap('```\n','\n```','代码')}>▣</button>
    <button type="button" title="分隔线" onMouseDown={e=>e.preventDefault()} onClick={()=>insert('\n---\n')}>—</button>
   </div>
-  <textarea ref={textareaRef} className="zing-mobile-md-textarea" aria-label="Markdown 正文" value={value} onChange={e=>onChange(e.target.value)} onInput={resize} spellCheck={false}/>
+  <textarea ref={textareaRef} className="zing-mobile-md-textarea" aria-label="Markdown 正文" value={value} onChange={e=>handleInputChange(e.target.value)} spellCheck={false}/>
  </div>
 }
 

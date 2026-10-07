@@ -47,6 +47,8 @@ test('notes mobile architecture regression › mobile editing is independent of 
   expect(adapter).toContain('if(isMobile)return <MobileMarkdownEditor')
   expect(adapter).toContain('data-mobile-single-layer="true"')
   expect(adapter).toContain('className="zing-mobile-md-textarea"')
+  expect(adapter).toContain("pendingScroll.current={scroller,top:scroller?.scrollTop??0,pageX:window.scrollX,pageY:window.scrollY}")
+  expect(adapter).not.toContain('onInput={resize}')
   expect(adapter).toContain('<MDEditor value={value}')
   expect(adapter).not.toContain('highlightEnable=')
   expect(notes).not.toContain('visualViewport')
