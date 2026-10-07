@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes } from 'react'
 import MDEditor, { commands } from '@uiw/react-md-editor'
 import { toggleMarkdownTaskAtOffset } from '../../domain/markdown'
@@ -39,6 +39,15 @@ const toolbarCommands = {
 
 export function MarkdownEditorAdapter({value,onChange,onScrollRatio}:{value:string;onChange:(value:string)=>void;onScrollRatio?:(ratio:number)=>void}) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const [isMobileEditor, setIsMobileEditor] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches)
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 700px)')
+    const update = () => setIsMobileEditor(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
 
   useEffect(() => {
     if (!onScrollRatio) return
@@ -104,7 +113,7 @@ export function MarkdownEditorAdapter({value,onChange,onScrollRatio}:{value:stri
     },
   }
 
-  return <div ref={rootRef} data-color-mode="light" className="zing-md-editor"><MDEditor value={value} onChange={next=>onChange(next??'')} preview="edit" height="100%" commands={[
+  return <div ref={rootRef} data-color-mode="light" className="zing-md-editor"><MDEditor value={value} onChange={next=>onChange(next??'')} preview="edit" height="100%" highlightEnable={!isMobileEditor} commands={[
     headingGroup,toolbarCommands.bold,toolbarCommands.italic,toolbarCommands.strike,
     commands.divider,
     toolbarCommands.unordered,toolbarCommands.ordered,toolbarCommands.checklist,toggleCurrentTask,toolbarCommands.quote,

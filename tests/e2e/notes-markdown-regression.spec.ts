@@ -59,3 +59,10 @@ test('notes mobile regression › visual viewport listeners and page scroll lock
   expect(notes).toContain('document.body.style.overflow=previousBodyOverflow')
   expect(notes).toContain('document.documentElement.style.overflow=previousOverflow')
 })
+
+
+test('notes mobile caret regression › mobile edit disables UIW highlight overlay while desktop keeps it', async () => {
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
+  expect(adapter).toContain("window.matchMedia('(max-width: 700px)')")
+  expect(adapter).toContain('highlightEnable={!isMobileEditor}')
+})
