@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import type { ButtonHTMLAttributes } from 'react'
 import MDEditor, { commands } from '@uiw/react-md-editor'
 import { toggleMarkdownTaskAtOffset } from '../../domain/markdown'
 
@@ -12,8 +13,13 @@ const headingGroup = commands.group(
   },
 )
 
-function withChineseTitle<T extends {buttonProps?: Record<string, unknown>}>(command:T,title:string):T {
-  return {...command,buttonProps:{...command.buttonProps,title,'aria-label':title}}
+type ToolbarCommand = { buttonProps?: ButtonHTMLAttributes<HTMLButtonElement> | null }
+
+function withChineseTitle<T extends ToolbarCommand>(command:T,title:string):T {
+  return {
+    ...command,
+    buttonProps: { ...(command.buttonProps ?? {}), title, 'aria-label': title },
+  } as T
 }
 
 const toolbarCommands = {

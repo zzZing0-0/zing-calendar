@@ -31,3 +31,10 @@ test('notes markdown polish › toolbar exposes Chinese purpose labels for forma
     expect(adapter).toContain(`'${label}'`)
   }
 })
+
+
+test('notes markdown polish › toolbar title wrapper accepts UIW nullable button props', () => {
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
+  expect(adapter).toContain('buttonProps?: ButtonHTMLAttributes<HTMLButtonElement> | null')
+  expect(adapter).toContain('...(command.buttonProps ?? {})')
+})
