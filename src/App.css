@@ -4984,3 +4984,13 @@ button {
   .note-split.mobile-edit .zing-md-editor .w-md-editor-toolbar{position:sticky;top:0;z-index:6;flex:0 0 auto;overflow-x:auto;overflow-y:hidden;white-space:nowrap;-webkit-overflow-scrolling:touch;background:var(--color-canvas-default,#fff)}
   .note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch}
 }
+
+
+/* v2.6.4 — Mobile Notes size the editor to the visible space below its actual on-screen top. */
+@media(max-width:700px){
+  .note-split.mobile-edit,.note-split.mobile-preview{height:var(--note-split-height,60dvh);min-height:320px;overflow:hidden}
+  .note-split.mobile-edit .note-edit-pane,.note-split.mobile-preview .note-preview-pane{height:100%;overflow:auto;-webkit-overflow-scrolling:touch}
+  .note-split.mobile-edit .zing-md-editor,.note-split.mobile-edit .zing-md-editor .w-md-editor{height:100%!important;min-height:0;overflow:hidden}
+  .note-split.mobile-edit .zing-md-editor .w-md-editor{display:flex;flex-direction:column}
+  .note-split.mobile-edit .zing-md-editor .w-md-editor-content{min-height:0;flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch}
+}

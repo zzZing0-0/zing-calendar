@@ -56,7 +56,7 @@ test('notes mobile regression › editor follows the visual viewport while the k
 
 test('notes mobile layout regression › keyboard editing pins only the Markdown toolbar', () => {
   const css = readFileSync('src/App.css','utf8')
-  const mobilePatch = css.slice(css.indexOf('/* v2.6.3'))
+  const mobilePatch = css.slice(css.indexOf('/* v2.6.3 — On mobile'))
   expect(mobilePatch).toContain('.note-editor>header,.note-meta,.note-mobile-tabs,.note-attachments{position:static;flex:none}')
   expect(mobilePatch).toContain('.w-md-editor-toolbar{position:sticky;top:0')
   expect(mobilePatch).not.toContain('.note-attachments{position:sticky')
@@ -77,4 +77,17 @@ test('notes mobile caret regression › mobile edit disables UIW highlight overl
   const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx', 'utf8')
   expect(adapter).toContain("window.matchMedia('(max-width: 700px)')")
   expect(adapter).toContain('highlightEnable={!isMobileEditor}')
+})
+
+
+test('notes mobile height regression › editor and preview fill the actually visible space below their on-screen top', () => {
+  const css = readFileSync('src/App.css','utf8')
+  const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
+  const patch = css.slice(css.indexOf('/* v2.6.4 — Mobile Notes size'))
+  expect(notes).toContain('const splitRef=useRef<HTMLDivElement>(null)')
+  expect(notes).toContain('splitRef.current?.getBoundingClientRect().top')
+  expect(notes).toContain("'--note-split-height':`${Math.max(320,mobileViewport.top+mobileViewport.height-mobileViewport.splitTop)}px`")
+  expect(notes).toContain('ref={splitRef} className={`note-split mobile-${mobileMode}`}')
+  expect(patch).toContain('.note-split.mobile-edit,.note-split.mobile-preview{height:var(--note-split-height,60dvh);min-height:320px;overflow:hidden}')
+  expect(patch).not.toContain('max(520px')
 })
