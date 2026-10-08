@@ -456,3 +456,14 @@ test('notes presentation regression › redundant Active subtitle is removed and
   expect(css).toContain('.notes-secondary-action')
   expect(css).toContain('.notebook-row{border-bottom:')
 })
+
+
+test('notes creation regression › a just-created note exposes Cancel and discard removes it instead of trashing it', () => {
+  const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
+  expect(page).toContain('const [newNoteId,setNewNoteId]=useState<string|null>(null)')
+  expect(page).toContain('setNewNoteId(id);setEditingId(id)')
+  expect(page).toContain('const cancelNewNote=()=>')
+  expect(page).toContain('rows.filter(note=>note.id!==newNoteId)')
+  expect(page).toContain('newNoteId===editing.id?<button className="ghost-button" onClick={cancelNewNote}>取消</button>')
+  expect(page).toContain('const finishEditing=()=>{setNewNoteId(null);setEditingId(null)}')
+})

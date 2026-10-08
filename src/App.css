@@ -2925,7 +2925,7 @@ button {
 
 /* v0.8.15.1 — restored Journal detail viewer */
 .journal-view-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted);margin-bottom:18px}
-.journal-view-content{white-space:pre-wrap;line-height:1.75;font-size:15px;margin:4px 0 18px}
+.journal-view-content{white-space:normal;line-height:1.75;font-size:15px;margin:4px 0 18px}.journal-view-content .zing-markdown>:first-child{margin-top:0}.journal-view-content .zing-markdown>:last-child{margin-bottom:0}
 .journal-view-tags{margin:8px 0 18px}
 
 /* v0.8.16 — quick historical navigation */
