@@ -31,3 +31,12 @@ export function buildAttachmentLifecycle(tasks: Task[], journals: JournalEntry[]
 export function referencedAttachmentKeys(tasks: Task[], journals: JournalEntry[], notes: Note[] = []): string[] {
   return buildAttachmentLifecycle(tasks, journals, notes).map(row => row.attachment.storageKey)
 }
+
+export function sortAttachmentsNewestFirst<T extends Attachment>(items: T[]): T[] {
+  return [...items].sort((a,b)=>b.createdAt.localeCompare(a.createdAt) || b.storageKey.localeCompare(a.storageKey))
+}
+
+export function renameAttachment(items: Attachment[] | undefined, storageKey: string, filename: string): Attachment[] | undefined {
+  if (!items) return items
+  return items.map(item=>item.storageKey===storageKey?{...item,filename}:item)
+}

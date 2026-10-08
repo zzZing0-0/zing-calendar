@@ -322,7 +322,8 @@ test('notes attachments integration › Notes remain inside shared attachment li
   expect(attachments).toContain("for (const note of notes) add(note.attachments, note.trashedAt ? 'trash' : 'active')")
   expect(appSource).toContain('buildAttachmentLifecycle(tasks, journalEntries, notes)')
   expect(appSource).toContain('referencedAttachmentKeys(tasks, journalEntries, notes)')
-  expect(appSource).toContain('const allStoredAttachments = useMemo(() => attachmentLifecycle.map(row => row.attachment)')
+  expect(appSource).toContain('const allStoredAttachments = useMemo')
+  expect(appSource).toContain('sortAttachmentsNewestFirst')
 })
 
 

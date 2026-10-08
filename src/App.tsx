@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.7.10'
+const APP_VERSION = '2.7.13'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -57,7 +57,7 @@ import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOpti
 import { useAppPreferences } from './hooks/useAppPreferences'
 import { planSyncDiff, syncEntityKey } from './domain/sync'
 import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
-import { buildAttachmentLifecycle, referencedAttachmentKeys } from './domain/attachments'
+import { buildAttachmentLifecycle, referencedAttachmentKeys, renameAttachment, sortAttachmentsNewestFirst } from './domain/attachments'
 import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, moveInboxSortKey, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
 import type { InboxSortKey } from './domain/inbox'
 import { ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
@@ -524,7 +524,7 @@ function App() {
   }, [selectedTagManageId])
   const [seriesAction, setSeriesAction] = useState<'save' | 'delete' | null>(null)
   const [confirmSingleTask, setConfirmSingleTask] = useState(false)
-  const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
+  const [imagePreview, setImagePreview] = useState<{ url: string; name: string; storageKey: string; galleryKeys?: string[] } | null>(null)
 
   useEffect(() => {
     if (!recording) return
@@ -535,14 +535,30 @@ function App() {
     return () => window.clearInterval(timer)
   }, [recording, mediaRecorder])
 
-  const openImagePreview = async (attachment: Attachment) => {
+  const openImagePreview = async (attachment: Attachment, gallery: Attachment[] = []) => {
     const blob = await getAttachmentBlob(attachment.storageKey)
     if (!blob) return
     const url = URL.createObjectURL(blob)
     setImagePreview(current => {
       if (current?.url) URL.revokeObjectURL(current.url)
-      return { url, name: attachment.filename }
+      return { url, name: attachment.filename, storageKey: attachment.storageKey, galleryKeys: gallery.map(item=>item.storageKey) }
     })
+  }
+  const stepImagePreview = (delta:number) => {
+    if(!imagePreview?.galleryKeys?.length)return
+    const index=imagePreview.galleryKeys.indexOf(imagePreview.storageKey), nextKey=imagePreview.galleryKeys[index+delta]
+    const next=allStoredAttachments.find(item=>item.storageKey===nextKey)
+    if(next) void openImagePreview(next, imagePreview.galleryKeys.map(key=>allStoredAttachments.find(item=>item.storageKey===key)).filter((item):item is Attachment=>Boolean(item)))
+  }
+  const renamePreviewImage = () => {
+    if(!imagePreview)return
+    const value=window.prompt('图片名称',imagePreview.name)?.trim()
+    if(!value||value===imagePreview.name)return
+    const key=imagePreview.storageKey, now=new Date().toISOString()
+    setTasks(rows=>rows.map(task=>({...task,attachments:renameAttachment(task.attachments,key,value),recurrenceExceptions:Object.fromEntries(Object.entries(task.recurrenceExceptions??{}).map(([date,exception])=>[date,{...exception,attachments:renameAttachment(exception.attachments,key,value)}])),updatedAt:task.attachments?.some(a=>a.storageKey===key)?now:task.updatedAt})))
+    setJournalEntries(rows=>rows.map(row=>({...row,attachments:renameAttachment(row.attachments,key,value),updatedAt:row.attachments?.some(a=>a.storageKey===key)?now:row.updatedAt})))
+    setNotes(rows=>rows.map(row=>({...row,attachments:renameAttachment(row.attachments,key,value),updatedAt:row.attachments?.some(a=>a.storageKey===key)?now:row.updatedAt})))
+    setImagePreview(current=>current?{...current,name:value}:current)
   }
 
   const closeImagePreview = () => {
@@ -551,6 +567,16 @@ function App() {
       return null
     })
   }
+
+  useEffect(()=>{
+    if(!imagePreview?.galleryKeys?.length)return
+    const onKeyDown=(event:globalThis.KeyboardEvent)=>{
+      if(event.key==='ArrowLeft'){event.preventDefault();stepImagePreview(-1)}
+      if(event.key==='ArrowRight'){event.preventDefault();stepImagePreview(1)}
+    }
+    window.addEventListener('keydown',onKeyDown)
+    return()=>window.removeEventListener('keydown',onKeyDown)
+  },[imagePreview])
 
   const openMonthPicker = (target:'calendar'|'mood') => {
     const source=target==='calendar'?(isMobileCalendar?mobileActiveMonth:visibleMonth):moodMonth
@@ -2444,9 +2470,9 @@ function App() {
   const anniversaryPageRows = useMemo(() => buildAnniversaryPageRows(activeAnniversaries, today), [activeAnniversaries])
 
   const attachmentLifecycle = useMemo(() => buildAttachmentLifecycle(tasks, journalEntries, notes), [tasks, journalEntries, notes])
-  const allStoredAttachments = useMemo(() => attachmentLifecycle.map(row => row.attachment), [attachmentLifecycle])
-  const activeStoredAttachments = useMemo(() => attachmentLifecycle.filter(row => row.state === 'active').map(row => row.attachment), [attachmentLifecycle])
-  const trashedStoredAttachments = useMemo(() => attachmentLifecycle.filter(row => row.state === 'trash').map(row => row.attachment), [attachmentLifecycle])
+  const allStoredAttachments = useMemo(() => sortAttachmentsNewestFirst(attachmentLifecycle.map(row => row.attachment)), [attachmentLifecycle])
+  const activeStoredAttachments = useMemo(() => sortAttachmentsNewestFirst(attachmentLifecycle.filter(row => row.state === 'active').map(row => row.attachment)), [attachmentLifecycle])
+  const trashedStoredAttachments = useMemo(() => sortAttachmentsNewestFirst(attachmentLifecycle.filter(row => row.state === 'trash').map(row => row.attachment)), [attachmentLifecycle])
   const browsedActiveAttachments = storageBrowser ? activeStoredAttachments.filter(item => item.type === storageBrowser) : []
   const browsedTrashedAttachments = storageBrowser ? trashedStoredAttachments.filter(item => item.type === storageBrowser) : []
   const browsedAttachments = [...browsedActiveAttachments, ...browsedTrashedAttachments]
@@ -3944,10 +3970,10 @@ function App() {
               <button className="close-button" type="button" onClick={()=>setStorageBrowser(null)}>×</button>
             </div>
             {browsedAttachments.length===0 ? <p className="page-empty">还没有{storageBrowser==='image'?'图片':'录音'}。</p> : <>
-              {storageBrowser==='image' ? <div className="storage-image-grid">{browsedActiveAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={openImagePreview} />)}</div>
+              {storageBrowser==='image' ? <div className="storage-image-grid">{browsedActiveAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={item=>void openImagePreview(item,browsedAttachments)} />)}</div>
                 : <div className="storage-audio-list">{browsedActiveAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>}
               {browsedTrashedAttachments.length>0 && <section className="storage-trash-section"><div className="storage-trash-divider"><span>回收站 · {browsedTrashedAttachments.length}</span><small>所有引用它的内容都已进入回收站</small></div>
-                {storageBrowser==='image' ? <div className="storage-image-grid">{browsedTrashedAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={openImagePreview} />)}</div>
+                {storageBrowser==='image' ? <div className="storage-image-grid">{browsedTrashedAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={item=>void openImagePreview(item,browsedAttachments)} />)}</div>
                   : <div className="storage-audio-list">{browsedTrashedAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>}
               </section>}
             </>}
@@ -4913,6 +4939,12 @@ function App() {
         <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={imagePreview.name}>
           <button className="image-lightbox-backdrop" type="button" aria-label="关闭图片" onClick={closeImagePreview} />
           <img src={imagePreview.url} alt={imagePreview.name} />
+          {imagePreview.galleryKeys?.length ? <>
+            <button className="image-lightbox-nav image-lightbox-prev" type="button" onClick={()=>stepImagePreview(-1)} disabled={imagePreview.galleryKeys.indexOf(imagePreview.storageKey)<=0} aria-label="上一张">‹</button>
+            <button className="image-lightbox-nav image-lightbox-next" type="button" onClick={()=>stepImagePreview(1)} disabled={imagePreview.galleryKeys.indexOf(imagePreview.storageKey)>=imagePreview.galleryKeys.length-1} aria-label="下一张">›</button>
+            <span className="image-lightbox-count">{imagePreview.galleryKeys.indexOf(imagePreview.storageKey)+1} / {imagePreview.galleryKeys.length}</span>
+            <button className="image-lightbox-rename" type="button" onClick={renamePreviewImage}>重命名</button>
+          </>:null}
           <button className="image-lightbox-close" type="button" onClick={closeImagePreview} aria-label="关闭">×</button>
         </div>
       )}

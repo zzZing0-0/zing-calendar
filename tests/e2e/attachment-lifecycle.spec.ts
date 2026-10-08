@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildAttachmentLifecycle, referencedAttachmentKeys } from '../../src/domain/attachments'
+import { buildAttachmentLifecycle, referencedAttachmentKeys, renameAttachment, sortAttachmentsNewestFirst } from '../../src/domain/attachments'
 import type { Attachment, JournalEntry, Task } from '../../src/types'
 
 const image=(key:string):Attachment=>({id:key,type:'image',filename:`${key}.webp`,mimeType:'image/webp',size:123,storageKey:key,createdAt:'2026-10-04T10:00:00.000Z'})
@@ -33,4 +33,12 @@ test.describe('attachment lifecycle regression',()=>{
     base.recurrenceExceptions={'2026-10-05':{deleted:false,trashedAt:'2026-10-04T12:00:00.000Z',attachments:[kept],updatedAt:'2026-10-04T12:00:00.000Z'}}
     expect(buildAttachmentLifecycle([base],[])[0].state).toBe('trash')
   })
+})
+
+test('image library order is newest-added first and renaming never changes that order',()=>{
+  const older={...image('attachment:old'),filename:'zzz.webp',createdAt:'2026-10-04T10:00:00.000Z'}
+  const newer={...image('attachment:new'),filename:'aaa.webp',createdAt:'2026-10-05T10:00:00.000Z'}
+  const renamed=renameAttachment([older,newer],newer.storageKey,'我的图片.webp')!
+  expect(sortAttachmentsNewestFirst(renamed).map(item=>item.storageKey)).toEqual([newer.storageKey,older.storageKey])
+  expect(renamed.find(item=>item.storageKey===newer.storageKey)?.filename).toBe('我的图片.webp')
 })
