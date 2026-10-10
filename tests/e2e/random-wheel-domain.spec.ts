@@ -29,7 +29,7 @@ test.describe('random wheel regression', () => {
     expect(domain).toContain('Uint32Array<ArrayBuffer>')
     expect(domain).toContain('new ArrayBuffer(Uint32Array.BYTES_PER_ELEMENT)')
     expect(wheel).toContain('const unit=cryptoUnit(),chosen=chooseWeightedItem(items,groupId,unit)')
-    expect(wheel).toContain('window.setTimeout(()=>{setSpinning(false);setWinner(chosen)},3900)')
+    expect(wheel).toContain('window.setTimeout(()=>{setSpinning(false);playLanding();setWinner(chosen)},3900)')
   })
 })
 
@@ -61,5 +61,47 @@ test.describe('random wheel v2.8.6 presentation regression', () => {
     expect(pool).toContain('random-checkbox')
     expect(css).toContain('.random-enabled input:checked+.random-checkbox')
     expect(css).toContain('.random-pool-item-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))')
+  })
+})
+
+test.describe('random wheel v2.8.7 regression', () => {
+  test('marquee lamps use per-lamp staggered delays instead of flashing in sync', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    const css = await read('src/App.css')
+    expect(wheel).toContain("'--lamp-delay':`${i*90}ms`")
+    expect(css).toContain('animation-delay:var(--lamp-delay)!important')
+    expect(css).toContain('6%,9%{opacity:1')
+  })
+
+  test('spin keeps audible landing feedback connected to the user-triggered flow', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(wheel).toContain('const playSpinSound=()=>')
+    expect(wheel).toContain('ensureAudio();playSpinSound();setWinner(null)')
+    expect(wheel).toContain('const playLanding=()=>')
+    expect(wheel).toContain('setSpinning(false);playLanding();setWinner(chosen)')
+  })
+
+  test('group picker sits beside the wheel title and mobile spin button has breathing room', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    const css = await read('src/App.css')
+    expect(wheel).toContain('random-wheel-title-row')
+    expect(wheel).toContain('className="random-wheel-group-select"')
+    expect(wheel).not.toContain('className="random-wheel-group-tabs"')
+    expect(css).toContain('.random-spin-button{margin-top:18px}')
+  })
+})
+
+
+test.describe('random wheel v2.8.8 regression', () => {
+  test('lucky pool item details stay in one compact second row on mobile', async () => {
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    const css = await read('src/App.css')
+    expect(pool).toContain('<div className="random-pool-item-details">')
+    expect(pool).toContain('<span>数量</span>')
+    expect(pool).toContain('<span>单位</span>')
+    expect(pool).toContain('<span>权重</span>')
+    expect(css).toContain('/* v2.8.8 — force compact two-row lucky-pool items */')
+    expect(css).toContain('.random-pool-item-details{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important')
+    expect(css).toContain('.random-pool-item-details label{display:flex!important;flex-direction:column!important')
   })
 })
