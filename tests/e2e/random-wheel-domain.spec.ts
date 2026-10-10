@@ -32,3 +32,34 @@ test.describe('random wheel regression', () => {
     expect(wheel).toContain('window.setTimeout(()=>{setSpinning(false);setWinner(chosen)},3900)')
   })
 })
+
+test.describe('random wheel v2.8.6 presentation regression', () => {
+  test('settings and wheel title stay emoji-free while prize content may remain playful', async () => {
+    const app = await read('src/App.tsx')
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(app).toContain('<strong>抽奖大转盘</strong>')
+    expect(app).not.toContain('<strong>🎡 抽奖大转盘</strong>')
+    expect(wheel).toContain('<h2>幸运大转盘</h2>')
+    expect(wheel).not.toContain('<h2>🎡 幸运大转盘</h2>')
+  })
+
+  test('marquee lamps glow without scale-based popping', async () => {
+    const css = await read('src/App.css')
+    const block = css.slice(css.indexOf('/* v2.8.6 — lucky wheel marquee'))
+    expect(block).toContain('@keyframes ferrisLampGlow')
+    expect(block).toContain('filter:brightness(1.42)')
+    expect(block).not.toContain('scale:1.28')
+    expect(block).not.toContain('scale(1.28)')
+  })
+
+  test('pool groups are collapsible and item editor uses two-row mobile layout with custom checkbox', async () => {
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    const css = await read('src/App.css')
+    expect(pool).toContain('aria-expanded={!isCollapsed}')
+    expect(pool).toContain('random-pool-item-main')
+    expect(pool).toContain('random-pool-item-details')
+    expect(pool).toContain('random-checkbox')
+    expect(css).toContain('.random-enabled input:checked+.random-checkbox')
+    expect(css).toContain('.random-pool-item-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))')
+  })
+})

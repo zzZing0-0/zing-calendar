@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.8.5'
+const APP_VERSION = '2.8.6'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3581,7 +3581,7 @@ function App() {
 
           <div className="settings-group random-wheel-settings">
             <div className="settings-group-title"><h3>随机选择</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setRandomWheelOpen(true)}><span><strong>🎡 抽奖大转盘</strong><small>转一下，看看这次的奇遇。结果不是任务，也不是命令。</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setRandomWheelOpen(true)}><span><strong>抽奖大转盘</strong><small>转一下，看看这次的奇遇。结果不是任务，也不是命令。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setRandomPoolOpen(true)}><span><strong>幸运池</strong><small>{randomPoolGroups.length?`${randomPoolGroups.length} 个分组 · ${randomPoolItems.length} 个项目`:'创建分组、项目、数量/单位、权重与参与状态。'}</small></span><b>›</b></button>
           </div>
 
