@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.8.9'
+const APP_VERSION = '2.8.11'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -326,6 +326,7 @@ function App() {
   const [randomPoolOpen,setRandomPoolOpen]=useState(false)
   const [randomPoolGroups,setRandomPoolGroups]=useState<RandomPoolGroup[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:randomPoolGroups')||'[]');return Array.isArray(v)?v:[]}catch{return []}})
   const [randomPoolItems,setRandomPoolItems]=useState<RandomPoolItem[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:randomPoolItems')||'[]');return Array.isArray(v)?v:[]}catch{return []}})
+  const [mixedPoolItemIds,setMixedPoolItemIds]=useState<string[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:mixedPoolItemIds')||'[]');return Array.isArray(v)?v.filter(id=>typeof id==='string'):[]}catch{return []}})
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null)
   const [encouragementManagerOpen, setEncouragementManagerOpen] = useState(false)
   const [encouragementDraft, setEncouragementDraft] = useState('')
@@ -1250,6 +1251,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:keepScreenAwakeDuringFocus', String(keepScreenAwakeDuringFocus)) }, [keepScreenAwakeDuringFocus])
   useEffect(()=>{localStorage.setItem('zing:randomPoolGroups',JSON.stringify(randomPoolGroups))},[randomPoolGroups])
   useEffect(()=>{localStorage.setItem('zing:randomPoolItems',JSON.stringify(randomPoolItems))},[randomPoolItems])
+  useEffect(()=>{const live=new Set(randomPoolItems.map(item=>item.id));const clean=mixedPoolItemIds.filter(id=>live.has(id));if(clean.length!==mixedPoolItemIds.length){setMixedPoolItemIds(clean);return}localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(clean))},[randomPoolItems,mixedPoolItemIds])
   useEffect(() => { localStorage.setItem('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
   useEffect(() => {
     const now = new Date().toISOString()
@@ -1257,7 +1259,7 @@ function App() {
     settingsWordClockRef.current = clocks
     const next = buildSyncedSettings({
       greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
-      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems,
+      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds,
     }, clocks, now)
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -1280,7 +1282,7 @@ function App() {
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -2915,7 +2917,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -2992,6 +2994,7 @@ function App() {
       if (Array.isArray(s.emotionOptions)) localStorage.setItem('zing:emotionOptions',JSON.stringify(s.emotionOptions))
       if (Array.isArray(s.randomPoolGroups)) localStorage.setItem('zing:randomPoolGroups',JSON.stringify(s.randomPoolGroups))
       if (Array.isArray(s.randomPoolItems)) localStorage.setItem('zing:randomPoolItems',JSON.stringify(s.randomPoolItems))
+      if (Array.isArray(s.mixedPoolItemIds)) localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(s.mixedPoolItemIds))
       // Restore is device-local by design. Persist restored settings locally too, but do
       // not create sync changes/tombstones that could roll the cloud back.
       const restoredAt=new Date().toISOString()
@@ -3006,7 +3009,7 @@ function App() {
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
         maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
         keepScreenAwakeDuringFocus:typeof s.keepScreenAwakeDuringFocus==='boolean'?s.keepScreenAwakeDuringFocus:keepScreenAwakeDuringFocus,
-        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems,
+        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds,
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
@@ -3032,6 +3035,7 @@ function App() {
       if (Array.isArray(s.emotionOptions)) setEmotionOptions(normalizeEmotionOptions(s.emotionOptions))
       if (Array.isArray(s.randomPoolGroups)) setRandomPoolGroups(s.randomPoolGroups)
       if (Array.isArray(s.randomPoolItems)) setRandomPoolItems(s.randomPoolItems)
+      if (Array.isArray(s.mixedPoolItemIds)) setMixedPoolItemIds(s.mixedPoolItemIds)
       setBackupPreview(null); setBackupMessage('恢复完成')
       setStorageStats(await getStorageStats())
     } catch(error) {
@@ -3127,8 +3131,8 @@ function App() {
         localStorage.setItem('zing:encouragementStyle',incoming.encouragementStyle)
         localStorage.setItem('zing:maxFocusHours',String(incoming.maxFocusHours))
         localStorage.setItem('zing:keepScreenAwakeDuringFocus',String(incoming.keepScreenAwakeDuringFocus))
-        localStorage.setItem('zing:randomPoolGroups',JSON.stringify(incoming.randomPoolGroups)); localStorage.setItem('zing:randomPoolItems',JSON.stringify(incoming.randomPoolItems))
-        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setKeepScreenAwakeDuringFocus(incoming.keepScreenAwakeDuringFocus); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions); setRandomPoolGroups(incoming.randomPoolGroups); setRandomPoolItems(incoming.randomPoolItems)
+        localStorage.setItem('zing:randomPoolGroups',JSON.stringify(incoming.randomPoolGroups)); localStorage.setItem('zing:randomPoolItems',JSON.stringify(incoming.randomPoolItems)); localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(incoming.mixedPoolItemIds))
+        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setKeepScreenAwakeDuringFocus(incoming.keepScreenAwakeDuringFocus); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions); setRandomPoolGroups(incoming.randomPoolGroups); setRandomPoolItems(incoming.randomPoolItems); setMixedPoolItemIds(incoming.mixedPoolItemIds)
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -4002,13 +4006,13 @@ function App() {
 
       {randomWheelOpen && (
         <div className="random-feature-overlay">
-          <RandomWheelPage groups={randomPoolGroups} items={randomPoolItems} onClose={()=>setRandomWheelOpen(false)} />
+          <RandomWheelPage groups={randomPoolGroups} items={randomPoolItems} mixedPoolItemIds={mixedPoolItemIds} onClose={()=>setRandomWheelOpen(false)} />
         </div>
       )}
 
       {randomPoolOpen && (
         <div className="random-feature-overlay">
-          <RandomPoolManager groups={randomPoolGroups} items={randomPoolItems} onGroups={setRandomPoolGroups} onItems={setRandomPoolItems} onClose={()=>setRandomPoolOpen(false)} />
+          <RandomPoolManager groups={randomPoolGroups} items={randomPoolItems} onGroups={setRandomPoolGroups} onItems={setRandomPoolItems} mixedPoolItemIds={mixedPoolItemIds} onMixedPoolItemIds={setMixedPoolItemIds} onClose={()=>setRandomPoolOpen(false)} />
         </div>
       )}
 

@@ -4,6 +4,20 @@ export function validRandomItems(items: RandomPoolItem[], groupId: string) {
   return items.filter(item => item.groupId === groupId && item.enabled && Number.isFinite(item.weight) && item.weight > 0 && item.name.trim())
 }
 
+export function validMixedRandomItems(items: RandomPoolItem[], itemIds: string[]) {
+  const selected = new Set(itemIds)
+  return items.filter(item => selected.has(item.id) && Number.isFinite(item.weight) && item.weight > 0 && item.name.trim())
+}
+
+export function chooseWeightedFromItems(valid: RandomPoolItem[], unit: number) {
+  if (!valid.length) return null
+  const total = valid.reduce((sum, item) => sum + item.weight, 0)
+  const target = Math.min(Math.max(unit, 0), 0.9999999999999999) * total
+  let cumulative = 0
+  for (const item of valid) { cumulative += item.weight; if (target < cumulative) return item }
+  return valid[valid.length - 1]
+}
+
 export function groupHasWheel(items: RandomPoolItem[], groupId: string) {
   return validRandomItems(items, groupId).length >= 2
 }
@@ -19,16 +33,7 @@ export function cryptoUnit(randomValues: (array: Uint32Array<ArrayBuffer>) => vo
 }
 
 export function chooseWeightedItem(items: RandomPoolItem[], groupId: string, unit: number) {
-  const valid = validRandomItems(items, groupId)
-  if (!valid.length) return null
-  const total = valid.reduce((sum, item) => sum + item.weight, 0)
-  const target = Math.min(Math.max(unit, 0), 0.9999999999999999) * total
-  let cumulative = 0
-  for (const item of valid) {
-    cumulative += item.weight
-    if (target < cumulative) return item
-  }
-  return valid[valid.length - 1]
+  return chooseWeightedFromItems(validRandomItems(items, groupId), unit)
 }
 
 export function sanitizeRandomGroups(value: unknown): RandomPoolGroup[] {

@@ -28,7 +28,7 @@ test.describe('random wheel regression', () => {
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
     expect(domain).toContain('Uint32Array<ArrayBuffer>')
     expect(domain).toContain('new ArrayBuffer(Uint32Array.BYTES_PER_ELEMENT)')
-    expect(wheel).toContain('const unit=cryptoUnit(),chosen=chooseWeightedItem(items,groupId,unit)')
+    expect(wheel).toContain('const unit=cryptoUnit(),chosen=chooseWeightedFromItems(current,unit)')
     expect(wheel).toContain('window.setTimeout(()=>{setSpinning(false);playLanding();setWinner(chosen)},3900)')
   })
 })
@@ -125,5 +125,56 @@ test.describe('random wheel v2.8.9 regression', () => {
     const block = css.slice(css.indexOf('/* v2.8.9 — marquee rhythm'))
     expect(block).toContain('.ferris-wrap{margin-top:14px}')
     expect(block).toContain('.random-spin-button{margin-top:44px}')
+  })
+})
+
+test.describe('random wheel v2.8.10 mixed pool regression', () => {
+  test('mixed pool selects across groups and inherits original item weights', async () => {
+    const domain = await read('src/domain/randomWheel.ts')
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(domain).toContain('validMixedRandomItems')
+    expect(domain).toContain('selected.has(item.id)')
+    expect(domain).toContain('chooseWeightedFromItems')
+    expect(wheel).toContain("const MIXED_POOL_ID='__mixed__'")
+    expect(wheel).toContain('chooseWeightedFromItems(current,unit)')
+    expect(wheel).toContain('<option value={MIXED_POOL_ID}>混合池</option>')
+  })
+
+  test('mixed selection is independent of ordinary enabled state and cleans deleted references', async () => {
+    const domain = await read('src/domain/randomWheel.ts')
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    const app = await read('src/App.tsx')
+    const mixedBlock = domain.slice(domain.indexOf('export function validMixedRandomItems'), domain.indexOf('export function chooseWeightedFromItems'))
+    expect(mixedBlock).not.toContain('item.enabled')
+    expect(pool).toContain('onMixedPoolItemIds(mixedPoolItemIds.filter(id => id !== item.id))')
+    expect(pool).toContain('onMixedPoolItemIds(mixedPoolItemIds.filter(id => !groupItems.some(item => item.id === id)))')
+    expect(app).toContain("localStorage.setItem('zing:mixedPoolItemIds'")
+  })
+
+  test('mixed pool participates in settings sync backup and restore', async () => {
+    const settings = await read('src/domain/settings.ts')
+    const types = await read('src/types.ts')
+    const app = await read('src/App.tsx')
+    expect(settings).toContain('mixedPoolItemIds: input.mixedPoolItemIds ?? []')
+    expect(settings).toContain('mixedPoolItemIds: settings.mixedPoolItemIds ?? []')
+    expect(types).toContain('mixedPoolItemIds?: string[]')
+    expect(app).toContain('mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds')
+    expect(app).toContain('setMixedPoolItemIds(incoming.mixedPoolItemIds)')
+  })
+})
+
+
+test.describe('random wheel v2.8.11 pool default-collapse regression', () => {
+  test('existing lucky-pool groups start collapsed when opening the manager', async () => {
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    expect(pool).toContain("useState<Record<string, boolean>>(() => Object.fromEntries(groups.map(group => [group.id, true])))")
+    expect(pool).toContain("const isCollapsed = Boolean(collapsed[group.id])")
+    expect(pool).toContain("aria-expanded={!isCollapsed}")
+  })
+
+  test('a newly created group opens immediately so it can be edited', async () => {
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    expect(pool).toContain('const id = crypto.randomUUID()')
+    expect(pool).toContain("setCollapsed(current => ({ ...current, [id]: false }))")
   })
 })

@@ -223,6 +223,7 @@ export type SyncedUserSettings = {
   emotionOptions?: EmotionOption[]
   randomPoolGroups?: RandomPoolGroup[]
   randomPoolItems?: RandomPoolItem[]
+  mixedPoolItemIds?: string[]
 }
 
 export type BackupPreview = {
@@ -255,6 +256,7 @@ export type BackupPreview = {
     emotionOptions?: EmotionOption[]
     randomPoolGroups?: RandomPoolGroup[]
     randomPoolItems?: RandomPoolItem[]
+  mixedPoolItemIds?: string[]
   }
   attachments: {
     storageKey: string
