@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.7.13'
+const APP_VERSION = '2.8.1'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -319,6 +319,8 @@ function App() {
     try { const rows=JSON.parse(localStorage.getItem('zing:encouragementMessages') || '[]'); return Array.isArray(rows)?rows:[] } catch { return [] }
   })
   const [encouragementStyle, setEncouragementStyle] = useState<EncouragementStyle>(() => { const value=localStorage.getItem('zing:encouragementStyle'); return value==='dark'||value==='light'?value:'random' })
+  const [keepScreenAwakeDuringFocus, setKeepScreenAwakeDuringFocus] = useState(() => localStorage.getItem('zing:keepScreenAwakeDuringFocus') === 'true')
+  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null)
   const [encouragementManagerOpen, setEncouragementManagerOpen] = useState(false)
   const [encouragementDraft, setEncouragementDraft] = useState('')
   const [encouragementEditingId, setEncouragementEditingId] = useState<string|null>(null)
@@ -1239,6 +1241,7 @@ function App() {
   useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
   useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
   useEffect(() => { localStorage.setItem('zing:encouragementStyle', encouragementStyle) }, [encouragementStyle])
+  useEffect(() => { localStorage.setItem('zing:keepScreenAwakeDuringFocus', String(keepScreenAwakeDuringFocus)) }, [keepScreenAwakeDuringFocus])
   useEffect(() => { localStorage.setItem('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
   useEffect(() => {
     const now = new Date().toISOString()
@@ -1246,7 +1249,7 @@ function App() {
     settingsWordClockRef.current = clocks
     const next = buildSyncedSettings({
       greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
-      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, weatherOptions, thermalOptions, emotionOptions,
+      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions,
     }, clocks, now)
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -1269,7 +1272,7 @@ function App() {
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions,emotionOptions])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -1727,6 +1730,45 @@ function App() {
     const timer = window.setInterval(() => setTimerNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt, activeFocusSession?.id])
+
+  useEffect(() => {
+    const shouldStayAwake = keepScreenAwakeDuringFocus && Boolean(activeTimerTask || activeFocusSession)
+    let cancelled = false
+    const releaseWakeLock = async () => {
+      const current = wakeLockRef.current
+      wakeLockRef.current = null
+      if (current) {
+        try { await current.release() } catch { /* already released by the browser */ }
+      }
+    }
+    const requestWakeLock = async () => {
+      if (!shouldStayAwake || document.visibilityState !== 'visible' || wakeLockRef.current) return
+      const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type:'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock
+      if (!wakeLock) return
+      try {
+        const sentinel = await wakeLock.request('screen')
+        if (cancelled || !shouldStayAwake) { await sentinel.release(); return }
+        wakeLockRef.current = sentinel
+      } catch (error) {
+        console.info('Screen Wake Lock unavailable', error)
+      }
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void requestWakeLock()
+      else void releaseWakeLock()
+    }
+    if (shouldStayAwake) {
+      void requestWakeLock()
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    } else {
+      void releaseWakeLock()
+    }
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      void releaseWakeLock()
+    }
+  }, [keepScreenAwakeDuringFocus, activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt, activeFocusSession?.id])
 
   useEffect(() => {
     if (!activeFocusSession) return
@@ -2865,7 +2907,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,weatherOptions,thermalOptions,emotionOptions})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -2936,6 +2978,7 @@ function App() {
       if (Array.isArray(s.encouragementMessages)) localStorage.setItem('zing:encouragementMessages',JSON.stringify(s.encouragementMessages))
       if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') localStorage.setItem('zing:encouragementStyle',s.encouragementStyle)
       if (typeof s.maxFocusHours==='number') localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,Math.round(s.maxFocusHours)))))
+      if (typeof s.keepScreenAwakeDuringFocus==='boolean') localStorage.setItem('zing:keepScreenAwakeDuringFocus',String(s.keepScreenAwakeDuringFocus))
       if (Array.isArray(s.weatherOptions)) localStorage.setItem('zing:weatherOptions',JSON.stringify(s.weatherOptions))
       if (Array.isArray(s.thermalOptions)) localStorage.setItem('zing:thermalOptions',JSON.stringify(s.thermalOptions))
       if (Array.isArray(s.emotionOptions)) localStorage.setItem('zing:emotionOptions',JSON.stringify(s.emotionOptions))
@@ -2952,6 +2995,7 @@ function App() {
         encouragementMessages:Array.isArray(s.encouragementMessages)?s.encouragementMessages:encouragementMessages,
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
         maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
+        keepScreenAwakeDuringFocus:typeof s.keepScreenAwakeDuringFocus==='boolean'?s.keepScreenAwakeDuringFocus:keepScreenAwakeDuringFocus,
         weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions,
       }
       await saveUserSettings([restoredSettings])
@@ -2972,6 +3016,7 @@ function App() {
       if (Array.isArray(s.encouragementMessages)) setEncouragementMessages(s.encouragementMessages)
       if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') setEncouragementStyle(s.encouragementStyle)
       if (typeof s.maxFocusHours==='number') setMaxFocusHours(Math.min(12,Math.max(2,Math.round(s.maxFocusHours))))
+      if (typeof s.keepScreenAwakeDuringFocus==='boolean') setKeepScreenAwakeDuringFocus(s.keepScreenAwakeDuringFocus)
       if (Array.isArray(s.weatherOptions)) setWeatherOptions(normalizeEnvironmentOptions(s.weatherOptions,DEFAULT_WEATHER_OPTIONS))
       if (Array.isArray(s.thermalOptions)) setThermalOptions(normalizeEnvironmentOptions(s.thermalOptions,DEFAULT_THERMAL_OPTIONS))
       if (Array.isArray(s.emotionOptions)) setEmotionOptions(normalizeEmotionOptions(s.emotionOptions))
@@ -3069,7 +3114,8 @@ function App() {
         localStorage.setItem('zing:encouragementMessages',JSON.stringify(incoming.encouragementMessages))
         localStorage.setItem('zing:encouragementStyle',incoming.encouragementStyle)
         localStorage.setItem('zing:maxFocusHours',String(incoming.maxFocusHours))
-        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions)
+        localStorage.setItem('zing:keepScreenAwakeDuringFocus',String(incoming.keepScreenAwakeDuringFocus))
+        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setKeepScreenAwakeDuringFocus(incoming.keepScreenAwakeDuringFocus); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions)
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -3514,6 +3560,10 @@ function App() {
               <span><strong>最长专注时长</strong><small>达到上限后自动结束并保存，避免忘记停止计时。</small></span>
               <label className="max-focus-hours-control"><input type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /><b>小时</b></label>
             </div>
+            <label className="setting-row focus-wake-lock-setting">
+              <span><strong>专注时保持屏幕常亮</strong><small>仅在任务计时或自由专注正在运行时请求常亮；结束计时后立即恢复系统锁屏规则。</small></span>
+              <input type="checkbox" checked={keepScreenAwakeDuringFocus} onChange={event=>setKeepScreenAwakeDuringFocus(event.target.checked)} />
+            </label>
           </div>
 
           <div className="settings-group">

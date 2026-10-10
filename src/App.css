@@ -1700,7 +1700,10 @@ button {
 }
 .task-title-input-wrap input {
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
+}
+.task-title-input-wrap:has(.postpone-count) input {
   padding-right: 112px;
 }
 .postpone-count {
@@ -5139,3 +5142,26 @@ button {
 .image-lightbox-count{position:fixed;z-index:3;left:50%;bottom:max(20px,env(safe-area-inset-bottom));transform:translateX(-50%);padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.9);color:#354039;font-variant-numeric:tabular-nums}
 .image-lightbox-rename{position:fixed;z-index:3;right:78px;top:max(20px,env(safe-area-inset-top));border:0;border-radius:10px;padding:9px 13px;background:rgba(255,255,255,.92);color:#354039;font-weight:600;cursor:pointer}
 @media(max-width:620px){.image-lightbox-prev{left:8px}.image-lightbox-next{right:8px}.image-lightbox-nav{width:42px;height:56px}.image-lightbox-rename{right:68px}}
+
+/* v2.8.0 — mobile form width + focus wake-lock polish */
+.field input,
+.field textarea,
+.field select,
+.encouragement-add textarea,
+.word-ignore-add input,
+.setting-text-input {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.encouragement-item p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.focus-wake-lock-setting > input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  accent-color: #708f7f;
+}

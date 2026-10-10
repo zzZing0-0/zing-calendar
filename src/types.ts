@@ -217,6 +217,7 @@ export type SyncedUserSettings = {
   encouragementMessages?: EncouragementMessage[]
   encouragementStyle?: EncouragementStyle
   maxFocusHours?: number
+  keepScreenAwakeDuringFocus?: boolean
   weatherOptions?: EnvironmentOption[]
   thermalOptions?: EnvironmentOption[]
   emotionOptions?: EmotionOption[]
@@ -246,6 +247,7 @@ export type BackupPreview = {
     encouragementMessages?: EncouragementMessage[]
     encouragementStyle?: EncouragementStyle
     maxFocusHours?: number
+  keepScreenAwakeDuringFocus?: boolean
     weatherOptions?: EnvironmentOption[]
     thermalOptions?: EnvironmentOption[]
     emotionOptions?: EmotionOption[]

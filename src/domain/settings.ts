@@ -53,6 +53,7 @@ type BuildSettingsInput = {
   encouragementMessages: EncouragementMessage[]
   encouragementStyle: EncouragementStyle
   maxFocusHours: number
+  keepScreenAwakeDuringFocus: boolean
   weatherOptions: EnvironmentOption[]
   thermalOptions: EnvironmentOption[]
   emotionOptions: EmotionOption[]
@@ -67,7 +68,7 @@ export function buildSyncedSettings(input: BuildSettingsInput, clock: WordClock,
     wordCloudIgnored: normalizeIgnoredWords(input.wordCloudIgnored),
     wordCloudIgnoredAddedAt: { ...clock.added }, wordCloudIgnoredRemovedAt: { ...clock.removed },
     encouragementMessages: input.encouragementMessages, encouragementStyle: input.encouragementStyle,
-    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions, emotionOptions: input.emotionOptions,
+    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), keepScreenAwakeDuringFocus: input.keepScreenAwakeDuringFocus, weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions, emotionOptions: input.emotionOptions,
   }
 }
 
@@ -89,6 +90,7 @@ export function normalizedIncomingSettings(settings: SyncedUserSettings) {
     encouragementMessages: settings.encouragementMessages ?? [],
     encouragementStyle: settings.encouragementStyle ?? 'random' as EncouragementStyle,
     maxFocusHours: clampMaxFocusHours(settings.maxFocusHours ?? 2),
+    keepScreenAwakeDuringFocus: settings.keepScreenAwakeDuringFocus ?? false,
     weatherOptions: normalizeEnvironmentOptions(settings.weatherOptions, DEFAULT_WEATHER_OPTIONS),
     thermalOptions: normalizeEnvironmentOptions(settings.thermalOptions, DEFAULT_THERMAL_OPTIONS),
     emotionOptions: normalizeEmotionOptions(settings.emotionOptions),

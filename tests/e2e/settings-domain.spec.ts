@@ -20,12 +20,13 @@ test.describe('settings domain regression', () => {
     const next = buildSyncedSettings({
       greeting: '', weekStartsMonday: true, dateFormat: 'dmy', defaultPriority: 0,
       showEndedTasks: true, showAllRecurringTasks: false, excludeDefaultFocusStats: false,
-      wordCloudIgnored: [' A ', 'a'], encouragementMessages: [], encouragementStyle: 'random', maxFocusHours: 99,
+      wordCloudIgnored: [' A ', 'a'], encouragementMessages: [], encouragementStyle: 'random', maxFocusHours: 99, keepScreenAwakeDuringFocus: true,
       weatherOptions: DEFAULT_WEATHER_OPTIONS, thermalOptions: DEFAULT_THERMAL_OPTIONS, emotionOptions: DEFAULT_EMOTION_OPTIONS,
     }, { added: { a: 'x' }, removed: {} }, '2026-10-04T00:00:00.000Z')
     expect(next.greeting).toBe('Hello, Zing')
     expect(next.wordCloudIgnored).toEqual(['a'])
     expect(next.maxFocusHours).toBe(12)
+    expect(next.keepScreenAwakeDuringFocus).toBe(true)
     expect(next.emotionOptions).toHaveLength(DEFAULT_EMOTION_OPTIONS.length)
   })
 
@@ -33,7 +34,7 @@ test.describe('settings domain regression', () => {
     const base = buildSyncedSettings({
       greeting: 'Hi', weekStartsMonday: false, dateFormat: 'mdy', defaultPriority: 2,
       showEndedTasks: false, showAllRecurringTasks: true, excludeDefaultFocusStats: true,
-      wordCloudIgnored: [], encouragementMessages: [], encouragementStyle: 'light', maxFocusHours: 4,
+      wordCloudIgnored: [], encouragementMessages: [], encouragementStyle: 'light', maxFocusHours: 4, keepScreenAwakeDuringFocus: false,
       weatherOptions: DEFAULT_WEATHER_OPTIONS, thermalOptions: DEFAULT_THERMAL_OPTIONS, emotionOptions: DEFAULT_EMOTION_OPTIONS,
     }, { added: {}, removed: {} }, '2026-10-01T00:00:00.000Z')
     expect(settingsEqualIgnoringUpdatedAt(base, { ...base, updatedAt: '2026-10-04T00:00:00.000Z' })).toBe(true)
@@ -48,6 +49,7 @@ test.describe('settings domain regression', () => {
     expect(incoming.greeting).toBe('Hello, Zing')
     expect(incoming.wordCloudIgnored).toEqual(['x'])
     expect(incoming.maxFocusHours).toBe(2)
+    expect(incoming.keepScreenAwakeDuringFocus).toBe(false)
     expect(incoming.weatherOptions.length).toBeGreaterThan(0)
     expect(incoming.thermalOptions.length).toBeGreaterThan(0)
   })
