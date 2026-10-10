@@ -68,7 +68,7 @@ test('settings groups follow the requested life-system order',()=>{
   const settingsStart=app.indexOf("{mainView === 'settings' &&")
   const settingsEnd=app.indexOf('{githubSyncOpen &&',settingsStart)
   const settings=app.slice(settingsStart,settingsEnd)
-  const labels=['日历任务','专注','标签','天气与情绪','鼓励语','词云','云同步','数据','友情链接']
+  const labels=['日历任务','专注','随机选择','标签','天气与情绪','鼓励语','词云','云同步','数据','友情链接']
   const positions=labels.map(label=>settings.indexOf(`<h3>${label}</h3>`))
   expect(positions.every(position=>position>=0)).toBe(true)
   expect(positions).toEqual([...positions].sort((a,b)=>a-b))
@@ -84,7 +84,7 @@ test('reordered settings still render inside the normal app shell', async ({ pag
   const settings=page.locator('.settings-page')
   await expect(settings).toBeVisible()
   const groupTitles=settings.locator('.settings-group-title h3:visible')
-  await expect(groupTitles).toHaveText(['日历任务','专注','标签','天气与情绪','鼓励语','词云','云同步','数据','友情链接'])
+  await expect(groupTitles).toHaveText(['日历任务','专注','随机选择','标签','天气与情绪','鼓励语','词云','云同步','数据','友情链接'])
   const calendarTask=settings.locator('.calendar-task-settings')
   await expect(calendarTask).toBeVisible()
   await expect(calendarTask.getByText('顶部问候语',{exact:true})).toBeHidden()

@@ -221,6 +221,8 @@ export type SyncedUserSettings = {
   weatherOptions?: EnvironmentOption[]
   thermalOptions?: EnvironmentOption[]
   emotionOptions?: EmotionOption[]
+  randomPoolGroups?: RandomPoolGroup[]
+  randomPoolItems?: RandomPoolItem[]
 }
 
 export type BackupPreview = {
@@ -251,6 +253,8 @@ export type BackupPreview = {
     weatherOptions?: EnvironmentOption[]
     thermalOptions?: EnvironmentOption[]
     emotionOptions?: EmotionOption[]
+    randomPoolGroups?: RandomPoolGroup[]
+    randomPoolItems?: RandomPoolItem[]
   }
   attachments: {
     storageKey: string
@@ -264,3 +268,6 @@ export type BackupPreview = {
     bytes: Uint8Array
   }[]
 }
+
+export type RandomPoolGroup = { id:string; name:string; createdAt:string; updatedAt:string }
+export type RandomPoolItem = { id:string; groupId:string; name:string; amount?:number; unit?:string; weight:number; enabled:boolean; createdAt:string; updatedAt:string }

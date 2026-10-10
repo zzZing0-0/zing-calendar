@@ -1,4 +1,4 @@
-import type { EncouragementMessage, EncouragementStyle, EmotionOption, EnvironmentOption, SyncedUserSettings, TaskPriority } from '../types'
+import type { EncouragementMessage, EncouragementStyle, EmotionOption, EnvironmentOption, SyncedUserSettings, TaskPriority, RandomPoolGroup, RandomPoolItem } from '../types'
 import { normalizeEnvironmentOptions, DEFAULT_THERMAL_OPTIONS, DEFAULT_WEATHER_OPTIONS } from './preferences'
 import { normalizeEmotionOptions } from './emotions'
 
@@ -57,6 +57,8 @@ type BuildSettingsInput = {
   weatherOptions: EnvironmentOption[]
   thermalOptions: EnvironmentOption[]
   emotionOptions: EmotionOption[]
+  randomPoolGroups?: RandomPoolGroup[]
+  randomPoolItems?: RandomPoolItem[]
 }
 
 export function buildSyncedSettings(input: BuildSettingsInput, clock: WordClock, now: string): SyncedUserSettings {
@@ -68,7 +70,7 @@ export function buildSyncedSettings(input: BuildSettingsInput, clock: WordClock,
     wordCloudIgnored: normalizeIgnoredWords(input.wordCloudIgnored),
     wordCloudIgnoredAddedAt: { ...clock.added }, wordCloudIgnoredRemovedAt: { ...clock.removed },
     encouragementMessages: input.encouragementMessages, encouragementStyle: input.encouragementStyle,
-    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), keepScreenAwakeDuringFocus: input.keepScreenAwakeDuringFocus, weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions, emotionOptions: input.emotionOptions,
+    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), keepScreenAwakeDuringFocus: input.keepScreenAwakeDuringFocus, weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions, emotionOptions: input.emotionOptions, randomPoolGroups: input.randomPoolGroups ?? [], randomPoolItems: input.randomPoolItems ?? [],
   }
 }
 
@@ -94,5 +96,6 @@ export function normalizedIncomingSettings(settings: SyncedUserSettings) {
     weatherOptions: normalizeEnvironmentOptions(settings.weatherOptions, DEFAULT_WEATHER_OPTIONS),
     thermalOptions: normalizeEnvironmentOptions(settings.thermalOptions, DEFAULT_THERMAL_OPTIONS),
     emotionOptions: normalizeEmotionOptions(settings.emotionOptions),
+    randomPoolGroups: settings.randomPoolGroups ?? [], randomPoolItems: settings.randomPoolItems ?? [],
   }
 }
