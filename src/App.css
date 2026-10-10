@@ -5201,3 +5201,23 @@ button {
 .random-pool-item-details label span{display:block!important;margin:0 0 0 2px!important;white-space:nowrap!important}
 .random-pool-item-details label input{display:block!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}
 @media(max-width:620px){.random-pool-item-details{grid-template-columns:repeat(3,minmax(0,1fr))!important;margin:9px 36px 0!important;gap:6px!important}.random-pool-item-details label{grid-column:auto!important}.random-pool-item-details label input{width:100%!important;min-width:0!important;padding:8px 7px!important}}
+
+
+/* v2.8.9 — marquee rhythm + mobile vertical breathing room
+   Rhythm: one full chase lap -> all lamps flash twice -> chase restarts.
+   Lamp geometry never scales or moves. */
+.ferris-rim-flash b{
+  animation:ferrisAllFlash .72s linear 1!important;
+}
+@keyframes ferrisAllFlash{
+  0%,18%,50%,68%,100%{opacity:.24;filter:brightness(.72) saturate(.82);box-shadow:0 0 3px #fff6,0 0 5px currentColor}
+  8%,38%,58%,88%{opacity:1;filter:brightness(1.62) saturate(1.12);box-shadow:0 0 10px #fff,0 0 22px currentColor,0 0 38px currentColor}
+}
+@media(max-width:620px){
+  .random-wheel-intro{margin-bottom:22px}
+  .ferris-wrap{margin-top:14px}
+  .random-spin-button{margin-top:44px}
+}
+@media(prefers-reduced-motion:reduce){
+  .ferris-rim-flash b{animation:none!important;opacity:.72;filter:none}
+}

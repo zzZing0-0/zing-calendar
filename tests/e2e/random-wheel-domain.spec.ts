@@ -87,7 +87,7 @@ test.describe('random wheel v2.8.7 regression', () => {
     expect(wheel).toContain('random-wheel-title-row')
     expect(wheel).toContain('className="random-wheel-group-select"')
     expect(wheel).not.toContain('className="random-wheel-group-tabs"')
-    expect(css).toContain('.random-spin-button{margin-top:18px}')
+    expect(css).toContain('.random-spin-button{margin-top:44px}')
   })
 })
 
@@ -103,5 +103,27 @@ test.describe('random wheel v2.8.8 regression', () => {
     expect(css).toContain('/* v2.8.8 — force compact two-row lucky-pool items */')
     expect(css).toContain('.random-pool-item-details{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important')
     expect(css).toContain('.random-pool-item-details label{display:flex!important;flex-direction:column!important')
+  })
+})
+
+
+test.describe('random wheel v2.8.9 regression', () => {
+  test('marquee alternates one chase lap with two synchronized flashes', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    const css = await read('src/App.css')
+    expect(wheel).toContain('[lampFlash,setLampFlash]=useState(false)')
+    expect(wheel).toContain('setLampFlash(true)')
+    expect(wheel).toContain('setLampFlash(false);schedule()')
+    expect(wheel).toContain('},720)},1440)')
+    expect(wheel).toContain("lampFlash?' ferris-rim-flash':''")
+    expect(css).toContain('animation:ferrisAllFlash .72s linear 1!important')
+    expect(css).toContain('@keyframes ferrisAllFlash')
+  })
+
+  test('mobile wheel and spin button use the lower half of the page more comfortably', async () => {
+    const css = await read('src/App.css')
+    const block = css.slice(css.indexOf('/* v2.8.9 — marquee rhythm'))
+    expect(block).toContain('.ferris-wrap{margin-top:14px}')
+    expect(block).toContain('.random-spin-button{margin-top:44px}')
   })
 })
