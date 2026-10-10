@@ -5159,9 +5159,19 @@ button {
   overflow-wrap: anywhere;
   word-break: normal;
 }
+.focus-wake-lock-setting {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+}
 .focus-wake-lock-setting > input[type="checkbox"] {
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
+  margin: 1px 0 0;
   accent-color: #708f7f;
+}
+.focus-wake-lock-setting > span {
+  min-width: 0;
 }

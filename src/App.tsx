@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.8.1'
+const APP_VERSION = '2.8.2'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3561,8 +3561,8 @@ function App() {
               <label className="max-focus-hours-control"><input type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /><b>小时</b></label>
             </div>
             <label className="setting-row focus-wake-lock-setting">
-              <span><strong>专注时保持屏幕常亮</strong><small>仅在任务计时或自由专注正在运行时请求常亮；结束计时后立即恢复系统锁屏规则。</small></span>
               <input type="checkbox" checked={keepScreenAwakeDuringFocus} onChange={event=>setKeepScreenAwakeDuringFocus(event.target.checked)} />
+              <span><strong>专注时保持屏幕常亮</strong><small>仅在任务计时或自由专注正在运行时请求常亮；结束计时后立即恢复系统锁屏规则。</small></span>
             </label>
           </div>
 

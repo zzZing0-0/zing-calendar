@@ -16,6 +16,13 @@ test('focus wake lock is opt-in and only follows a running task timer or direct 
   expect(app).toContain('专注时保持屏幕常亮')
 })
 
+test('wake-lock setting keeps checkbox before text in one compact row on mobile', () => {
+  expect(app).toContain('<label className="setting-row focus-wake-lock-setting">\n              <input type="checkbox"')
+  expect(app).toContain('<span><strong>专注时保持屏幕常亮</strong>')
+  expect(css).toContain('.focus-wake-lock-setting {\n  flex-direction: row;')
+  expect(css).toContain('justify-content: flex-start;')
+})
+
 test('task title no longer reserves postpone badge width when no badge exists', () => {
   expect(css).toContain(`.task-title-input-wrap input {
   width: 100%;
