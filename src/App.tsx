@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.26'
+const APP_VERSION = '2.9.27'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -1700,6 +1700,7 @@ function App() {
     const startedAt = new Date().toISOString()
     setFocusSessions(current => [...current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[selectedTagId], startedAt })])
     setPendingNoteFocusId(null)
+    setFocusOpen(true)
     setTimerNow(Date.now())
   }
 
@@ -1755,7 +1756,7 @@ function App() {
     }
     if (context?.kind === 'note') {
       const note = notes.find(item => item.id === context.noteId && !item.trashedAt)
-      if (note) { setMainView('notes'); setRequestedNoteId(note.id) }
+      if (note) setFocusOpen(true)
       return
     }
     setMainView('calendar')
@@ -2977,7 +2978,7 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>今天</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusNote){setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusNote){setFocusOpen(true);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
             <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
@@ -3992,7 +3993,8 @@ function App() {
                 <div className="focus-live-clock">{formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}</div>
                 <div className="focus-live-tags">{activeFocusSession.tagIds.map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}</div>
                 <small>{activeFocusSession.mode==='countdown'?`倒计时 · 原定 ${Math.round((activeFocusSession.plannedSeconds??0)/60)} 分钟`:'正计时'}</small>
-                <button className="focus-stop-button" type="button" onClick={()=>stopDirectFocus(false)}>■ 结束专注</button>
+                {activeFocusNote&&<small>笔记 · {activeFocusNote.title || '无标题笔记'}</small>}
+                <button className="focus-stop-button" type="button" onClick={()=>{if(activeFocusNote)stopNoteFocus(activeFocusNote);else if(activeTimerTask)stopTaskTimer(activeTimerTask);else stopDirectFocus(false)}}>■ 结束专注</button>
               </> : <>
                 <div className="focus-mode-switch"><button type="button" className={focusMode==='stopwatch'?'active':''} onClick={()=>setFocusMode('stopwatch')}>正计时</button><button type="button" className={focusMode==='countdown'?'active':''} onClick={()=>setFocusMode('countdown')}>倒计时</button></div>
                 {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} onBlur={()=>setFocusMinutes(String(countdownMinutes(focusMinutes,15)))} /><b>分钟</b></div></label>}
@@ -4003,10 +4005,11 @@ function App() {
               </>}
             </div>
           </section>
-          {pendingNoteFocusId&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setPendingNoteFocusId(null)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择笔记专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setPendingNoteFocusId(null)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags(tags).map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);const note=notes.find(item=>item.id===pendingNoteFocusId&&!item.trashedAt);if(note)startNoteFocus(note,tag.id);else setPendingNoteFocusId(null)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
           {focusTagSelectOpen&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setFocusTagSelectOpen(false)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setFocusTagSelectOpen(false)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags(tags).map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);setFocusTagSelectOpen(false)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
         </div>
       )}
+
+      {pendingNoteFocusId&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setPendingNoteFocusId(null)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择笔记专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setPendingNoteFocusId(null)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags(tags).map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);const note=notes.find(item=>item.id===pendingNoteFocusId&&!item.trashedAt);if(note)startNoteFocus(note,tag.id);else setPendingNoteFocusId(null)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
 
       {trashOpen && (
         <div className="modal-layer overdue-inbox-layer trash-inbox-layer" role="presentation">
