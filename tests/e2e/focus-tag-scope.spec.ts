@@ -11,10 +11,11 @@ test('focus tag scope regression › Forest creates focus tags and upgrades exis
 
 test('focus tag scope regression › task timer inherits a compatible tag or explicitly falls back to default', () => {
   const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const runtime = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/focusRuntime.ts'), 'utf8')
   expect(app).toContain('不能直接用于专注')
   expect(app).toContain('focusTagIds=[DEFAULT_TAG_ID]')
   expect(app).toContain('activeTimerFocusTagIds: focusTagIds')
-  expect(app).toContain('focusTagIds: current.activeTimerFocusTagIds ?? task.activeTimerFocusTagIds ?? [DEFAULT_TAG_ID]')
+  expect(runtime).toContain('focusTagIds: current.activeTimerFocusTagIds ?? fallbackTask.activeTimerFocusTagIds ?? [DEFAULT_TAG_ID]')
 })
 
 test('focus tag scope regression › free focus exposes only focus shared and default tags', () => {

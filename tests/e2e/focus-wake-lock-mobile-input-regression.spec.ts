@@ -5,14 +5,15 @@ import path from 'node:path'
 const app = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8')
 const css = fs.readFileSync(path.resolve('src/App.css'), 'utf8')
 const types = fs.readFileSync(path.resolve('src/types.ts'), 'utf8')
+const wakeLockHook = fs.readFileSync(path.resolve('src/hooks/useFocusWakeLock.ts'), 'utf8')
 
 test('focus wake lock is opt-in and only follows a running task timer or direct focus', () => {
   expect(types).toContain('keepScreenAwakeDuringFocus?: boolean')
   expect(app).toContain("localStorage.getItem('zing:keepScreenAwakeDuringFocus') === 'true'")
-  expect(app).toContain('keepScreenAwakeDuringFocus && Boolean(activeTimerTask || activeFocusSession)')
-  expect(app).toContain("wakeLock.request('screen')")
-  expect(app).toContain("document.addEventListener('visibilitychange', onVisibilityChange)")
-  expect(app).toContain('void releaseWakeLock()')
+  expect(app).toContain('useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeTimerTask || activeFocusSession))')
+  expect(wakeLockHook).toContain("wakeLock.request('screen')")
+  expect(wakeLockHook).toContain("document.addEventListener('visibilitychange', onVisibilityChange)")
+  expect(wakeLockHook).toContain('void releaseWakeLock()')
   expect(app).toContain('专注时保持屏幕常亮')
 })
 

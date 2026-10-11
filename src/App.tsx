@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.8'
+const APP_VERSION = '2.9.10'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -53,8 +53,10 @@ import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
 import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from './domain/focus'
+import { createDirectFocusSession, findActiveTimedTask, formatRunningTaskTimer, lastSelectableFocusTagId, taskTimerStopPatch } from './domain/focusRuntime'
 import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 import { useAppPreferences } from './hooks/useAppPreferences'
+import { useFocusWakeLock } from './hooks/useFocusWakeLock'
 import { planSyncDiff, syncEntityKey } from './domain/sync'
 import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
 import { buildAttachmentLifecycle, referencedAttachmentKeys, renameAttachment, sortAttachmentsNewestFirst } from './domain/attachments'
@@ -327,7 +329,6 @@ function App() {
   const [randomPoolGroups,setRandomPoolGroups]=useState<RandomPoolGroup[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:randomPoolGroups')||'[]');return Array.isArray(v)?v:[]}catch{return []}})
   const [randomPoolItems,setRandomPoolItems]=useState<RandomPoolItem[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:randomPoolItems')||'[]');return Array.isArray(v)?v:[]}catch{return []}})
   const [mixedPoolItemIds,setMixedPoolItemIds]=useState<string[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:mixedPoolItemIds')||'[]');return Array.isArray(v)?v.filter(id=>typeof id==='string'):[]}catch{return []}})
-  const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null)
   const [encouragementManagerOpen, setEncouragementManagerOpen] = useState(false)
   const [encouragementDraft, setEncouragementDraft] = useState('')
   const [encouragementEditingId, setEncouragementEditingId] = useState<string|null>(null)
@@ -1704,15 +1705,14 @@ function App() {
     if (activeTimerTask || activeFocusSession) return
     const plannedMinutes=countdownMinutes(focusMinutes,15)
     const now=new Date().toISOString()
-    setFocusSessions(current=>[...current,{id:crypto.randomUUID(),tagIds:focusTagIds.length?focusTagIds:[DEFAULT_TAG_ID],mode:focusMode,...(focusMode==='countdown'?{plannedSeconds:plannedMinutes*60}:{}),startedAt:now,createdAt:now,updatedAt:now}])
+    setFocusSessions(current=>[...current,createDirectFocusSession({id:crypto.randomUUID(),tagIds:focusTagIds,mode:focusMode,plannedMinutes,startedAt:now})])
     setTimerNow(Date.now())
   }
   const stopDirectFocus = (automatic=false) => {
     if (!activeFocusSession) return
-    const lastOrdinaryTagId=activeFocusSession.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))))
     // Keep the just-finished focus tag selected when the panel returns to
     // "Start focus", matching the tag restored after closing/reopening it.
-    setFocusTagIds([lastOrdinaryTagId??DEFAULT_TAG_ID])
+    setFocusTagIds([lastSelectableFocusTagId(activeFocusSession,tags)])
     const nowMs=Date.now()
     const timing=focusTiming(activeFocusSession,nowMs,maxFocusSeconds)
     const dueAtMs=timing.dueAtMs??nowMs
@@ -1721,18 +1721,7 @@ function App() {
   }
 
 
-  const activeTimerTask = useMemo(() => {
-    for (const task of activeTasks) {
-      if (task.activeTimerStartedAt) return task
-      if (!task.recurrenceExceptions) continue
-      for (const [occurrenceDate, exception] of Object.entries(task.recurrenceExceptions) as [string, RecurrenceException][]) {
-        if (!exception.activeTimerStartedAt) continue
-        const occurrence = materializeOccurrence(task, occurrenceDate)
-        if (occurrence) return occurrence
-      }
-    }
-    return null
-  }, [activeTasks])
+  const activeTimerTask = useMemo(() => findActiveTimedTask(activeTasks), [activeTasks])
 
   useEffect(() => {
     if (!activeTimerTask && !activeFocusSession) return
@@ -1741,44 +1730,7 @@ function App() {
     return () => window.clearInterval(timer)
   }, [activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt, activeFocusSession?.id])
 
-  useEffect(() => {
-    const shouldStayAwake = keepScreenAwakeDuringFocus && Boolean(activeTimerTask || activeFocusSession)
-    let cancelled = false
-    const releaseWakeLock = async () => {
-      const current = wakeLockRef.current
-      wakeLockRef.current = null
-      if (current) {
-        try { await current.release() } catch { /* already released by the browser */ }
-      }
-    }
-    const requestWakeLock = async () => {
-      if (!shouldStayAwake || document.visibilityState !== 'visible' || wakeLockRef.current) return
-      const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type:'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock
-      if (!wakeLock) return
-      try {
-        const sentinel = await wakeLock.request('screen')
-        if (cancelled || !shouldStayAwake) { await sentinel.release(); return }
-        wakeLockRef.current = sentinel
-      } catch (error) {
-        console.info('Screen Wake Lock unavailable', error)
-      }
-    }
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void requestWakeLock()
-      else void releaseWakeLock()
-    }
-    if (shouldStayAwake) {
-      void requestWakeLock()
-      document.addEventListener('visibilitychange', onVisibilityChange)
-    } else {
-      void releaseWakeLock()
-    }
-    return () => {
-      cancelled = true
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-      void releaseWakeLock()
-    }
-  }, [keepScreenAwakeDuringFocus, activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt, activeFocusSession?.id])
+  useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeTimerTask || activeFocusSession))
 
   useEffect(() => {
     if (!activeFocusSession) return
@@ -1852,20 +1804,7 @@ function App() {
     const endedAt = new Date(Math.min(forcedEndMs ?? Date.now(), startedMs + maxFocusSeconds * 1000))
     const startedAt = new Date(task.activeTimerStartedAt)
     const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
-    updateTimedTask(task, current => {
-      const previousMinutes = Number(current.actualDurationMinutes ?? task.actualDurationMinutes ?? 0)
-      const previousRemainder = Number(current.timerSecondsRemainder ?? task.timerSecondsRemainder ?? 0)
-      const totalSeconds = previousRemainder + durationSeconds
-      const addedMinutes = Math.floor(totalSeconds / 60)
-      return {
-        activeTimerStartedAt: undefined,
-        activeTimerFocusTagIds: undefined,
-        timerSessions: [...(current.timerSessions ?? task.timerSessions ?? []), { startedAt: task.activeTimerStartedAt!, endedAt: endedAt.toISOString(), durationSeconds, focusTagIds: current.activeTimerFocusTagIds ?? task.activeTimerFocusTagIds ?? [DEFAULT_TAG_ID] }],
-        timerSecondsRemainder: totalSeconds % 60,
-        actualDurationMinutes: previousMinutes + addedMinutes,
-        ...(complete ? { status: 'completed' as TaskStatus, completedAt: endedAt.toISOString() } : {}),
-      }
-    })
+    updateTimedTask(task, current => taskTimerStopPatch(current, task, endedAt, durationSeconds, complete))
   }
 
   useEffect(() => {
@@ -1875,14 +1814,7 @@ function App() {
     if(timerNow>=capMs) stopTaskTimer(activeTimerTask,false,capMs)
   },[timerNow,activeTimerTask?.id,activeTimerTask?.activeTimerStartedAt,maxFocusSeconds])
 
-  const formatRunningTimer = (task: Task) => {
-    if (!task.activeTimerStartedAt) return '00:00:00'
-    const seconds = Math.min(maxFocusSeconds, Math.max(0, Math.floor((timerNow - new Date(task.activeTimerStartedAt).getTime()) / 1000)))
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
-    const remainder = seconds % 60
-    return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(remainder).padStart(2,'0')}`
-  }
+  const formatRunningTimer = (task: Task) => formatRunningTaskTimer(task, timerNow, maxFocusSeconds)
 
   const openTaskEditor = () => {
     const date = selectedDate ?? today
