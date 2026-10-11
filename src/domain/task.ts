@@ -1,3 +1,4 @@
+import { focusSessionParticipatesInStats } from './taskFocusLifecycle'
 import type {
   CalendarDay, FocusSession, RecurrenceEnd, RecurrenceRule, Task, TaskDraft, TaskPriority,
 } from '../types'
@@ -53,8 +54,8 @@ export function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number
   return totals
 }
 
-export function combinedFocusSecondsByDate(_tasks:Task[], sessions:FocusSession[], nowMs:number, includeTagIds: (tagIds?: string[]) => boolean = () => true){
-  return directFocusSecondsByDate(sessions,nowMs,includeTagIds)
+export function combinedFocusSecondsByDate(tasks:Task[], sessions:FocusSession[], nowMs:number, includeTagIds: (tagIds?: string[]) => boolean = () => true){
+  return directFocusSecondsByDate(sessions.filter(session=>focusSessionParticipatesInStats(session,tasks)),nowMs,includeTagIds)
 }
 
 export function formatActualDuration(minutes?: number) {

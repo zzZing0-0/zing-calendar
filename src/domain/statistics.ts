@@ -1,3 +1,4 @@
+import { focusSessionParticipatesInStats } from './taskFocusLifecycle'
 import type { DailyEnergy, DailyMood, FocusSession, JournalEntry, JournalImpact, MoodLevel, EnergyLevel, RecurrenceException, Tag, Task, TaskPriority } from '../types'
 import { addDaysKey, combinedFocusSecondsByDate, dayDiff, expandTasks, taskEndDate, toDateKey } from './task'
 import { DEFAULT_TAG, DEFAULT_TAG_ID, isImportSourceTagId } from './preferences'
@@ -123,7 +124,7 @@ export function buildStatistics({
     row.seconds+=seconds; row.sessions+=sessions; focusTagMap.set(tag.id,row)
   }
   focusSessions.forEach(session=>{
-    if(session.trashedAt)return
+    if(!focusSessionParticipatesInStats(session,activeTasks))return
     const date=toDateKey(new Date(session.startedAt)); if(!inRange(date))return
     const start=new Date(session.startedAt).getTime(),end=session.endedAt?new Date(session.endedAt).getTime():timerNow
     const cap=session.mode==='countdown'&&session.plannedSeconds?start+session.plannedSeconds*1000:end

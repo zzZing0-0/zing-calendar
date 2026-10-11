@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.19'
+const APP_VERSION = '2.9.20'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -47,7 +47,8 @@ import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVis
 import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
-import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, taskFocusSeconds, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from './domain/focus'
+import { cascadeRestoreTaskFocus, cascadeTrashTaskFocus, focusSessionParticipatesInStats, permanentlyDeleteTaskFocus, purgeTrashWithTaskFocus } from './domain/taskFocusLifecycle'
+import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, taskFocusSeconds, permanentlyDeleteFocusSession, restoreFocusSession, trashFocusSession } from './domain/focus'
 import { createDirectFocusSession, createTaskFocusSession, lastSelectableFocusTagId } from './domain/focusRuntime'
 import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 import { useAppPreferences } from './hooks/useAppPreferences'
@@ -1306,7 +1307,7 @@ function App() {
     journalEntries.forEach(journal => { if (journal.trashedAt) items.push({key:`journal:${journal.id}`,entity:'journal',journal,trashedAt:journal.trashedAt}) })
     anniversaries.forEach(anniversary => { if (anniversary.trashedAt) items.push({key:`anniversary:${anniversary.id}`,entity:'anniversary',anniversary,trashedAt:anniversary.trashedAt}) })
     notes.forEach(note => { if (note.trashedAt) items.push({key:`note:${note.id}`,entity:'note',note,trashedAt:note.trashedAt}) })
-    focusSessions.forEach(session => { if (session.trashedAt) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
+    focusSessions.forEach(session => { if (session.trashedAt && !session.trashedByTaskId) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
   },[tasks,journalEntries,anniversaries,notes,focusSessions])
   const trashTaskStatus = (item: Extract<TrashItem,{entity:'task'}>): TaskStatus => item.kind === 'occurrence' && item.occurrenceDate
@@ -2047,6 +2048,7 @@ function App() {
       return
     }
     setTasks(current => current.map(series => series.id === seriesId ? { ...series, trashedAt:now, updatedAt:now } : series))
+    setFocusSessions(current => cascadeTrashTaskFocus(current, seriesId, now))
   }
 
   const restoreTrashItem = (item: TrashItem) => {
@@ -2062,6 +2064,7 @@ function App() {
       const date=item.occurrenceDate!
       return {...task,recurrenceExceptions:{...task.recurrenceExceptions,[date]:{...task.recurrenceExceptions?.[date],trashedAt:undefined,updatedAt:now}},updatedAt:now}
     }))
+    if(item.kind==='series') setFocusSessions(current=>cascadeRestoreTaskFocus(current,item.task.id,now))
     setAutoSyncToast('✓ 已恢复任务')
   }
 
@@ -2071,7 +2074,7 @@ function App() {
     if(item.entity==='note') { setNotes(current=>permanentlyDeleteNote(current,item.note.id)); return }
     if(item.entity==='anniversary') { setAnniversaries(current=>current.filter(a=>a.id!==item.anniversary.id)); return }
     const now=new Date().toISOString()
-    if(item.kind==='series') { setTasks(current=>current.filter(task=>task.id!==item.task.id)); return }
+    if(item.kind==='series') { setTasks(current=>current.filter(task=>task.id!==item.task.id)); setFocusSessions(current=>permanentlyDeleteTaskFocus(current,item.task.id)); return }
     if(item.kind==='occurrence') {
       const date=item.occurrenceDate!
       setTasks(current=>current.map(task=>task.id===item.task.id?{...task,recurrenceExceptions:{...task.recurrenceExceptions,[date]:{...task.recurrenceExceptions?.[date],trashedAt:undefined,deleted:true,updatedAt:now}},updatedAt:now}:task)); return
@@ -2086,7 +2089,7 @@ function App() {
     setJournalEntries(current => current.filter(entry => !entry.trashedAt))
     setAnniversaries(current => current.filter(anniversary => !anniversary.trashedAt))
     setNotes(current => purgeTrashedNotes(current))
-    setFocusSessions(current => purgeTrashedFocusSessions(current))
+    setFocusSessions(current => purgeTrashWithTaskFocus(current,tasks))
     setTasks(current => current.flatMap(task => {
       if (task.trashedAt) return []
       let next = task

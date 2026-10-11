@@ -108,3 +108,9 @@ Notes-specific Markdown additions should remain inside the Notes feature. The sh
 ## Focus time ownership (v2.9.18)
 
 `FocusSession` is the single persisted source of truth for focus time. A session with no `context` is free focus. A session with `context: { kind: 'task', taskId }` belongs to one ordinary Task; Note context is reserved for the later Notes integration. Task records no longer persist aggregate duration, timer sessions, timer remainder, or active timer fields. Task totals and Today Focus task rows are derived from FocusSessions. Recurring Tasks are checklist/habit records and do not expose Task timing.
+
+### Task-context Focus trash lifecycle (v2.9.20)
+- A whole non-recurring Task soft-delete cascades to its live task-context FocusSessions. Cascaded sessions carry `trashedByTaskId` so Task restore revives only sessions deleted by that Task action; FocusSessions already independently in trash stay trashed.
+- Task-context FocusSessions cascaded by a Task are hidden as separate recycle-bin rows; the Task is the lifecycle owner for that cascade.
+- Restoring the Task restores only its cascaded FocusSessions. Permanently deleting the Task permanently deletes every FocusSession associated with that Task. Clearing the recycle bin removes both the trashed Task and its associated FocusSessions.
+- Trashed or orphaned task-context FocusSessions are excluded defensively from Today Focus and all Focus statistics.

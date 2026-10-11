@@ -115,9 +115,10 @@ export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dat
     const seconds = Math.round(overlap / 1000)
     if (session.context?.kind === 'task') {
       const task = taskMap.get(session.context.taskId)
+      if (!task) return
       const existing = taskRows.get(session.context.taskId)
       if (existing) { existing.seconds += seconds; return }
-      taskRows.set(session.context.taskId, { id:`task:${session.context.taskId}`, kind:'task', title:task?.title??'已删除任务', seconds, tagIds:session.tagIds, task, session })
+      taskRows.set(session.context.taskId, { id:`task:${session.context.taskId}`, kind:'task', title:task.title, seconds, tagIds:session.tagIds, task, session })
       return
     }
     directRows.push({ id:`direct:${session.id}`, kind:'direct', title:'自由专注', seconds, tagIds:session.tagIds, session })
