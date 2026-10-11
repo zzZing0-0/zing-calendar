@@ -144,13 +144,20 @@ test('settings v2.9.5 regression › invalid tag scopes remain visibly disabled'
 })
 
 
-test('settings v2.9.6 regression › Settings title is an h2 and its scoped rule targets that exact element', () => {
-  expect(source).toContain('<span className="eyebrow">SETTINGS</span><h2>设置</h2>')
-  expect(css).toContain('.settings-page .page-heading h2{')
-  expect(css).not.toContain('.settings-page .page-heading h1{')
+
+
+test('settings v2.9.7 regression › Settings heading is a real card while preserving the existing heading content', () => {
+  expect(source).toContain('<div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>')
+  expect(css).toMatch(/\.settings-page \.page-heading\{[\s\S]*background:#fff;[\s\S]*border-radius:18px;/)
 })
 
-test('settings v2.9.6 regression › mobile Settings title rule also targets h2 rather than a nonexistent h1', () => {
-  expect(css).toContain('.settings-page .page-heading h2{font-size:27px}')
-  expect(css).not.toContain('.settings-page .page-heading h1{font-size:27px}')
+test('settings v2.9.7 regression › Settings does not override the shared page-heading title typography', () => {
+  expect(css).toContain('.page-heading h2 { margin:3px 0 0; font-size:22px; }')
+  expect(css).not.toContain('.settings-page .page-heading h2{')
+  expect(css).not.toContain('.settings-page .page-heading .eyebrow{')
+})
+
+test('settings v2.9.7 regression › mobile Settings keeps card spacing without introducing a title-size exception', () => {
+  expect(css).toContain('.settings-page .page-heading{margin-bottom:16px;padding:15px 17px}')
+  expect(css).not.toContain('.settings-page .page-heading h2{font-size:')
 })

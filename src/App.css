@@ -5265,20 +5265,13 @@ button {
 
 /* v2.9.5 — Settings UI consistency, bound to the real Settings DOM */
 .settings-page .page-heading{
+  box-sizing:border-box;
   margin:0 0 18px;
-  padding:0 2px;
-}
-.settings-page .page-heading .eyebrow{
-  margin-bottom:6px;
-  font-size:12px;
-  line-height:1.2;
-  letter-spacing:.18em;
-}
-.settings-page .page-heading h2{
-  margin:0;
-  font-size:28px;
-  line-height:1.18;
-  font-weight:750;
+  padding:16px 18px;
+  background:#fff;
+  border:1px solid var(--line, rgba(48,65,57,.10));
+  border-radius:18px;
+  box-shadow:0 8px 24px rgba(43,58,50,.06);
 }
 
 .settings-page .settings-group{
@@ -5346,8 +5339,7 @@ button {
 }
 
 @media(max-width:640px){
-  .settings-page .page-heading{margin-bottom:16px}
-  .settings-page .page-heading h2{font-size:27px}
+  .settings-page .page-heading{margin-bottom:16px;padding:15px 17px}
   .settings-page .settings-group-title{
     min-height:52px;
     padding-left:17px;
