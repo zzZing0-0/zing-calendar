@@ -11,13 +11,13 @@ type ToolbarCommand={buttonProps?:ButtonHTMLAttributes<HTMLButtonElement>|null}
 function withChineseTitle<T extends ToolbarCommand>(command:T,title:string):T{return {...command,buttonProps:{...(command.buttonProps??{}),title,'aria-label':title}} as T}
 const toolbarCommands={bold:withChineseTitle(commands.bold,'粗体'),italic:withChineseTitle(commands.italic,'斜体'),strike:withChineseTitle(commands.strikethrough,'删除线'),unordered:withChineseTitle(commands.unorderedListCommand,'无序列表'),ordered:withChineseTitle(commands.orderedListCommand,'有序列表'),checklist:withChineseTitle(commands.checkedListCommand,'插入清单'),quote:withChineseTitle(commands.quote,'引用'),link:withChineseTitle(commands.link,'插入链接'),table:withChineseTitle(commands.table,'插入表格'),code:withChineseTitle(commands.code,'行内代码'),codeBlock:withChineseTitle(commands.codeBlock,'代码块'),hr:withChineseTitle(commands.hr,'分隔线')}
 
-type Props={value:string;onChange:(value:string)=>void;onScrollRatio?:(ratio:number)=>void}
+type Props={value:string;onChange:(value:string)=>void;onScrollRatio?:(ratio:number)=>void;getTimestampText?:()=>string}
 type Selection={start:number;end:number}
 
 function replaceSelection(value:string,selection:Selection,replacement:string){return value.slice(0,selection.start)+replacement+value.slice(selection.end)}
 function lineBounds(value:string,offset:number){const start=value.lastIndexOf('\n',Math.max(0,offset-1))+1;const next=value.indexOf('\n',offset);return {start,end:next<0?value.length:next}}
 
-function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:string)=>void}){
+function MobileMarkdownEditor({value,onChange,getTimestampText}:{value:string;onChange:(value:string)=>void;getTimestampText?:()=>string}){
  const textareaRef=useRef<HTMLTextAreaElement>(null)
  const pendingSelection=useRef<(Selection&{restoreFocus:boolean})|null>(null)
  const pendingScroll=useRef<{scroller:HTMLElement|null;top:number;pageX:number;pageY:number}|null>(null)
@@ -54,18 +54,21 @@ function MobileMarkdownEditor({value,onChange}:{value:string;onChange:(value:str
    <button type="button" title="行内代码" onClick={()=>wrap('`')}>{'</>'}</button>
    <button type="button" title="代码块" onClick={()=>wrap('```\n','\n```','代码')}>▣</button>
    <button type="button" title="分隔线" onClick={()=>insert('\n---\n')}>—</button>
+   {getTimestampText&&<button type="button" aria-label="插入时间戳" title="插入时间戳" onClick={()=>insert(getTimestampText())}>🕒</button>}
    </div>
   </div>
   <textarea ref={textareaRef} className="zing-mobile-md-textarea" aria-label="Markdown 正文" value={value} onChange={e=>handleInputChange(e.target.value)} spellCheck={false}/>
  </div>
 }
 
-export function MarkdownEditorAdapter({value,onChange,onScrollRatio}:Props){
+export function MarkdownEditorAdapter({value,onChange,onScrollRatio,getTimestampText}:Props){
  const rootRef=useRef<HTMLDivElement>(null)
  const [isMobile,setIsMobile]=useState(()=>typeof window!=='undefined'&&window.matchMedia('(max-width: 700px)').matches)
  useEffect(()=>{const media=window.matchMedia('(max-width: 700px)');const update=()=>setIsMobile(media.matches);update();media.addEventListener?.('change',update);return()=>media.removeEventListener?.('change',update)},[])
  useEffect(()=>{if(isMobile||!onScrollRatio)return;const root=rootRef.current;if(!root)return;const report=(event:Event)=>{const scroller=event.target as HTMLElement|null;if(!scroller||!root.contains(scroller))return;const max=scroller.scrollHeight-scroller.clientHeight;if(max>1)onScrollRatio(scroller.scrollTop/max)};root.addEventListener('scroll',report,{capture:true,passive:true});return()=>root.removeEventListener('scroll',report,{capture:true})},[isMobile,onScrollRatio])
- if(isMobile)return <MobileMarkdownEditor value={value} onChange={onChange}/>
+ if(isMobile)return <MobileMarkdownEditor value={value} onChange={onChange} getTimestampText={getTimestampText}/>
+ const insertDesktopText=(text:string)=>{const textarea=rootRef.current?.querySelector<HTMLTextAreaElement>('textarea');if(!textarea)return;const start=textarea.selectionStart,end=textarea.selectionEnd;const root=rootRef.current;const scrollSnapshots=root?[root,...Array.from(root.querySelectorAll<HTMLElement>('*'))].filter(el=>el.scrollHeight>el.clientHeight||el.scrollWidth>el.clientWidth).map(el=>({el,top:el.scrollTop,left:el.scrollLeft})):[];const pageX=window.scrollX,pageY=window.scrollY;onChange(replaceSelection(value,{start,end},text));const cursor=start+text.length;const restore=()=>{const nextTextarea=rootRef.current?.querySelector<HTMLTextAreaElement>('textarea');if(!nextTextarea)return;nextTextarea.focus({preventScroll:true});nextTextarea.setSelectionRange(cursor,cursor);for(const snapshot of scrollSnapshots)if(snapshot.el.isConnected){snapshot.el.scrollTop=snapshot.top;snapshot.el.scrollLeft=snapshot.left}window.scrollTo(pageX,pageY)};requestAnimationFrame(()=>{restore();requestAnimationFrame(()=>{restore();setTimeout(restore,0)})})}
+ const timestampCommand=getTimestampText?{name:'zing-timestamp',keyCommand:'zing-timestamp',icon:<span aria-hidden="true">🕒</span>,buttonProps:{'aria-label':'插入时间戳',title:'插入时间戳',onMouseDown:(event:any)=>event.preventDefault()},execute:()=>insertDesktopText(getTimestampText())}:null
  const toggleCurrentTask={name:'zing-toggle-task',keyCommand:'zing-toggle-task',icon:<svg className="zing-toggle-task-command" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.2 6.4 11.5 13 4.8"/></svg>,buttonProps:{'aria-label':'切换当前清单完成状态',title:'勾选/取消当前清单（先把光标放在该行）',onMouseDown:(event:any)=>event.preventDefault()},execute:()=>{const textarea=rootRef.current?.querySelector<HTMLTextAreaElement>('textarea');if(!textarea)return;const cursor=textarea.selectionStart;const root=rootRef.current;const scrollSnapshots=root?[root,...Array.from(root.querySelectorAll<HTMLElement>('*'))].filter(el=>el.scrollHeight>el.clientHeight||el.scrollWidth>el.clientWidth).map(el=>({el,top:el.scrollTop,left:el.scrollLeft})):[];const pageX=window.scrollX,pageY=window.scrollY;const next=toggleMarkdownTaskAtOffset(value,cursor);if(next===value)return;onChange(next);const restore=()=>{const nextTextarea=rootRef.current?.querySelector<HTMLTextAreaElement>('textarea');if(!nextTextarea)return;nextTextarea.focus({preventScroll:true});nextTextarea.setSelectionRange(cursor,cursor);for(const snapshot of scrollSnapshots)if(snapshot.el.isConnected){snapshot.el.scrollTop=snapshot.top;snapshot.el.scrollLeft=snapshot.left}window.scrollTo(pageX,pageY)};requestAnimationFrame(()=>{restore();requestAnimationFrame(()=>{restore();setTimeout(restore,0)})})}}
- return <div ref={rootRef} data-color-mode="light" className="zing-md-editor"><MDEditor value={value} onChange={next=>onChange(next??'')} preview="edit" height="100%" commands={[headingGroup,toolbarCommands.bold,toolbarCommands.italic,toolbarCommands.strike,commands.divider,toolbarCommands.unordered,toolbarCommands.ordered,toolbarCommands.checklist,toggleCurrentTask,toolbarCommands.quote,commands.divider,toolbarCommands.link,toolbarCommands.table,commands.divider,toolbarCommands.code,toolbarCommands.codeBlock,toolbarCommands.hr]} extraCommands={[]}/></div>
+ return <div ref={rootRef} data-color-mode="light" className="zing-md-editor"><MDEditor value={value} onChange={next=>onChange(next??'')} preview="edit" height="100%" commands={[headingGroup,toolbarCommands.bold,toolbarCommands.italic,toolbarCommands.strike,commands.divider,toolbarCommands.unordered,toolbarCommands.ordered,toolbarCommands.checklist,toggleCurrentTask,toolbarCommands.quote,commands.divider,toolbarCommands.link,toolbarCommands.table,commands.divider,toolbarCommands.code,toolbarCommands.codeBlock,toolbarCommands.hr,...(timestampCommand?[timestampCommand]:[])]} extraCommands={[]}/></div>
 }

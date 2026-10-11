@@ -101,3 +101,6 @@ Sync and backup are treated as high-risk data-integrity surfaces. The Playwright
 - Encouragement-card actions use a full-width, right-aligned action row on mobile so Edit/Delete stay aligned across message lengths.
 - Focus history treats the ordinary focus tag as the primary identity. Task/direct-focus origin is secondary metadata (`任务 · <title>` or `自由专注`) alongside duration.
 - Presentation contracts are covered by a focused regression spec.
+
+### Notes editor extensions
+Notes-specific Markdown additions should remain inside the Notes feature. The shared Markdown editor may expose generic caret-safe insertion hooks/props, while Notes owns the content/formatting rule (for example, timestamp text). Do not duplicate global date-format rules inside the editor adapter.

@@ -96,3 +96,23 @@ test('notes mobile toolbar touch source regression › touch pointer-down is int
   expect(adapter).toContain('restoreFocus:document.activeElement===textareaRef.current')
   expect(adapter).toContain('if(sel.restoreFocus&&document.activeElement!==el)')
 })
+
+test('notes timestamp regression › timestamp formatting reuses the global UI date formatter and adds 24-hour minute precision', () => {
+  const timestamp = readFileSync('src/features/notes/noteTimestamp.ts','utf8')
+  const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
+  expect(timestamp).toContain('formatUiDate(date)')
+  expect(timestamp).toContain("hour:'2-digit',minute:'2-digit',hour12:false")
+  expect(timestamp).toContain('🕒')
+  expect(notes).toContain('formatNoteTimestamp(new Date(),formatUiDate)')
+})
+
+test('notes timestamp regression › desktop and mobile toolbar insert at the caret while preserving editor focus and scroll', () => {
+  const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx','utf8')
+  expect(adapter).toContain("aria-label=\"插入时间戳\"")
+  expect(adapter).toContain("onClick={()=>insert(getTimestampText())}")
+  expect(adapter).toContain("execute:()=>insertDesktopText(getTimestampText())")
+  expect(adapter).toContain("replaceSelection(value,{start,end},text)")
+  expect(adapter).toContain("nextTextarea.focus({preventScroll:true})")
+  expect(adapter).toContain("nextTextarea.setSelectionRange(cursor,cursor)")
+  expect(adapter).toContain("snapshot.el.scrollTop=snapshot.top")
+})
