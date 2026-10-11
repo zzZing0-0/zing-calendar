@@ -115,22 +115,30 @@ test('tag editor v2.9.2 regression › save path revalidates scope invariant', (
   expect(source).toContain("setAutoSyncToast(`⚠ ${blockedReason}`)")
 })
 
-test('settings v2.9.3 regression › card headings use one separator and typography rule', () => {
-  expect(css).toContain('.settings-page .settings-card>.section-head')
-  expect(css).toContain('border-bottom:1px solid')
+
+
+test('settings v2.9.5 regression › visual rules target the Settings classes actually mounted by App', () => {
+  for (const className of ['page-heading', 'settings-group', 'settings-group-title', 'setting-row']) {
+    expect(source).toContain(className)
+    expect(css).toContain(`.settings-page .${className}`)
+  }
 })
-test('settings v2.9.3 regression › same-level setting rows share typography and separators', () => {
-  expect(css).toContain('.settings-page .settings-row+.settings-row')
+
+test('settings v2.9.5 regression › focus controls share the same typography hierarchy despite different control layouts', () => {
+  expect(source).toContain('max-focus-setting')
+  expect(source).toContain('focus-wake-lock-setting')
+  expect(css).toContain('.settings-page .max-focus-setting label')
+  expect(css).toContain('.settings-page .focus-wake-lock-setting label')
   expect(css).toContain('font-size:16px')
-  expect(css).toContain('font-size:13px')
 })
-test('settings v2.9.3 regression › invalid tag scopes are visibly disabled', () => {
+
+test('settings v2.9.5 regression › every Settings group title gets the same divider treatment', () => {
+  expect(source).toContain('settings-group-title')
+  expect(css).toMatch(/\.settings-page \.settings-group-title\{[\s\S]*border-bottom:1px solid/)
+})
+
+test('settings v2.9.5 regression › invalid tag scopes remain visibly disabled', () => {
   expect(source).toContain("blocked?'scope-disabled':''")
   expect(css).toContain('.tag-scope-grid button.scope-disabled')
   expect(css).toContain('cursor:not-allowed')
-})
-test('settings v2.9.3 regression › Settings header is compact and mobile-consistent', () => {
-  expect(css).toContain('.settings-page .settings-header h1')
-  expect(css).toContain('font-size:28px')
-  expect(css).toContain('@media(max-width:640px)')
 })
