@@ -114,3 +114,23 @@ test('tag editor v2.9.2 regression › save path revalidates scope invariant', (
   expect(source).toContain("const blockedReason = tagScopeBlockedReason(tag.id, tagEditDraft.scope)")
   expect(source).toContain("setAutoSyncToast(`⚠ ${blockedReason}`)")
 })
+
+test('settings v2.9.3 regression › card headings use one separator and typography rule', () => {
+  expect(css).toContain('.settings-page .settings-card>.section-head')
+  expect(css).toContain('border-bottom:1px solid')
+})
+test('settings v2.9.3 regression › same-level setting rows share typography and separators', () => {
+  expect(css).toContain('.settings-page .settings-row+.settings-row')
+  expect(css).toContain('font-size:16px')
+  expect(css).toContain('font-size:13px')
+})
+test('settings v2.9.3 regression › invalid tag scopes are visibly disabled', () => {
+  expect(source).toContain("blocked?'scope-disabled':''")
+  expect(css).toContain('.tag-scope-grid button.scope-disabled')
+  expect(css).toContain('cursor:not-allowed')
+})
+test('settings v2.9.3 regression › Settings header is compact and mobile-consistent', () => {
+  expect(css).toContain('.settings-page .settings-header h1')
+  expect(css).toContain('font-size:28px')
+  expect(css).toContain('@media(max-width:640px)')
+})

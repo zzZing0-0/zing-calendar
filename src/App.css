@@ -5261,3 +5261,42 @@ button {
 .random-mixed-group-select b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .random-mixed-group-select em{margin-left:auto;color:#8a9189;font-size:12px;font-style:normal;font-weight:600}
 .random-mixed-group-select input:checked+.random-checkbox,.random-mixed-group-select.is-partial .random-checkbox{background:#6f9a83;border-color:#6f9a83;color:#fff}
+
+/* v2.9.3 Settings UI consistency */
+.settings-page .settings-header{margin:0 0 18px;padding:0 2px}
+.settings-page .settings-header .eyebrow{margin-bottom:6px;font-size:12px;line-height:1.2;letter-spacing:.18em}
+.settings-page .settings-header h1{margin:0;font-size:28px;line-height:1.18;font-weight:750}
+
+/* Existing settings cards use section-head plus settings-row. Normalize same-level hierarchy. */
+.settings-page .settings-card{overflow:hidden}
+.settings-page .settings-card>.section-head,
+.settings-page .settings-card>.settings-card-title{
+  display:flex;align-items:center;min-height:54px;margin:0;padding:0 18px;
+  border-bottom:1px solid var(--line,rgba(48,65,57,.10));
+  font-size:15px;line-height:1.35;font-weight:700
+}
+.settings-page .settings-row{padding:16px 18px}
+.settings-page .settings-row+.settings-row{border-top:1px solid var(--line,rgba(48,65,57,.10))}
+.settings-page .settings-row .settings-label,
+.settings-page .settings-row>label,
+.settings-page .settings-row strong{font-size:16px;line-height:1.4;font-weight:700}
+.settings-page .settings-row .settings-help,
+.settings-page .settings-row small{font-size:13px;line-height:1.5}
+
+/* Scope legality must be visible, not only functional. */
+.tag-scope-grid button.scope-disabled,
+.tag-scope-grid button:disabled{
+  background:#f1f2f0!important;border-color:#e2e5e1!important;color:#b2b7b3!important;
+  box-shadow:none!important;cursor:not-allowed;opacity:.72
+}
+.tag-scope-grid button.scope-disabled.active,
+.tag-scope-grid button:disabled.active{
+  background:#f1f2f0!important;border-color:#e2e5e1!important;color:#aeb4af!important
+}
+@media(max-width:640px){
+  .settings-page .settings-header{margin-bottom:16px}
+  .settings-page .settings-header h1{font-size:27px}
+  .settings-page .settings-card>.section-head,
+  .settings-page .settings-card>.settings-card-title{min-height:52px;padding:0 17px}
+  .settings-page .settings-row{padding:15px 17px}
+}

@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.2'
+const APP_VERSION = '2.9.4'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -4614,7 +4614,7 @@ function App() {
               <label className="field"><span>名称</span><input value={tagEditDraft?.name ?? tag.name} onChange={e=>setTagEditDraft(current=>current?{...current,name:e.target.value}:current)} autoFocus /></label>
               <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
               <div className="field"><span>分类</span><div className="tag-detail-scope">
-                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
+                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={`${(tagEditDraft?.scope ?? tag.scope)===scope?'active ':''}${blocked?'scope-disabled':''}`.trim()} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
               </div><small className="tag-usage-hint">当前引用：{tagUsageAreas(tag.id).join(' · ') || '暂无'}</small></div>
             </div>
             <div className="editor-actions compact-tag-edit-actions">
