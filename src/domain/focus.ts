@@ -114,7 +114,7 @@ export function focusHistoryForDate(tasks: Task[], notes: Note[], sessions: Focu
   const taskMap = new Map(tasks.filter(task=>!task.trashedAt&&!task.recurrence).map(task=>[task.id,task]))
   const taskRows = new Map<string, FocusHistoryRecord>()
   const noteMap = new Map(notes.filter(note=>!note.trashedAt).map(note=>[note.id,note]))
-  const noteRows: FocusHistoryRecord[] = []
+  const noteRows = new Map<string, FocusHistoryRecord>()
   const directRows: FocusHistoryRecord[] = []
   sessions.forEach(session => {
     if (session.trashedAt) return
@@ -137,10 +137,14 @@ export function focusHistoryForDate(tasks: Task[], notes: Note[], sessions: Focu
     if (session.context?.kind === 'note') {
       const note = noteMap.get(session.context.noteId)
       if (!note) return
-      noteRows.push({ id:`note:${session.id}`, kind:'note', title:note.title, seconds, tagIds:session.tagIds, note, session })
+      const ordinaryTagIds = session.tagIds.filter(Boolean).slice().sort()
+      const key = `${session.context.noteId}:${ordinaryTagIds.join(',')}`
+      const existing = noteRows.get(key)
+      if (existing) { existing.seconds += seconds; return }
+      noteRows.set(key, { id:`note:${key}`, kind:'note', title:note.title, seconds, tagIds:session.tagIds, note })
       return
     }
     directRows.push({ id:`direct:${session.id}`, kind:'direct', title:'自由专注', seconds, tagIds:session.tagIds, session })
   })
-  return [...taskRows.values(), ...noteRows, ...directRows].sort((a,b)=>(b.session?.startedAt??'').localeCompare(a.session?.startedAt??''))
+  return [...taskRows.values(), ...noteRows.values(), ...directRows].sort((a,b)=>(b.session?.startedAt??'').localeCompare(a.session?.startedAt??''))
 }

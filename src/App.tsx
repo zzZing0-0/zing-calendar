@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.28'
+const APP_VERSION = '2.9.29'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -476,6 +476,7 @@ function App() {
   const [pendingNoteFocusId, setPendingNoteFocusId] = useState<string | null>(null)
   const [expandedFocusColor, setExpandedFocusColor] = useState<string | null>(null)
   const [focusHistoryDate, setFocusHistoryDate] = useState<string | null>(null)
+  const [noteFocusHistoryId, setNoteFocusHistoryId] = useState<string | null>(null)
   const [focusEditId, setFocusEditId] = useState<string | null>(null)
   const [focusEditMinutes, setFocusEditMinutes] = useState('')
   const [focusEditTagIds, setFocusEditTagIds] = useState<string[]>([])
@@ -1361,6 +1362,10 @@ function App() {
     if (!focusHistoryDate) return []
     return focusHistoryForDate(activeTasks, notes, focusSessions, focusHistoryDate, timerNow)
   },[focusHistoryDate,activeTasks,notes,focusSessions,timerNow])
+
+  const noteFocusHistoryNote = useMemo(() => noteFocusHistoryId ? notes.find(note=>note.id===noteFocusHistoryId&&!note.trashedAt)??null : null, [noteFocusHistoryId,notes])
+  const noteFocusHistorySessions = useMemo(() => noteFocusHistoryId ? focusSessions.filter(session=>!session.trashedAt&&session.context?.kind==='note'&&session.context.noteId===noteFocusHistoryId).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)) : [], [noteFocusHistoryId,focusSessions])
+  const noteFocusHistorySeconds = useMemo(() => noteFocusHistoryId ? noteFocusSeconds(noteFocusHistoryId,focusSessions,timerNow) : 0, [noteFocusHistoryId,focusSessions,timerNow])
 
   const beginEditFocusSession = (session:FocusSession) => {
     setFocusEditId(session.id)
@@ -3258,7 +3263,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={requestNoteFocus} onStopNoteFocus={stopNoteFocus} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={requestNoteFocus} onStopNoteFocus={stopNoteFocus} onOpenFocusHistory={note=>{setFocusEditId(null);setNoteFocusHistoryId(note.id)}} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">
@@ -3644,7 +3649,7 @@ function App() {
         </div>
       )}
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !noteFocusHistoryId && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && (
       <nav className="bottom-nav" aria-label="主要功能">
         <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4.5 8.5h15M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" /></svg>日历</button>
         <button type="button" className={mainView==='notes'?'active':''} onClick={() => switchMainView('notes')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3V4.5Zm3 0V20M11 9h5M11 13h5" /></svg>笔记</button>
@@ -3974,19 +3979,44 @@ function App() {
         <div className="modal-layer focus-history-layer" role="presentation">
           <button className="modal-backdrop" type="button" aria-label="关闭专注记录" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null)}} />
           <section className="task-editor focus-history-panel" role="dialog" aria-modal="true" aria-label="专注记录">
-            <div className="editor-header"><div><span className="eyebrow">FOCUS LOG</span><h2>{focusHistoryDate} · 专注记录</h2></div><button className="close-button" type="button" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null)}}>×</button></div>
+            <div className="editor-header"><div><span className="eyebrow">FOCUS LOG</span><h2>{formatUiDate(fromDateKey(focusHistoryDate))} · 专注记录</h2></div><button className="close-button" type="button" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null)}}>×</button></div>
             <div className="editor-body focus-history-body">
-              <div className="focus-history-summary"><strong>{formatFocusDuration(combinedFocusSecondsByDate(activeTasks,focusSessions,timerNow,undefined,notes).get(focusHistoryDate)??0)}</strong><span>{focusHistoryRecords.length} 条记录</span></div>
-              {focusHistoryRecords.length===0?<p className="page-empty compact">这一天还没有专注记录。</p>:<div className="focus-history-list">{focusHistoryRecords.map(record=>{
-                const editing=record.kind!=='task'&&record.session&&focusEditId===record.session.id
-                const focusTag=record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
-                return <div className="focus-history-item" key={record.id}>
-                  <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:record.kind==='note'?`笔记 · ${record.title}`:'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
-                  {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions">
-                    {record.kind==='note'&&record.note&&<button type="button" onClick={()=>{setFocusHistoryDate(null);setMainView('notes');setRequestedNoteId(record.note!.id)}}>查看</button>}
-                    <button type="button" onClick={()=>{if(record.kind!=='task'&&record.session)beginEditFocusSession(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}}}>{record.kind==='task'?'查看':'更改'}</button>
-                    {record.kind!=='task'&&record.session&&<button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button>}
-                  </div>}
+              <div className="focus-history-summary"><strong>{formatFocusDuration(combinedFocusSecondsByDate(activeTasks,focusSessions,timerNow,undefined,notes).get(focusHistoryDate)??0)}</strong><span>{focusHistoryRecords.length} 项</span></div>
+              {focusHistoryRecords.length===0?<p className="page-empty compact">这一天还没有专注记录。</p>:<div className="focus-history-sections">{(['direct','note','task'] as const).map(kind=>{
+                const rows=focusHistoryRecords.filter(record=>record.kind===kind)
+                if(!rows.length)return null
+                const label=kind==='direct'?'自由专注':kind==='note'?'笔记':'任务'
+                return <section className="focus-history-section" key={kind}><h3>{label}<small>{rows.length} 项</small></h3><div className="focus-history-list">{rows.map(record=>{
+                  const editing=record.kind==='direct'&&record.session&&focusEditId===record.session.id
+                  const focusTag=record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
+                  return <div className="focus-history-item" key={record.id}>
+                    <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:record.kind==='note'?`笔记 · ${record.title}`:'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
+                    {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions">
+                      {record.kind==='note'&&record.note&&<button type="button" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null);setNoteFocusHistoryId(record.note!.id);setMainView('notes');setRequestedNoteId(record.note!.id)}}>查看</button>}
+                      {record.kind==='task'&&record.task&&<button type="button" onClick={()=>{setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task!)}}>查看</button>}
+                      {record.kind==='direct'&&record.session&&<><button type="button" onClick={()=>beginEditFocusSession(record.session!)}>更改</button><button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></>}
+                    </div>}
+                  </div>})}</div></section>})}</div>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {noteFocusHistoryId && noteFocusHistoryNote && (
+        <div className="modal-layer note-focus-history-layer" role="presentation">
+          <button className="modal-backdrop" type="button" aria-label="关闭笔记专注历史" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}} />
+          <section className="task-editor focus-history-panel" role="dialog" aria-modal="true" aria-label="笔记专注历史">
+            <div className="editor-header"><div><span className="eyebrow">NOTE FOCUS</span><h2>{noteFocusHistoryNote.title || '无标题笔记'} · 专注历史</h2></div><button className="close-button" type="button" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}}>×</button></div>
+            <div className="editor-body focus-history-body">
+              <div className="focus-history-summary"><strong>{formatFocusDuration(noteFocusHistorySeconds)}</strong><span>{noteFocusHistorySessions.length} 条记录</span></div>
+              {noteFocusHistorySessions.length===0?<p className="page-empty compact">这篇笔记还没有专注记录。</p>:<div className="focus-history-list">{noteFocusHistorySessions.map(session=>{
+                const editing=focusEditId===session.id
+                const focusTag=session.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
+                const seconds=session.durationSeconds??Math.max(0,Math.round((timerNow-new Date(session.startedAt).getTime())/1000))
+                const started=new Date(session.startedAt)
+                return <div className="focus-history-item" key={session.id}>
+                  <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{formatUiDate(started)} · {started.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><small>{formatFocusDuration(seconds)}</small></div></div>
+                  {editing?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!window.confirm('确定删除这条笔记专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
                 </div>})}</div>}
             </div>
           </section>

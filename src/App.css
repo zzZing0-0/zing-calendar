@@ -5348,3 +5348,6 @@ button {
 }
 .note-focus-meta{display:flex;align-items:center;gap:10px;min-width:0}.note-focus-controls{display:flex;align-items:center;gap:10px}.note-focus-controls>span{white-space:nowrap}.note-focus-controls button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:700px){.note-meta{align-items:flex-start;gap:8px}.note-focus-meta{min-width:0;flex-wrap:wrap}.note-focus-controls{margin-left:auto;flex-shrink:0}.note-focus-controls>span{display:none}.note-focus-controls button{white-space:nowrap}}
+
+/* v2.9.29 — Note focus history and Today Focus grouping */
+.focus-history-sections{display:flex;flex-direction:column;gap:16px}.focus-history-section{display:flex;flex-direction:column;gap:8px}.focus-history-section>h3{display:flex;align-items:baseline;justify-content:space-between;margin:0;padding:0 2px;font-size:13px;color:#526159}.focus-history-section>h3 small{font-size:10px;font-weight:500;color:#98a19c}.note-focus-history-layer{z-index:280}.note-focus-history-trigger{border:0;background:transparent;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer}.note-focus-history-trigger:hover{text-decoration:underline}
