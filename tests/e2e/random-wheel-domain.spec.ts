@@ -137,7 +137,7 @@ test.describe('random wheel v2.8.10 mixed pool regression', () => {
     expect(domain).toContain('chooseWeightedFromItems')
     expect(wheel).toContain("const MIXED_POOL_ID='__mixed__'")
     expect(wheel).toContain('chooseWeightedFromItems(current,unit)')
-    expect(wheel).toContain('<option value={MIXED_POOL_ID}>混合池</option>')
+    expect(wheel).toContain('mixed.length>=2&&<option value={MIXED_POOL_ID}>混合池</option>')
   })
 
   test('mixed selection is independent of ordinary enabled state and cleans deleted references', async () => {
@@ -176,5 +176,74 @@ test.describe('random wheel v2.8.11 pool default-collapse regression', () => {
     const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
     expect(pool).toContain('const id = crypto.randomUUID()')
     expect(pool).toContain("setCollapsed(current => ({ ...current, [id]: false }))")
+  })
+})
+
+
+test.describe('random wheel v2.8.12 UI consistency regression', () => {
+  test('mixed pool is hidden from wheel picker until it has two valid items', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(wheel).toContain("groupId===MIXED_POOL_ID&&mixed.length<2")
+    expect(wheel).toContain("mixed.length>=2&&<option value={MIXED_POOL_ID}>混合池</option>")
+  })
+
+  test('mixed pool manager starts collapsed and can be expanded explicitly', async () => {
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    expect(pool).toContain('const [mixedCollapsed, setMixedCollapsed] = useState(true)')
+    expect(pool).toContain('aria-expanded={!mixedCollapsed}')
+    expect(pool).toContain("mixedCollapsed?' is-collapsed':''")
+    expect(pool).toContain('!mixedCollapsed&&')
+  })
+
+  test('focus limit keeps title unit and numeric input on one line', async () => {
+    const app = await read('src/App.tsx')
+    const css = await read('src/App.css')
+    expect(app).toContain('最长专注时长（小时）')
+    expect(app).toContain('className="max-focus-setting-line"')
+    expect(app).not.toContain('<b>小时</b>')
+    expect(css).toContain('.max-focus-setting-line{display:flex;align-items:center;justify-content:space-between')
+  })
+
+  test('mobile wheel reserves a standalone navigation row above its content', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    const css = await read('src/App.css')
+    expect(wheel).toContain('random-wheel-top random-wheel-page-top')
+    expect(css).toContain('.random-wheel-page .random-wheel-page-top>button{grid-row:1')
+    expect(css).toContain('.random-wheel-page .random-wheel-page-top>div{grid-row:2')
+  })
+
+  test('settings card separators follow one internal-row rule', async () => {
+    const css = await read('src/App.css')
+    expect(css).toContain('.settings-group-title + .setting-row')
+    expect(css).toContain('.settings-group-title + .settings-link-row')
+    expect(css).toContain('.encouragement-style-setting{border-bottom:0}')
+    expect(css).toContain('.encouragement-style-setting + .setting-row')
+  })
+})
+
+
+test.describe('random wheel v2.8.13 usability regression', () => {
+  test('weight input replaces the visible zero instead of producing a leading-zero edit', async () => {
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    expect(pool).toContain('onFocus={event => event.currentTarget.select()}')
+    expect(pool).toContain("event.target.value === '' ? 0 : Number(event.target.value)")
+  })
+
+  test('mixed pool group heading can select all clear all and represent partial selection', async () => {
+    const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
+    expect(pool).toContain('const toggleMixedGroup = (groupItems: RandomPoolItem[], checked: boolean)')
+    expect(pool).toContain("aria-checked={partiallySelected?'mixed':allSelected}")
+    expect(pool).toContain("partiallySelected?'−':'✓'")
+    expect(pool).toContain('toggleMixedGroup(groupItems,event.target.checked)')
+  })
+
+  test('wheel labels use the outer sector in up to three lines and omit redundant metadata', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(wheel).toContain('const labelRadius=r*.72')
+    expect(wheel).toContain('wheelLabelLines(ctx,item.name,maxWidth,3)')
+    expect(wheel).toContain("lines[maxLines - 1] = `${clipped}…`")
+    expect(wheel).toContain('ctx.clip()')
+    expect(wheel).not.toContain("Math.round(item.weight/total*100)")
+    expect(wheel).not.toContain("item.amount!=null?")
   })
 })

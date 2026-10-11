@@ -6,6 +6,31 @@ import { availableWheelGroups, chooseWeightedFromItems, cryptoUnit, validMixedRa
 type Props={groups:RandomPoolGroup[];items:RandomPoolItem[];mixedPoolItemIds:string[];onClose:()=>void}
 const MIXED_POOL_ID='__mixed__'
 const COLORS=['#b8d7b2','#f4d983','#e8afb8','#c4b2d8','#a9d8d0','#f3c39e']
+function wheelLabelLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines = 3) {
+  const chars = Array.from(text.trim())
+  if (!chars.length) return []
+  const lines: string[] = []
+  let current = ''
+  for (let index = 0; index < chars.length; index += 1) {
+    const next = current + chars[index]
+    if (current && ctx.measureText(next).width > maxWidth) {
+      lines.push(current.trim())
+      current = chars[index]
+      if (lines.length === maxLines) {
+        const remainder = (current + chars.slice(index + 1).join('')).trim()
+        let clipped = lines[maxLines - 1]
+        if (remainder) {
+          while (clipped && ctx.measureText(`${clipped}…`).width > maxWidth) clipped = clipped.slice(0, -1)
+          lines[maxLines - 1] = `${clipped}…`
+        }
+        return lines
+      }
+    } else current = next
+  }
+  if (current.trim() && lines.length < maxLines) lines.push(current.trim())
+  return lines
+}
+
 export function RandomWheelPage({groups,items,mixedPoolItemIds,onClose}:Props){
   const canvasRef=useRef<HTMLCanvasElement|null>(null), spinRef=useRef(0), audioRef=useRef<AudioContext|null>(null)
   const validGroups=useMemo(()=>availableWheelGroups(groups,items),[groups,items])
@@ -15,7 +40,7 @@ export function RandomWheelPage({groups,items,mixedPoolItemIds,onClose}:Props){
   const current=useMemo(()=>groupId===MIXED_POOL_ID?mixed:validRandomItems(items,groupId),[items,groupId,mixed])
   useEffect(()=>{if((groupId===MIXED_POOL_ID&&mixed.length<2)||(groupId!==MIXED_POOL_ID&&!groups.some(g=>g.id===groupId)))setGroupId(mixed.length>=2?MIXED_POOL_ID:(validGroups[0]?.id??groups[0]?.id??''))},[groups,validGroups,groupId,mixed.length])
   useEffect(()=>{let flashTimer=0,cycleTimer=0;const schedule=()=>{flashTimer=window.setTimeout(()=>{setLampFlash(true);cycleTimer=window.setTimeout(()=>{setLampFlash(false);schedule()},720)},1440)};schedule();return()=>{window.clearTimeout(flashTimer);window.clearTimeout(cycleTimer)}},[])
-  useEffect(()=>{const canvas=canvasRef.current;if(!canvas)return;const rect=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;const ctx=canvas.getContext('2d');if(!ctx)return;ctx.setTransform(dpr,0,0,dpr,0,0);const s=rect.width,c=s/2,r=s*.475,total=current.reduce((a,b)=>a+b.weight,0)||1;ctx.clearRect(0,0,s,s);let a=-Math.PI/2;current.forEach((item,i)=>{const sweep=item.weight/total*Math.PI*2,mid=a+sweep/2;ctx.beginPath();ctx.moveTo(c,c);ctx.arc(c,c,r,a,a+sweep);ctx.closePath();ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();ctx.strokeStyle='rgba(255,255,255,.82)';ctx.lineWidth=3;ctx.stroke();ctx.save();ctx.translate(c+Math.cos(mid)*r*.61,c+Math.sin(mid)*r*.61);ctx.rotate(mid+Math.PI/2);ctx.textAlign='center';ctx.fillStyle='#30352f';ctx.font=`700 ${Math.max(13,s*.031)}px system-ui`;ctx.fillText(item.name,0,0);ctx.font=`600 ${Math.max(11,s*.022)}px system-ui`;ctx.fillStyle='#62685f';const meta=[item.amount!=null?`${item.amount}${item.unit?' '+item.unit:''}`:'',`${Math.round(item.weight/total*100)}%`].filter(Boolean).join(' · ');ctx.fillText(meta,0,s*.04);ctx.restore();a+=sweep})},[current])
+  useEffect(()=>{const canvas=canvasRef.current;if(!canvas)return;const rect=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;const ctx=canvas.getContext('2d');if(!ctx)return;ctx.setTransform(dpr,0,0,dpr,0,0);const s=rect.width,c=s/2,r=s*.475,total=current.reduce((a,b)=>a+b.weight,0)||1;ctx.clearRect(0,0,s,s);let a=-Math.PI/2;current.forEach((item,i)=>{const sweep=item.weight/total*Math.PI*2,mid=a+sweep/2;ctx.beginPath();ctx.moveTo(c,c);ctx.arc(c,c,r,a,a+sweep);ctx.closePath();ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();ctx.strokeStyle='rgba(255,255,255,.82)';ctx.lineWidth=3;ctx.stroke();ctx.save();ctx.beginPath();ctx.moveTo(c,c);ctx.arc(c,c,r-4,a+.012,a+sweep-.012);ctx.closePath();ctx.clip();const labelRadius=r*.72;const arcWidth=Math.max(24,labelRadius*sweep*.82);const maxWidth=Math.min(r*.58,arcWidth);const fontSize=Math.max(12,Math.min(s*.031,maxWidth*.22));ctx.translate(c+Math.cos(mid)*labelRadius,c+Math.sin(mid)*labelRadius);ctx.rotate(mid+Math.PI/2);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#30352f';ctx.font=`700 ${fontSize}px system-ui`;const lines=wheelLabelLines(ctx,item.name,maxWidth,3),lineHeight=fontSize*1.08;lines.forEach((line,lineIndex)=>ctx.fillText(line,0,(lineIndex-(lines.length-1)/2)*lineHeight));ctx.restore();a+=sweep})},[current])
   const ensureAudio=()=>{
     const AudioCtor=window.AudioContext
     if(!AudioCtor)return null

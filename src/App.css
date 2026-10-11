@@ -5251,3 +5251,12 @@ button {
   .random-wheel-page .random-wheel-intro{margin-top:10px;margin-bottom:26px}
   .random-wheel-page .ferris-wrap{margin-top:18px}
 }
+
+
+/* v2.8.13 — mixed-group bulk selection */
+.random-mixed-group-select{display:flex;align-items:center;gap:8px;min-width:0;margin-bottom:6px;font-weight:700;color:#465047}
+.random-mixed-group-select input{position:absolute;opacity:0;pointer-events:none}
+.random-mixed-group-select .random-checkbox{flex:0 0 auto}
+.random-mixed-group-select b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.random-mixed-group-select em{margin-left:auto;color:#8a9189;font-size:12px;font-style:normal;font-weight:600}
+.random-mixed-group-select input:checked+.random-checkbox,.random-mixed-group-select.is-partial .random-checkbox{background:#6f9a83;border-color:#6f9a83;color:#fff}

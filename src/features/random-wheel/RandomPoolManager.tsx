@@ -31,11 +31,15 @@ export function RandomPoolManager({ groups, items, onGroups, onItems, mixedPoolI
     onItems([...items, { id: crypto.randomUUID(), groupId, name: '新项目', weight: 1, enabled: true, createdAt: timestamp, updatedAt: timestamp }])
   }
   const toggleMixedItem = (id: string, checked: boolean) => onMixedPoolItemIds(checked ? [...new Set([...mixedPoolItemIds, id])] : mixedPoolItemIds.filter(current => current !== id))
+  const toggleMixedGroup = (groupItems: RandomPoolItem[], checked: boolean) => {
+    const ids = new Set(groupItems.map(item => item.id))
+    onMixedPoolItemIds(checked ? [...new Set([...mixedPoolItemIds, ...ids])] : mixedPoolItemIds.filter(id => !ids.has(id)))
+  }
   const toggleGroup = (groupId: string) => setCollapsed(current => ({ ...current, [groupId]: !current[groupId] }))
 
   return <div className="random-pool-page">
     <div className="random-wheel-top"><button onClick={onClose}>‹ 返回</button><div><span>RANDOM POOLS</span><h2>幸运池</h2></div><i/></div>
-    <section className={`random-mixed-pool${mixedCollapsed?' is-collapsed':''}`}><button className="random-mixed-pool-head" type="button" onClick={()=>setMixedCollapsed(value=>!value)} aria-expanded={!mixedCollapsed}><div><strong>混合池</strong><small>跨组选项目，抽奖时直接继承原项目权重。</small></div><span>{mixedPoolItemIds.filter(id=>items.some(item=>item.id===id)).length} 项　{mixedCollapsed?'⌄':'⌃'}</span></button>{!mixedCollapsed&&(groups.length===0?<p>先创建普通分组和项目，再来这里自由混搭。</p>:groups.map(group=>{const groupItems=items.filter(item=>item.groupId===group.id);if(!groupItems.length)return null;return <div className="random-mixed-group" key={group.id}><b>{group.name}</b><div>{groupItems.map(item=><label key={item.id} className="random-mixed-item"><input type="checkbox" checked={mixedPoolItemIds.includes(item.id)} onChange={event=>toggleMixedItem(item.id,event.target.checked)}/><span className="random-checkbox" aria-hidden="true">✓</span><span>{item.name}</span><em>权重 {item.weight}</em></label>)}</div></div>}))}</section>
+    <section className={`random-mixed-pool${mixedCollapsed?' is-collapsed':''}`}><button className="random-mixed-pool-head" type="button" onClick={()=>setMixedCollapsed(value=>!value)} aria-expanded={!mixedCollapsed}><div><strong>混合池</strong><small>跨组选项目，抽奖时直接继承原项目权重。</small></div><span>{mixedPoolItemIds.filter(id=>items.some(item=>item.id===id)).length} 项　{mixedCollapsed?'⌄':'⌃'}</span></button>{!mixedCollapsed&&(groups.length===0?<p>先创建普通分组和项目，再来这里自由混搭。</p>:groups.map(group=>{const groupItems=items.filter(item=>item.groupId===group.id);if(!groupItems.length)return null;const selectedCount=groupItems.filter(item=>mixedPoolItemIds.includes(item.id)).length;const allSelected=selectedCount===groupItems.length;const partiallySelected=selectedCount>0&&!allSelected;return <div className="random-mixed-group" key={group.id}><label className={`random-mixed-group-select${partiallySelected?' is-partial':''}`}><input type="checkbox" checked={allSelected} aria-checked={partiallySelected?'mixed':allSelected} onChange={event=>toggleMixedGroup(groupItems,event.target.checked)}/><span className="random-checkbox" aria-hidden="true">{partiallySelected?'−':'✓'}</span><b>{group.name}</b><em>{selectedCount}/{groupItems.length}</em></label><div>{groupItems.map(item=><label key={item.id} className="random-mixed-item"><input type="checkbox" checked={mixedPoolItemIds.includes(item.id)} onChange={event=>toggleMixedItem(item.id,event.target.checked)}/><span className="random-checkbox" aria-hidden="true">✓</span><span>{item.name}</span><em>权重 {item.weight}</em></label>)}</div></div>}))}</section>
     <div className="random-pool-add"><input value={name} onChange={event => setName(event.target.value)} placeholder="新分组名称"/><button onClick={addGroup}>＋ 添加分组</button></div>
     {groups.length === 0 && <div className="random-wheel-empty">这里现在是空的。你可以创建任何分组，不预置「娱乐」或「学习」。</div>}
     {groups.map(group => {
@@ -58,7 +62,7 @@ export function RandomPoolManager({ groups, items, onGroups, onItems, mixedPoolI
             <div className="random-pool-item-details">
               <label><span>数量</span><input type="number" min="0" step="any" placeholder="可选" value={item.amount ?? ''} onChange={event => updateItem(item.id, { amount: event.target.value === '' ? undefined : Number(event.target.value) })}/></label>
               <label><span>单位</span><input placeholder="可选" value={item.unit ?? ''} onChange={event => updateItem(item.id, { unit: event.target.value })}/></label>
-              <label><span>权重</span><input type="number" min="0" step="any" value={item.weight} onChange={event => updateItem(item.id, { weight: Number(event.target.value) })}/></label>
+              <label><span>权重</span><input type="number" min="0" step="any" value={item.weight} onFocus={event => event.currentTarget.select()} onChange={event => updateItem(item.id, { weight: event.target.value === '' ? 0 : Number(event.target.value) })}/></label>
             </div>
           </div>)}
           <button className="random-add-item" onClick={() => addItem(group.id)}>＋ 添加项目</button>
