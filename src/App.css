@@ -5322,8 +5322,8 @@ button {
 }
 
 /* Tag-scope legality from v2.9.2 must also be visually obvious. */
-.tag-scope-grid button.scope-disabled,
-.tag-scope-grid button:disabled{
+.tag-detail-scope button.scope-disabled,
+.tag-detail-scope button:disabled{
   background:#f1f2f0!important;
   border-color:#e2e5e1!important;
   color:#aeb4af!important;
@@ -5331,8 +5331,8 @@ button {
   cursor:not-allowed;
   opacity:.68;
 }
-.tag-scope-grid button.scope-disabled.active,
-.tag-scope-grid button:disabled.active{
+.tag-detail-scope button.scope-disabled.active,
+.tag-detail-scope button:disabled.active{
   background:#f1f2f0!important;
   border-color:#e2e5e1!important;
   color:#aeb4af!important;

@@ -137,15 +137,6 @@ test('settings v2.9.5 regression › every Settings group title gets the same di
   expect(css).toMatch(/\.settings-page \.settings-group-title\{[\s\S]*border-bottom:1px solid/)
 })
 
-test('settings v2.9.5 regression › invalid tag scopes remain visibly disabled', () => {
-  expect(source).toContain("blocked?'scope-disabled':''")
-  expect(css).toContain('.tag-scope-grid button.scope-disabled')
-  expect(css).toContain('cursor:not-allowed')
-})
-
-
-
-
 test('settings v2.9.7 regression › Settings heading is a real card while preserving the existing heading content', () => {
   expect(source).toContain('<div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>')
   expect(css).toMatch(/\.settings-page \.page-heading\{[\s\S]*background:#fff;[\s\S]*border-radius:18px;/)
@@ -160,4 +151,20 @@ test('settings v2.9.7 regression › Settings does not override the shared page-
 test('settings v2.9.7 regression › mobile Settings keeps card spacing without introducing a title-size exception', () => {
   expect(css).toContain('.settings-page .page-heading{margin-bottom:16px;padding:15px 17px}')
   expect(css).not.toContain('.settings-page .page-heading h2{font-size:')
+})
+
+
+test('tag scope v2.9.8 regression › disabled styling targets the real tag-detail-scope container', () => {
+  expect(source).toContain('<div className="tag-detail-scope">')
+  expect(source).toContain("blocked?'scope-disabled':''")
+  expect(css).toContain('.tag-detail-scope button.scope-disabled')
+  expect(css).toContain('.tag-detail-scope button:disabled')
+  expect(css).not.toContain('.tag-scope-grid button.scope-disabled')
+})
+
+test('tag scope v2.9.8 regression › disabled and disabled-active states are both visibly muted', () => {
+  expect(css).toMatch(/\.tag-detail-scope button\.scope-disabled,[\s\S]*background:#f1f2f0!important;[\s\S]*color:#aeb4af!important;/)
+  expect(css).toContain('.tag-detail-scope button.scope-disabled.active')
+  expect(css).toContain('cursor:not-allowed')
+  expect(css).toContain('opacity:.68')
 })
