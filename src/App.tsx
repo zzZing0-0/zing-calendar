@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.8.11'
+const APP_VERSION = '2.8.12'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3573,9 +3573,9 @@ function App() {
 
           <div className="settings-group">
             <div className="settings-group-title"><h3>专注</h3></div>
-            <div className="encouragement-style-setting">
-              <span><strong>最长专注时长</strong><small>达到上限后自动结束并保存，避免忘记停止计时。</small></span>
-              <label className="max-focus-hours-control"><input type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /><b>小时</b></label>
+            <div className="encouragement-style-setting max-focus-setting">
+              <div className="max-focus-setting-line"><strong>最长专注时长（小时）</strong><label className="max-focus-hours-control"><input aria-label="最长专注时长（小时）" type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /></label></div>
+              <small>达到上限后自动结束并保存，避免忘记停止计时。</small>
             </div>
             <label className="setting-row focus-wake-lock-setting">
               <input type="checkbox" checked={keepScreenAwakeDuringFocus} onChange={event=>setKeepScreenAwakeDuringFocus(event.target.checked)} />

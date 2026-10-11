@@ -14,6 +14,7 @@ type Props = {
 export function RandomPoolManager({ groups, items, onGroups, onItems, mixedPoolItemIds, onMixedPoolItemIds, onClose }: Props) {
   const [name, setName] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => Object.fromEntries(groups.map(group => [group.id, true])))
+  const [mixedCollapsed, setMixedCollapsed] = useState(true)
   const now = () => new Date().toISOString()
   const updateItem = (id: string, patch: Partial<RandomPoolItem>) => onItems(items.map(item => item.id === id ? { ...item, ...patch, updatedAt: now() } : item))
   const addGroup = () => {
@@ -34,7 +35,7 @@ export function RandomPoolManager({ groups, items, onGroups, onItems, mixedPoolI
 
   return <div className="random-pool-page">
     <div className="random-wheel-top"><button onClick={onClose}>‹ 返回</button><div><span>RANDOM POOLS</span><h2>幸运池</h2></div><i/></div>
-    <section className="random-mixed-pool"><div className="random-mixed-pool-head"><div><strong>混合池</strong><small>跨组选项目，抽奖时直接继承原项目权重。</small></div><span>{mixedPoolItemIds.filter(id=>items.some(item=>item.id===id)).length} 项</span></div>{groups.length===0?<p>先创建普通分组和项目，再来这里自由混搭。</p>:groups.map(group=>{const groupItems=items.filter(item=>item.groupId===group.id);if(!groupItems.length)return null;return <div className="random-mixed-group" key={group.id}><b>{group.name}</b><div>{groupItems.map(item=><label key={item.id} className="random-mixed-item"><input type="checkbox" checked={mixedPoolItemIds.includes(item.id)} onChange={event=>toggleMixedItem(item.id,event.target.checked)}/><span className="random-checkbox" aria-hidden="true">✓</span><span>{item.name}</span><em>权重 {item.weight}</em></label>)}</div></div>})}</section>
+    <section className={`random-mixed-pool${mixedCollapsed?' is-collapsed':''}`}><button className="random-mixed-pool-head" type="button" onClick={()=>setMixedCollapsed(value=>!value)} aria-expanded={!mixedCollapsed}><div><strong>混合池</strong><small>跨组选项目，抽奖时直接继承原项目权重。</small></div><span>{mixedPoolItemIds.filter(id=>items.some(item=>item.id===id)).length} 项　{mixedCollapsed?'⌄':'⌃'}</span></button>{!mixedCollapsed&&(groups.length===0?<p>先创建普通分组和项目，再来这里自由混搭。</p>:groups.map(group=>{const groupItems=items.filter(item=>item.groupId===group.id);if(!groupItems.length)return null;return <div className="random-mixed-group" key={group.id}><b>{group.name}</b><div>{groupItems.map(item=><label key={item.id} className="random-mixed-item"><input type="checkbox" checked={mixedPoolItemIds.includes(item.id)} onChange={event=>toggleMixedItem(item.id,event.target.checked)}/><span className="random-checkbox" aria-hidden="true">✓</span><span>{item.name}</span><em>权重 {item.weight}</em></label>)}</div></div>}))}</section>
     <div className="random-pool-add"><input value={name} onChange={event => setName(event.target.value)} placeholder="新分组名称"/><button onClick={addGroup}>＋ 添加分组</button></div>
     {groups.length === 0 && <div className="random-wheel-empty">这里现在是空的。你可以创建任何分组，不预置「娱乐」或「学习」。</div>}
     {groups.map(group => {
