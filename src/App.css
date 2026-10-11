@@ -5351,3 +5351,22 @@ button {
 
 /* v2.9.29 — Note focus history and Today Focus grouping */
 .focus-history-sections{display:flex;flex-direction:column;gap:16px}.focus-history-section{display:flex;flex-direction:column;gap:8px}.focus-history-section>h3{display:flex;align-items:baseline;justify-content:space-between;margin:0;padding:0 2px;font-size:13px;color:#526159}.focus-history-section>h3 small{font-size:10px;font-weight:500;color:#98a19c}.note-focus-history-layer{z-index:280}.note-focus-history-trigger{border:0;background:transparent;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer}.note-focus-history-trigger:hover{text-decoration:underline}
+
+/* v2.9.30 Notes workspace hierarchy */
+.focus-layer{z-index:300}
+.note-editor-topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 18px;border-bottom:1px solid #e7ece9}
+.note-notebook-select{min-width:0;max-width:42%;border:1px solid #dce3df;background:#fff;border-radius:12px;padding:8px 10px;font:inherit;font-weight:650;color:#34483e}
+.note-editor-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.note-title-row{position:relative;padding:10px 18px 20px;border-bottom:1px solid #edf0ee}
+.note-title-row input{display:block;width:100%;box-sizing:border-box;border:0;background:transparent;outline:none;padding:0 0 2px;font:inherit;font-size:21px;font-weight:750;color:inherit}
+.note-title-row small{position:absolute;right:18px;bottom:5px;color:#98a19c;font-size:10px;white-space:nowrap}
+.note-focus-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 18px;border-bottom:1px solid #edf0ee}
+.note-focus-row>button:last-child{flex-shrink:0;border:1px solid #dce3df;background:#fff;border-radius:10px;padding:7px 10px}
+.note-media-toggle-row{padding:7px 18px;border-bottom:1px solid #edf0ee}
+.note-media-toggle{display:flex;align-items:center;gap:7px;width:100%;border:0!important;background:transparent!important;padding:4px 0!important;text-align:left;color:#526159}
+.note-media-toggle small{margin-left:auto;color:#98a19c;font-size:11px}
+@media(max-width:700px){
+  .note-editor-topbar{padding:10px 12px;gap:8px}.note-notebook-select{max-width:38%;padding:7px 8px}.note-editor-actions{gap:6px}.note-editor-actions button{padding:7px 9px}
+  .note-title-row{padding:10px 12px 20px}.note-title-row input{font-size:18px}.note-title-row small{right:12px}
+  .note-focus-row{padding:7px 12px}.note-media-toggle-row{padding:6px 12px}
+}

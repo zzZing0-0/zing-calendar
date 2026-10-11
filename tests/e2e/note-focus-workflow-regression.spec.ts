@@ -9,7 +9,7 @@ const notesPage = fs.readFileSync('src/features/notes/NotesPage.tsx', 'utf8')
 const note = (id='n1'): Note => ({id,title:'占位论文',content:'',notebookId:'default',tagIds:[],active:true,createdAt:'2026-10-11T08:00:00.000Z',updatedAt:'2026-10-11T08:00:00.000Z'})
 const session = (id:string, tagId:string, startedAt:string, seconds:number): FocusSession => ({id,tagIds:[tagId],mode:'stopwatch',startedAt,endedAt:new Date(new Date(startedAt).getTime()+seconds*1000).toISOString(),durationSeconds:seconds,createdAt:startedAt,updatedAt:startedAt,context:{kind:'note',noteId:'n1'}})
 
-test('ending note focus stays in the note workspace and never falls through to free focus', () => {
+test('ending note focus closes the lock and stays in the note workspace without falling through to free focus', () => {
   const start = app.indexOf('const stopNoteFocus =')
   const end = app.indexOf('const activeTimerTask', start)
   const body = app.slice(start, end)

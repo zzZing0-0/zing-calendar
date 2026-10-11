@@ -14,12 +14,12 @@ test('note tag picker is mounted independently of the global focus modal', () =>
   expect(focusBlock).not.toContain('aria-label="选择笔记专注标签"')
 })
 
-test('starting note focus stays in the originating note workspace', () => {
+test('starting note focus locks the originating note workspace with the shared focus modal', () => {
   const start = app.indexOf('const startNoteFocus =')
   const request = app.indexOf('const requestNoteFocus =')
   const body = app.slice(start, request)
   expect(body).toContain('createNoteFocusSession')
-  expect(body).toContain('setFocusOpen(false)')
+  expect(body).toContain('setFocusOpen(true)')
   expect(body).toContain("setMainView('notes')")
   expect(body).toContain('setRequestedNoteId(note.id)')
 })
@@ -28,15 +28,15 @@ test('global focus stop dispatches by context so note focus can end without relo
   expect(app).toContain('if(activeFocusNote)stopNoteFocus(activeFocusNote);else if(activeTimerTask)stopTaskTimer(activeTimerTask);else stopDirectFocus(false)')
 })
 
-test('hydrated note focus restores the originating note workspace', () => {
+test('hydrated note focus restores the originating note workspace under the focus lock', () => {
   const hydration = app.indexOf("if (context?.kind === 'note')")
   const tail = app.indexOf("setMainView('calendar')", hydration)
   const branch = app.slice(hydration, tail)
-  expect(branch).toContain('setFocusOpen(false)')
+  expect(branch).toContain('setFocusOpen(true)')
   expect(branch).toContain("setMainView('notes')")
   expect(branch).toContain('setRequestedNoteId(note.id)')
 })
 
-test('global focus trigger returns an active note focus to its note workspace', () => {
-  expect(app).toContain("if(activeFocusNote){setFocusOpen(false);setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}")
+test('global focus trigger keeps active note focus locked above its note workspace', () => {
+  expect(app).toContain("if(activeFocusNote){setMainView('notes');setRequestedNoteId(activeFocusNote.id);setFocusOpen(true);return}")
 })
