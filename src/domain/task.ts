@@ -31,52 +31,6 @@ export function fromDateKey(value: string) {
   return new Date(year, month - 1, day)
 }
 
-export function taskFocusSecondsByDate(tasks: Task[], nowMs: number, includeTagIds: (tagIds?: string[]) => boolean = () => true) {
-  const totals = new Map<string, number>()
-  const addSeconds = (dateKey: string, seconds: number) => {
-    if (!dateKey || !Number.isFinite(seconds) || seconds <= 0) return
-    totals.set(dateKey, (totals.get(dateKey) ?? 0) + seconds)
-  }
-  const addActiveInterval = (startedAt?: string) => {
-    if (!startedAt) return
-    const startMs = new Date(startedAt).getTime()
-    if (!Number.isFinite(startMs) || nowMs <= startMs) return
-    let cursor = startMs
-    while (cursor < nowMs) {
-      const cursorDate = new Date(cursor)
-      const nextMidnight = new Date(cursorDate.getFullYear(), cursorDate.getMonth(), cursorDate.getDate() + 1).getTime()
-      const segmentEnd = Math.min(nowMs, nextMidnight)
-      addSeconds(toDateKey(cursorDate), Math.max(0, Math.round((segmentEnd - cursor) / 1000)))
-      cursor = segmentEnd
-    }
-  }
-
-  tasks.forEach(task => {
-    if (task.trashedAt) return
-    const isRecurring = Boolean(task.recurrence)
-    if (!isRecurring) {
-      if (!includeTagIds(task.tagIds)) return
-      // actualDurationMinutes is the user's final, editable truth. Timer sessions are
-      // intentionally not re-counted here, so a manual correction (30 -> 5 min)
-      // immediately changes focus statistics to 5 minutes.
-      const focusDate = task.date ?? toDateKey(new Date(task.completedAt ?? task.timerSessions?.at(-1)?.endedAt ?? task.updatedAt))
-      addSeconds(focusDate, Math.max(0, Number(task.actualDurationMinutes ?? 0)) * 60)
-      addActiveInterval(task.activeTimerStartedAt)
-      return
-    }
-
-    Object.entries(task.recurrenceExceptions ?? {}).forEach(([occurrenceDate, exception]) => {
-      if (task.trashFuture && occurrenceDate >= task.trashFuture.from) return
-      if (exception.deleted || exception.trashedAt) return
-      if (!includeTagIds(exception.tagIds ?? task.tagIds)) return
-      addSeconds(occurrenceDate, Math.max(0, Number(exception.actualDurationMinutes ?? 0)) * 60)
-      addActiveInterval(exception.activeTimerStartedAt)
-    })
-  })
-  return totals
-}
-
-
 export function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number, includeTagIds: (tagIds?: string[]) => boolean = () => true) {
   const totals = new Map<string, number>()
   const add = (key:string, seconds:number) => totals.set(key,(totals.get(key)??0)+Math.max(0,seconds))
@@ -99,20 +53,8 @@ export function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number
   return totals
 }
 
-export function combinedFocusSecondsByDate(tasks:Task[], sessions:FocusSession[], nowMs:number, includeTagIds: (tagIds?: string[]) => boolean = () => true){
-  const totals=taskFocusSecondsByDate(tasks,nowMs,includeTagIds)
-  directFocusSecondsByDate(sessions,nowMs,includeTagIds).forEach((seconds,key)=>totals.set(key,(totals.get(key)??0)+seconds))
-  return totals
-}
-export function normalizedActualDurationMinutes(hoursValue: string | number, minutesValue: string | number) {
-  const hours = Math.max(0, Number.parseInt(String(hoursValue || '0'), 10) || 0)
-  const minutes = Math.min(59, Math.max(0, Number.parseInt(String(minutesValue || '0'), 10) || 0))
-  const total = hours * 60 + minutes
-  return total > 0 ? total : undefined
-}
-
-export function clearTaskFocusData<T extends Pick<Task, 'actualDurationMinutes' | 'timerSessions' | 'timerSecondsRemainder'>>(task: T): T {
-  return { ...task, actualDurationMinutes: 0, activeTimerFocusTagIds: undefined, timerSessions: [], timerSecondsRemainder: 0 }
+export function combinedFocusSecondsByDate(_tasks:Task[], sessions:FocusSession[], nowMs:number, includeTagIds: (tagIds?: string[]) => boolean = () => true){
+  return directFocusSecondsByDate(sessions,nowMs,includeTagIds)
 }
 
 export function formatActualDuration(minutes?: number) {
@@ -183,8 +125,6 @@ export function emptyDraft(date: Date, defaultPriority: TaskPriority = 1): TaskD
     time: '',
     deadline: '',
     notes: '',
-    actualDurationHours: '',
-    actualDurationMinutes: '',
     tagIds: [DEFAULT_TAG_ID],
     attachments: [],
     repeatPreset: 'none',

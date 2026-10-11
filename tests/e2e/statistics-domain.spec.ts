@@ -92,13 +92,11 @@ test.describe('statistics domain regression', () => {
   test('excluding default focus removes default-tag task and direct-focus time only', () => {
     const result = stats({
       excludeDefaultFocusStats: true,
-      activeTasks: [
-        task({ id: 'default', title: 'Default', date: '2026-10-04', actualDurationMinutes: 30 }),
-        task({ id: 'english', title: 'English', date: '2026-10-04', actualDurationMinutes: 20, tagIds: ['english'] }),
-      ],
+      activeTasks: [task({ id:'english', title:'English', date:'2026-10-04', tagIds:['english'] })],
       focusSessions: [
-        focus({ id: 'default-focus', startedAt: '2026-10-04T10:00:00.000Z' }),
-        focus({ id: 'english-focus', startedAt: '2026-10-04T11:00:00.000Z', endedAt: '2026-10-04T11:05:00.000Z', tagIds: ['english'] }),
+        focus({ id:'default-focus', startedAt:'2026-10-04T10:00:00.000Z', endedAt:'2026-10-04T10:30:00.000Z' }),
+        focus({ id:'english-task-focus', startedAt:'2026-10-04T10:30:00.000Z', endedAt:'2026-10-04T10:50:00.000Z', tagIds:['english'], context:{kind:'task',taskId:'english'} }),
+        focus({ id:'english-focus', startedAt:'2026-10-04T11:00:00.000Z', endedAt:'2026-10-04T11:05:00.000Z', tagIds:['english'] }),
       ],
     })
     expect(result.focusSeconds).toBe(25 * 60)

@@ -14,8 +14,8 @@ test('focus tag scope regression › task timer inherits a compatible tag or exp
   const runtime = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/focusRuntime.ts'), 'utf8')
   expect(app).toContain('不能直接用于专注')
   expect(app).toContain('focusTagIds=[DEFAULT_TAG_ID]')
-  expect(app).toContain('activeTimerFocusTagIds: focusTagIds')
-  expect(runtime).toContain('focusTagIds: current.activeTimerFocusTagIds ?? fallbackTask.activeTimerFocusTagIds ?? [DEFAULT_TAG_ID]')
+  expect(app).toContain('createTaskFocusSession')
+  expect(runtime).toContain("context:{kind:'task',taskId:input.taskId}")
 })
 
 test('focus tag scope regression › free focus exposes only focus shared and default tags', () => {
@@ -23,10 +23,11 @@ test('focus tag scope regression › free focus exposes only focus shared and de
   expect(tags).toContain("tag.scope === 'both' || tag.scope === 'focus'")
 })
 
-test('focus tag scope regression › task timer statistics honor per-session focus attribution', () => {
+test('focus tag scope regression › task focus statistics use the FocusSession tag directly', () => {
   const statistics = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/statistics.ts'), 'utf8')
-  expect(statistics).toContain('session.focusTagIds?.length?session.focusTagIds:fallbackIds')
-  expect(statistics).toContain('value*(row.raw/rawTotal)')
+  expect(statistics).toContain('focusSessions.forEach(session=>')
+  expect(statistics).toContain('focusTagForIds(session.tagIds)')
+  expect(statistics).not.toContain('timerSessions')
 })
 
 test('focus tag scope regression › editing a free focus uses the same focus-selectable tag set as starting one', () => {

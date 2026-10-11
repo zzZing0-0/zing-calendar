@@ -91,9 +91,8 @@ test('tag editor v2.9.1 regression › focus usage includes free focus and task 
   const helperEnd = source.indexOf('const setTagArchived', helperStart)
   const helper = source.slice(helperStart, helperEnd)
   expect(helper).toContain('focusSessions.some')
-  expect(helper).toContain('activeTimerFocusTagIds')
-  expect(helper).toContain('timerSessions')
-  expect(helper).toContain('recurrenceExceptions')
+  expect(helper).toContain('focusSessions.some')
+  expect(helper).not.toContain('timerSessions')
 })
 
 

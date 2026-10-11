@@ -1,5 +1,4 @@
-import type { FocusSession, RecurrenceException, Task } from '../types'
-import { materializeOccurrence, toDateKey } from './task'
+import type { FocusSession, Task } from '../types'
 
 
 export const COUNTDOWN_MIN_MINUTES = 1
@@ -87,26 +86,23 @@ export function finishedFocusSession(session: FocusSession, endMs: number) {
   return { ...session, endedAt, durationSeconds, updatedAt: endedAt }
 }
 
-export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dateKey: string, nowMs: number): FocusHistoryRecord[] {
-  const rows: FocusHistoryRecord[] = []
-  tasks.forEach(task => {
-    if (task.trashedAt) return
-    if (!task.recurrence) {
-      const seconds = Math.max(0, Number(task.actualDurationMinutes ?? 0) * 60)
-      const focusDate = task.date ?? toDateKey(new Date(task.completedAt ?? task.timerSessions?.at(-1)?.endedAt ?? task.updatedAt))
-      if (focusDate === dateKey && seconds > 0) rows.push({ id: `task:${task.id}`, kind: 'task', title: task.title, seconds, tagIds: task.tagIds ?? [], task })
-      return
-    }
-    const exception = task.recurrenceExceptions?.[dateKey] as RecurrenceException | undefined
-    if (!exception || exception.deleted || exception.trashedAt) return
-    const seconds = Math.max(0, Number(exception.actualDurationMinutes ?? 0) * 60)
-    if (seconds <= 0) return
-    const occurrence = materializeOccurrence(task, dateKey)
-    if (occurrence) rows.push({ id: `task:${task.id}:${dateKey}`, kind: 'task', title: occurrence.title, seconds, tagIds: occurrence.tagIds ?? [], task: occurrence })
-  })
+export function taskFocusSeconds(taskId: string, sessions: FocusSession[], nowMs: number) {
+  return sessions.filter(session => !session.trashedAt && session.context?.kind === 'task' && session.context.taskId === taskId)
+    .reduce((sum, session) => {
+      const start = new Date(session.startedAt).getTime()
+      if (!Number.isFinite(start)) return sum
+      const rawEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs
+      const plannedEnd = session.mode === 'countdown' && session.plannedSeconds ? start + session.plannedSeconds * 1000 : rawEnd
+      return sum + Math.max(0, Math.round((Math.min(rawEnd, plannedEnd) - start) / 1000))
+    }, 0)
+}
 
+export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dateKey: string, nowMs: number): FocusHistoryRecord[] {
   const dayStart = new Date(`${dateKey}T00:00:00`).getTime()
   const dayEnd = new Date(`${dateKey}T23:59:59.999`).getTime() + 1
+  const taskMap = new Map(tasks.filter(task=>!task.trashedAt&&!task.recurrence).map(task=>[task.id,task]))
+  const taskRows = new Map<string, FocusHistoryRecord>()
+  const directRows: FocusHistoryRecord[] = []
   sessions.forEach(session => {
     if (session.trashedAt) return
     const start = new Date(session.startedAt).getTime()
@@ -115,7 +111,16 @@ export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dat
     const plannedEnd = session.mode === 'countdown' && session.plannedSeconds ? start + session.plannedSeconds * 1000 : rawEnd
     const end = Math.min(rawEnd, plannedEnd)
     const overlap = Math.max(0, Math.min(end, dayEnd) - Math.max(start, dayStart))
-    if (overlap > 0) rows.push({ id: `direct:${session.id}`, kind: 'direct', title: '自由专注', seconds: Math.round(overlap / 1000), tagIds: session.tagIds, session })
+    if (overlap <= 0) return
+    const seconds = Math.round(overlap / 1000)
+    if (session.context?.kind === 'task') {
+      const task = taskMap.get(session.context.taskId)
+      const existing = taskRows.get(session.context.taskId)
+      if (existing) { existing.seconds += seconds; return }
+      taskRows.set(session.context.taskId, { id:`task:${session.context.taskId}`, kind:'task', title:task?.title??'已删除任务', seconds, tagIds:session.tagIds, task, session })
+      return
+    }
+    directRows.push({ id:`direct:${session.id}`, kind:'direct', title:'自由专注', seconds, tagIds:session.tagIds, session })
   })
-  return rows.sort((a, b) => (b.session?.startedAt ?? '').localeCompare(a.session?.startedAt ?? ''))
+  return [...taskRows.values(), ...directRows].sort((a,b)=>(b.session?.startedAt??'').localeCompare(a.session?.startedAt??''))
 }

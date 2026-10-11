@@ -104,3 +104,7 @@ Sync and backup are treated as high-risk data-integrity surfaces. The Playwright
 
 ### Notes editor extensions
 Notes-specific Markdown additions should remain inside the Notes feature. The shared Markdown editor may expose generic caret-safe insertion hooks/props, while Notes owns the content/formatting rule (for example, timestamp text). Do not duplicate global date-format rules inside the editor adapter.
+
+## Focus time ownership (v2.9.18)
+
+`FocusSession` is the single persisted source of truth for focus time. A session with no `context` is free focus. A session with `context: { kind: 'task', taskId }` belongs to one ordinary Task; Note context is reserved for the later Notes integration. Task records no longer persist aggregate duration, timer sessions, timer remainder, or active timer fields. Task totals and Today Focus task rows are derived from FocusSessions. Recurring Tasks are checklist/habit records and do not expose Task timing.

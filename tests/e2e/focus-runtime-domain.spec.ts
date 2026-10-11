@@ -1,11 +1,6 @@
 import { expect, test } from '@playwright/test'
-import type { FocusSession, RecurrenceException, Tag, Task } from '../../src/types'
-import { createDirectFocusSession, findActiveTimedTask, formatRunningTaskTimer, lastSelectableFocusTagId, taskTimerStopPatch } from '../../src/domain/focusRuntime'
-
-const task = (patch: Partial<Task> = {}): Task => ({
-  id: 'task-1', title: 'Report', date: '2026-10-11', priority: 1, status: 'todo', allDay: true,
-  createdAt: '2026-10-11T00:00:00.000Z', updatedAt: '2026-10-11T00:00:00.000Z', tagIds: ['default'], ...patch,
-})
+import type { FocusSession, Tag } from '../../src/types'
+import { createDirectFocusSession, createTaskFocusSession, lastSelectableFocusTagId } from '../../src/domain/focusRuntime'
 
 const tag = (patch: Partial<Tag>): Tag => ({ id: 'tag', name: 'Tag', color: '#000000', scope: 'focus', updatedAt: '2026-10-11T00:00:00.000Z', ...patch })
 
@@ -24,27 +19,9 @@ test.describe('focus runtime extraction regression', () => {
     expect(lastSelectableFocusTagId({ ...session, tagIds: ['missing'] }, [])).toBe('default')
   })
 
-  test('active task lookup preserves recurring occurrence materialization', () => {
-    const recurring = task({ recurrence: { unit: 'day', interval: 1 }, recurrenceExceptions: { '2026-10-11': { updatedAt: '2026-10-11T08:00:00.000Z', activeTimerStartedAt: '2026-10-11T08:00:00.000Z' } } })
-    const active = findActiveTimedTask([recurring])
-    expect(active?.seriesId).toBe('task-1')
-    expect(active?.occurrenceDate).toBe('2026-10-11')
-    expect(active?.activeTimerStartedAt).toBe('2026-10-11T08:00:00.000Z')
-  })
-
-  test('task timer stop patch preserves legacy minute/remainder/session behavior', () => {
-    const current: RecurrenceException = { updatedAt: '2026-10-11T08:00:00.000Z', actualDurationMinutes: 2, timerSecondsRemainder: 50, activeTimerFocusTagIds: ['focus-a'], timerSessions: [] }
-    const fallback = task({ activeTimerStartedAt: '2026-10-11T09:00:00.000Z' })
-    const patch = taskTimerStopPatch(current, fallback, new Date('2026-10-11T09:00:20.000Z'), 20, true)
-    expect(patch.actualDurationMinutes).toBe(3)
-    expect(patch.timerSecondsRemainder).toBe(10)
-    expect(patch.timerSessions).toEqual([{ startedAt: '2026-10-11T09:00:00.000Z', endedAt: '2026-10-11T09:00:20.000Z', durationSeconds: 20, focusTagIds: ['focus-a'] }])
-    expect(patch).toMatchObject({ status: 'completed', completedAt: '2026-10-11T09:00:20.000Z', activeTimerStartedAt: undefined, activeTimerFocusTagIds: undefined })
-  })
-
-  test('running timer formatting keeps the existing cap and hh:mm:ss display', () => {
-    const active = task({ activeTimerStartedAt: '2026-10-11T08:00:00.000Z' })
-    expect(formatRunningTaskTimer(active, new Date('2026-10-11T09:02:03.000Z').getTime(), 7200)).toBe('01:02:03')
-    expect(formatRunningTaskTimer(active, new Date('2026-10-11T11:00:00.000Z').getTime(), 7200)).toBe('02:00:00')
+  test('task focus factory persists task context without a second task timer model', () => {
+    const session = createTaskFocusSession({ id:'task-focus', taskId:'task-1', tagIds:[], startedAt:'2026-10-11T08:00:00.000Z' })
+    expect(session).toMatchObject({ id:'task-focus', tagIds:['default'], mode:'stopwatch', context:{kind:'task',taskId:'task-1'} })
+    expect(session.endedAt).toBeUndefined()
   })
 })

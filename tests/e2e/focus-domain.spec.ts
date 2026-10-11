@@ -100,19 +100,19 @@ test.describe('focus domain regression', () => {
     expect(finished.updatedAt).toBe(finished.endedAt)
   })
 
-  test('undated task focus is attributed to its completion or timer activity date', () => {
-    const undated = task({ date: null, actualDurationMinutes: 12, completedAt: '2026-10-04T09:30:00.000Z', updatedAt: '2026-10-04T09:30:00.000Z' })
-    const rows = focusHistoryForDate([undated], [], '2026-10-04', new Date('2026-10-04T13:00:00.000Z').getTime())
+  test('task-context sessions are aggregated into one task row for the day', () => {
+    const taskSession1 = session({ id:'t1', startedAt:'2026-10-04T09:00:00.000Z', endedAt:'2026-10-04T09:10:00.000Z', context:{kind:'task',taskId:'task-1'} })
+    const taskSession2 = session({ id:'t2', startedAt:'2026-10-04T10:00:00.000Z', endedAt:'2026-10-04T10:05:00.000Z', context:{kind:'task',taskId:'task-1'} })
+    const rows = focusHistoryForDate([task()], [taskSession1, taskSession2], '2026-10-04', new Date('2026-10-04T13:00:00Z').getTime())
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ kind: 'task', seconds: 720 })
+    expect(rows[0]).toMatchObject({ kind:'task', title:'Paper', seconds:900 })
   })
 
-  test('history combines task truth with direct-focus overlap and caps countdown overlap', () => {
-    const direct = session({ id: 'direct', mode: 'countdown', plannedSeconds: 600, startedAt: '2026-10-04T12:00:00', endedAt: '2026-10-04T12:30:00' })
-    const rows = focusHistoryForDate([task({ actualDurationMinutes: 5 })], [direct], '2026-10-04', new Date('2026-10-04T13:00:00').getTime())
-    expect(rows.find(row => row.kind === 'task')?.seconds).toBe(300)
-    expect(rows.find(row => row.kind === 'direct')?.seconds).toBe(600)
-    expect(rows.find(row => row.kind === 'task')).toMatchObject({ kind: 'task', title: expect.any(String), tagIds: expect.any(Array) })
-    expect(rows.find(row => row.kind === 'direct')).toMatchObject({ kind: 'direct', title: '自由专注', tagIds: expect.any(Array) })
+  test('free focus remains separate and countdown overlap is capped', () => {
+    const direct = session({ id:'direct', mode:'countdown', plannedSeconds:600, startedAt:'2026-10-04T12:00:00', endedAt:'2026-10-04T12:30:00' })
+    const rows = focusHistoryForDate([task()], [direct], '2026-10-04', new Date('2026-10-04T13:00:00').getTime())
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ kind:'direct', title:'自由专注', seconds:600 })
   })
+
 })

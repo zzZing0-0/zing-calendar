@@ -10,7 +10,7 @@ const wakeLockHook = fs.readFileSync(path.resolve('src/hooks/useFocusWakeLock.ts
 test('focus wake lock is opt-in and only follows a running task timer or direct focus', () => {
   expect(types).toContain('keepScreenAwakeDuringFocus?: boolean')
   expect(app).toContain("localStorage.getItem('zing:keepScreenAwakeDuringFocus') === 'true'")
-  expect(app).toContain('useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeTimerTask || activeFocusSession))')
+  expect(app).toContain('useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeFocusSession))')
   expect(wakeLockHook).toContain("wakeLock.request('screen')")
   expect(wakeLockHook).toContain("document.addEventListener('visibilitychange', onVisibilityChange)")
   expect(wakeLockHook).toContain('void releaseWakeLock()')

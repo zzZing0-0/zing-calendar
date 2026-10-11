@@ -5,21 +5,21 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.17'
+const APP_VERSION = '2.9.19'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
   CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EmotionGroup, EmotionOption, EnergyLevel, EnvironmentOption, FocusSession,
   JournalDraft, JournalEntry, JournalImpact, JournalMessage, Note, Notebook, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
-  RecurrenceException, RecurrenceUnit, SyncedUserSettings, Tag, TagScope, Task, TaskDraft,
+  RecurrenceException, SyncedUserSettings, Tag, TagScope, Task, TaskDraft,
   TaskPriority, TaskStatus, RandomPoolGroup, RandomPoolItem,
 } from './types'
 import {
   PRIORITIES, addDaysKey, applyRecurringDisplayMode, buildMonth, buildMultiDaySegments, combinedFocusSecondsByDate,
-  dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatActualDuration, formatDate, normalizedActualDurationMinutes,
+  dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatDate,
   formatFocusDuration, formatTaskRange, fromDateKey, isMultiDayTask, isTaskOverdue,
-  clearTaskFocusData, compactCount, materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
-  recurrenceFromDraft, repeatPresetLabels, sameDay, taskCoversDate, taskEndDate,
+  compactCount, materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
+  recurrenceFromDraft, sameDay, taskCoversDate, taskEndDate,
   taskSort, toDateKey,
 } from './domain/task'
 import {
@@ -47,8 +47,8 @@ import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVis
 import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
-import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from './domain/focus'
-import { createDirectFocusSession, findActiveTimedTask, formatRunningTaskTimer, lastSelectableFocusTagId, taskTimerStopPatch } from './domain/focusRuntime'
+import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, taskFocusSeconds, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from './domain/focus'
+import { createDirectFocusSession, createTaskFocusSession, lastSelectableFocusTagId } from './domain/focusRuntime'
 import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 import { useAppPreferences } from './hooks/useAppPreferences'
 import { useFocusWakeLock } from './hooks/useFocusWakeLock'
@@ -1359,15 +1359,6 @@ function App() {
     return focusHistoryForDate(activeTasks, focusSessions, focusHistoryDate, timerNow)
   },[focusHistoryDate,activeTasks,focusSessions,timerNow])
 
-  const clearTaskFocusRecord = (task:Task) => {
-    const now=new Date().toISOString()
-    if(task.seriesId&&task.occurrenceDate){
-      setTasks(current=>current.map(series=>series.id!==task.seriesId?series:{...series,recurrenceExceptions:{...(series.recurrenceExceptions??{}),[task.occurrenceDate!]:{...clearTaskFocusData(series.recurrenceExceptions?.[task.occurrenceDate!]??{updatedAt:now}),updatedAt:now}},updatedAt:now}))
-    } else {
-      setTasks(current=>current.map(item=>item.id===task.id?{...clearTaskFocusData(item),updatedAt:now}:item))
-    }
-  }
-
   const beginEditDirectFocus = (session:FocusSession) => {
     setFocusEditId(session.id)
     setFocusEditMinutes(String(Math.max(1,Math.round((session.durationSeconds??Math.max(0,(new Date(session.endedAt??new Date().toISOString()).getTime()-new Date(session.startedAt).getTime())/1000))/60))))
@@ -1679,7 +1670,7 @@ function App() {
     setTimerNow(Date.now())
   }
   const stopDirectFocus = (automatic=false) => {
-    if (!activeFocusSession) return
+    if (!activeFocusSession || activeFocusSession.context?.kind === 'task') return
     // Keep the just-finished focus tag selected when the panel returns to
     // "Start focus", matching the tag restored after closing/reopening it.
     setFocusTagIds([lastSelectableFocusTagId(activeFocusSession,tags)])
@@ -1691,34 +1682,38 @@ function App() {
   }
 
 
-  const activeTimerTask = useMemo(() => findActiveTimedTask(activeTasks), [activeTasks])
-
-  useEffect(() => {
-    if (!activeTimerTask && !activeFocusSession) return
-    setTimerNow(Date.now())
-    const timer = window.setInterval(() => setTimerNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [activeTimerTask?.id, activeTimerTask?.activeTimerStartedAt, activeFocusSession?.id])
-
-  useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeTimerTask || activeFocusSession))
+  const activeTimerTask = useMemo(() => {
+    const context = activeFocusSession?.context
+    if (context?.kind !== 'task') return null
+    return activeTasks.find(task => task.id === context.taskId) ?? null
+  }, [activeTasks, activeFocusSession?.id])
 
   useEffect(() => {
     if (!activeFocusSession) return
+    setTimerNow(Date.now())
+    const timer = window.setInterval(() => setTimerNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [activeFocusSession?.id])
+
+  useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeFocusSession))
+
+  useEffect(() => {
+    if (!activeFocusSession || activeFocusSession.context?.kind === 'task') return
     const dueAtMs=focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
     if(dueAtMs!==null&&timerNow>=dueAtMs) stopDirectFocus(true)
   },[timerNow,activeFocusSession?.id,activeFocusSession?.plannedSeconds,maxFocusSeconds])
 
   useEffect(() => {
-    if (!tasksHydrated || !activeTimerTask) return
-    setMainView('calendar')
-    setViewingTask(activeTimerTask)
-  }, [tasksHydrated, activeTimerTask?.id])
-
-  useEffect(() => {
     if (!focusHydrated || !activeFocusSession) return
+    const context = activeFocusSession.context
+    if (context?.kind === 'task') {
+      const task = activeTasks.find(item => item.id === context.taskId)
+      if (task) { setMainView('calendar'); setViewingTask(task) }
+      return
+    }
     setMainView('calendar')
     setFocusOpen(true)
-  }, [focusHydrated, activeFocusSession?.id])
+  }, [focusHydrated, activeFocusSession?.id, activeTasks])
 
   useEffect(() => {
     if (!viewingTask) return
@@ -1731,60 +1726,37 @@ function App() {
     if (refreshed) setViewingTask(refreshed)
   }, [tasks])
 
-  const updateTimedTask = (task: Task, updater: (current: Task | RecurrenceException) => Partial<Task> | Partial<RecurrenceException>) => {
-    const now = new Date().toISOString()
-    if (task.seriesId && task.occurrenceDate) {
-      setTasks(current => current.map(series => {
-        if (series.id !== task.seriesId) return series
-        const existing = series.recurrenceExceptions?.[task.occurrenceDate!] ?? { updatedAt: now }
-        return {
-          ...series,
-          recurrenceExceptions: {
-            ...series.recurrenceExceptions,
-            [task.occurrenceDate!]: { ...existing, ...updater(existing), date: existing.date, updatedAt: now } as RecurrenceException,
-          },
-          updatedAt: now,
-        }
-      }))
-      return
-    }
-    setTasks(current => current.map(item => item.id === task.id ? { ...item, ...updater(item), updatedAt: now } : item))
-  }
-
   const startTaskTimer = (task: Task) => {
-    if (activeTimerTask || activeFocusSession || task.status !== 'todo') return
+    if (activeFocusSession || task.status !== 'todo' || task.recurrence || task.seriesId) return
     const ordinaryId=(task.tagIds??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
     const ordinaryTag=tags.find(tag=>tag.id===ordinaryId)
     let focusTagIds=[ordinaryTag?.id??DEFAULT_TAG_ID]
     if(ordinaryTag&&ordinaryTag.scope!=='both'&&ordinaryTag.scope!=='focus'){
       const share=window.confirm(`#${ordinaryTag.name} 目前是「${tagScopeLabel(ordinaryTag.scope)}」，不能直接用于专注。\n\n确定：扩展为共享标签并用于本次专注\n取消：保持原标签，本次专注记入「默认」`)
-      if(share){
-        const now=new Date().toISOString()
-        setTags(current=>current.map(tag=>tag.id===ordinaryTag.id?{...tag,scope:'both',updatedAt:now}:tag))
-      }else focusTagIds=[DEFAULT_TAG_ID]
+      if(share){ const now=new Date().toISOString(); setTags(current=>current.map(tag=>tag.id===ordinaryTag.id?{...tag,scope:'both',updatedAt:now}:tag)) }
+      else focusTagIds=[DEFAULT_TAG_ID]
     }
-    const startedAt = new Date().toISOString()
-    updateTimedTask(task, () => ({ activeTimerStartedAt: startedAt, activeTimerFocusTagIds: focusTagIds }))
+    const startedAt=new Date().toISOString()
+    setFocusSessions(current=>[...current,createTaskFocusSession({id:crypto.randomUUID(),taskId:task.id,tagIds:focusTagIds,startedAt})])
     setTimerNow(Date.now())
   }
 
   const stopTaskTimer = (task: Task, complete = false, forcedEndMs?: number) => {
-    if (!task.activeTimerStartedAt) return
-    const startedMs = new Date(task.activeTimerStartedAt).getTime()
-    const endedAt = new Date(Math.min(forcedEndMs ?? Date.now(), startedMs + maxFocusSeconds * 1000))
-    const startedAt = new Date(task.activeTimerStartedAt)
-    const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
-    updateTimedTask(task, current => taskTimerStopPatch(current, task, endedAt, durationSeconds, complete))
+    const session=activeFocusSession
+    if (!session || session.context?.kind!=='task' || session.context.taskId!==task.id) return
+    const timing=focusTiming(session,Date.now(),maxFocusSeconds)
+    const endMs=Math.min(forcedEndMs??Date.now(),timing.dueAtMs??Date.now())
+    setFocusSessions(current=>current.map(item=>item.id===session.id?finishedFocusSession(item,endMs):item))
+    if (complete) setTaskStatus(task,'completed')
   }
 
   useEffect(() => {
-    if (!activeTimerTask?.activeTimerStartedAt) return
-    const startMs=new Date(activeTimerTask.activeTimerStartedAt).getTime()
-    const capMs=startMs+maxFocusSeconds*1000
-    if(timerNow>=capMs) stopTaskTimer(activeTimerTask,false,capMs)
-  },[timerNow,activeTimerTask?.id,activeTimerTask?.activeTimerStartedAt,maxFocusSeconds])
+    if (!activeTimerTask || !activeFocusSession) return
+    const dueAtMs=focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
+    if(dueAtMs!==null&&timerNow>=dueAtMs) stopTaskTimer(activeTimerTask,false,dueAtMs)
+  },[timerNow,activeTimerTask?.id,activeFocusSession?.id,maxFocusSeconds])
 
-  const formatRunningTimer = (task: Task) => formatRunningTaskTimer(task, timerNow, maxFocusSeconds)
+  const formatRunningTimer = (_task: Task) => formatFocusClock(focusTiming(activeFocusSession,timerNow,maxFocusSeconds).elapsedSeconds)
 
   const openTaskEditor = () => {
     const date = selectedDate ?? today
@@ -1806,7 +1778,7 @@ function App() {
   }
 
   const editTask = (task: Task) => {
-    if (task.activeTimerStartedAt) return
+    if (activeTimerTask?.id===task.id) return
     setViewingTask(null)
     const series = task.seriesId ? tasks.find(item => item.id === task.seriesId) : task
     if (!series) return
@@ -1821,8 +1793,6 @@ function App() {
       time: task.time ?? '',
       deadline: task.deadline ?? '',
       notes: task.notes ?? '',
-      actualDurationHours: task.actualDurationMinutes ? String(Math.floor(task.actualDurationMinutes / 60)) : '',
-      actualDurationMinutes: task.actualDurationMinutes ? String(task.actualDurationMinutes % 60) : '',
       tagIds: singleOrdinaryTagIds(task.tagIds),
       attachments: task.attachments ?? [],
       ...draftRepeat(series),
@@ -1845,7 +1815,6 @@ function App() {
       priority: draft.priority, allDay: date ? draft.allDay : false,
       time: date && !draft.allDay ? draft.time || undefined : undefined,
       deadline: draft.deadline || undefined, notes: draft.notes.trim() || undefined,
-      actualDurationMinutes: normalizedActualDurationMinutes(draft.actualDurationHours, draft.actualDurationMinutes),
       tagIds: singleOrdinaryTagIds(draft.tagIds),
       attachments: draft.attachments,
     })
@@ -1890,8 +1859,6 @@ function App() {
               ...series,
               ...buildFields(draft.date, draft.endDate && draft.endDate > draft.date ? draft.endDate : undefined),
               id: crypto.randomUUID(), status: occurrence.status, completedAt: occurrence.completedAt,
-              timerSessions: occurrence.timerSessions, timerSecondsRemainder: occurrence.timerSecondsRemainder,
-              activeTimerStartedAt: undefined,
               originalDate: draft.date, recurrence: undefined, recurrenceExceptions: undefined,
               createdAt: now, updatedAt: now,
             }
@@ -2214,17 +2181,7 @@ function App() {
 
   const tagUsageAreas = (id: string) => {
     const taskUsed = tasks.some(task => !task.trashedAt && ((task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => !exception.trashedAt && (exception.tagIds ?? []).includes(id))))
-    const taskFocusUsed = tasks.some(task => !task.trashedAt && (
-      (task.activeTimerStartedAt && ((task.activeTimerFocusTagIds?.length ? task.activeTimerFocusTagIds : task.tagIds) ?? []).includes(id)) ||
-      (task.timerSessions ?? []).some(session => ((session.focusTagIds?.length ? session.focusTagIds : task.tagIds) ?? []).includes(id)) ||
-      Object.values(task.recurrenceExceptions ?? {}).some(exception => {
-        if (exception.trashedAt) return false
-        const fallbackIds = exception.tagIds?.length ? exception.tagIds : task.tagIds
-        return (exception.activeTimerStartedAt && ((exception.activeTimerFocusTagIds?.length ? exception.activeTimerFocusTagIds : fallbackIds) ?? []).includes(id)) ||
-          (exception.timerSessions ?? []).some(session => ((session.focusTagIds?.length ? session.focusTagIds : fallbackIds) ?? []).includes(id))
-      })
-    ))
-    const focusUsed = focusSessions.some(session => !session.trashedAt && (session.tagIds ?? []).includes(id)) || taskFocusUsed
+    const focusUsed = focusSessions.some(session => !session.trashedAt && (session.tagIds ?? []).includes(id))
     const journalUsed = journalEntries.some(entry => !entry.trashedAt && (entry.tagIds ?? []).includes(id))
     const noteUsed = notes.some(note => !note.trashedAt && (note.tagIds ?? []).includes(id))
     return [taskUsed && '任务', focusUsed && '专注', journalUsed && '记录', noteUsed && '笔记'].filter(Boolean) as string[]
@@ -2971,7 +2928,7 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>今天</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
             <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
@@ -3967,8 +3924,8 @@ function App() {
                 return <div className="focus-history-item" key={record.id}>
                   <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
                   {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
-                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}}}>更改</button>
-                    <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session){const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
+                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}}}>{record.kind==='task'?'查看':'更改'}</button>
+                    {record.kind==='direct'&&record.session&&<button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button>}
                   </div>}
                 </div>})}</div>}
             </div>
@@ -4202,7 +4159,7 @@ function App() {
 
       {viewingTask && (
         <div className="modal-layer task-view-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label={viewingTask.activeTimerStartedAt ? "任务计时中" : "关闭任务详情"} onClick={()=>{ if (!viewingTask.activeTimerStartedAt) setViewingTask(null) }} />
+          <button className="modal-backdrop" type="button" aria-label={activeTimerTask?.id===viewingTask.id ? "任务计时中" : "关闭任务详情"} onClick={()=>{ if (activeTimerTask?.id!==viewingTask.id) setViewingTask(null) }} />
           <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
             <div className="editor-header task-view-header">
               <div className="task-view-heading">
@@ -4213,7 +4170,7 @@ function App() {
                     aria-label={viewingTask.status==='completed'?'取消完成':'完成任务'}
                     onClick={()=>{
                       const nextStatus:TaskStatus=viewingTask.status==='completed'?'todo':'completed'
-                      if (viewingTask.activeTimerStartedAt && nextStatus==='completed') {
+                      if (activeTimerTask?.id===viewingTask.id && nextStatus==='completed') {
                         stopTaskTimer(viewingTask, true)
                         return
                       }
@@ -4224,7 +4181,7 @@ function App() {
                   <h2 id="task-view-title">{viewingTask.title}</h2>
                 </div>
               </div>
-              {!viewingTask.activeTimerStartedAt && <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>}
+              {activeTimerTask?.id!==viewingTask.id && <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>}
             </div>
             <div className="editor-body task-view-body">
               {viewingTask.date && <div className="task-view-schedule" aria-label="任务时间">
@@ -4232,9 +4189,9 @@ function App() {
                 <span>{isMultiDayTask(viewingTask) ? formatTaskRange(viewingTask) : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}</span>
               </div>}
 
-              {viewingTask.status === 'todo' && (
-                <section className={`task-timer-panel ${viewingTask.activeTimerStartedAt ? 'running' : ''}`}>
-                  {viewingTask.activeTimerStartedAt ? (
+              {viewingTask.status === 'todo' && !viewingTask.recurrence && !viewingTask.seriesId && (
+                <section className={`task-timer-panel ${activeTimerTask?.id===viewingTask.id ? 'running' : ''}`}>
+                  {activeTimerTask?.id===viewingTask.id ? (
                     <>
                       <span className="task-timer-label">正在专注</span>
                       <strong className="task-timer-clock">{formatRunningTimer(viewingTask)}</strong>
@@ -4260,9 +4217,9 @@ function App() {
                 </section>
               )}
 
-              {Number(viewingTask.actualDurationMinutes ?? 0) > 0 && (
+              {taskFocusSeconds(viewingTask.seriesId ?? viewingTask.id, focusSessions, timerNow) > 0 && !viewingTask.seriesId && (
                 <section className="task-view-section">
-                  <h3>实际用时</h3><p>{formatActualDuration(viewingTask.actualDurationMinutes)}</p>
+                  <h3>实际用时</h3><p>{formatFocusDuration(taskFocusSeconds(viewingTask.id, focusSessions, timerNow))}</p>
                 </section>
               )}
 
@@ -4283,7 +4240,7 @@ function App() {
               {viewingTask.notes && <section className="task-view-section"><h3>备注</h3><div className="task-view-notes">{viewingTask.notes}</div></section>}
             </div>
             <div className="editor-footer task-view-footer">
-              {!viewingTask.activeTimerStartedAt && <button className="delete-button task-view-delete" type="button" onClick={()=>{
+              {activeTimerTask?.id!==viewingTask.id && <button className="delete-button task-view-delete" type="button" onClick={()=>{
                       const task=viewingTask
                       const series=task.seriesId ? tasks.find(item=>item.id===task.seriesId) : task
                       if (!series) return
@@ -4298,7 +4255,7 @@ function App() {
                       setViewingTask(null)
               }}>删除</button>}
               <div className="editor-primary-actions">
-                {viewingTask.activeTimerStartedAt ? (
+                {activeTimerTask?.id===viewingTask.id ? (
                   <span className="task-timer-lock-note">🔒 计时中，结束计时后可编辑或退出</span>
                 ) : (<>
                   <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
@@ -4475,57 +4432,6 @@ function App() {
                   <label className="field"><span>时间</span><input type="time" value={draft.time} onChange={event => setDraft(current => ({ ...current, time: event.target.value }))} /></label>
                 </div>
               )}
-              {editingTaskId && (() => {
-                const series = tasks.find(task => task.id === editingTaskId)
-                const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
-                if (!shown) return null
-                return <div className="task-history-strip">
-                  {shown.completedAt && <span>✓ 完成于 {new Date(shown.completedAt).toLocaleString()}</span>}
-                </div>
-              })()}
-
-              <div className="field-grid deadline-postpone-row">
-                <label className="field">
-                  <span>Deadline</span>
-                  <input type="date" value={draft.deadline} onChange={event => setDraft(current => ({ ...current, deadline: event.target.value }))} />
-                </label>
-                {editingTaskId && (() => {
-                  const series = tasks.find(task => task.id === editingTaskId)
-                  const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
-                  return shown && shown.date && shown.status === 'todo' && taskEndDate(shown) < toDateKey(new Date()) ? (
-                    <label className="field postpone-field"><span>延期到</span><div className="postpone-inline"><input type="date" min={toDateKey(new Date())} defaultValue={toDateKey(new Date())} id="postpone-date" /><button type="button" onClick={() => { const input = document.getElementById('postpone-date') as HTMLInputElement | null; if (input?.value && input.value > taskEndDate(shown)) { postponeTask(shown, input.value); closeEditor() } }}>延期</button></div></label>
-                  ) : null
-                })()}
-              </div>
-
-              {draft.date && <div className="field-grid repeat-fields">
-                <label className="field">
-                  <span>重复</span>
-                  <select value={draft.repeatPreset} onChange={event => setDraft(current => ({ ...current, repeatPreset: event.target.value as TaskDraft['repeatPreset'] }))}>
-                    <option value="none">不重复</option><option value="daily">每天</option><option value="weekly">{repeatPresetLabels(draft.date).weekly}</option><option value="monthly">{repeatPresetLabels(draft.date).monthly}</option><option value="yearly">{repeatPresetLabels(draft.date).yearly}</option><option value="custom">自定义</option>
-                  </select>
-                </label>
-                {draft.repeatPreset === 'custom' && <label className="field"><span>每隔</span><div className="repeat-interval"><input type="number" min="1" max="999" value={draft.repeatInterval} onChange={event => setDraft(current => ({ ...current, repeatInterval: Math.min(999, Math.max(1, Number(event.target.value) || 1)) }))} /><select value={draft.repeatUnit} onChange={event => setDraft(current => ({ ...current, repeatUnit: event.target.value as RecurrenceUnit }))}><option value="day">天</option><option value="week">周</option><option value="month">月</option></select></div></label>}
-              </div>}
-              {draft.date && draft.repeatPreset === 'custom' && draft.repeatUnit === 'week' && <div className="field full-field"><span>重复星期</span><div className="weekday-picker">{WEEKDAYS.map((day, index) => <button key={day} type="button" className={draft.repeatWeekdays.includes(index) ? 'active' : ''} onClick={() => setDraft(current => ({ ...current, repeatWeekdays: current.repeatWeekdays.includes(index) ? current.repeatWeekdays.filter(value => value !== index) : [...current.repeatWeekdays, index] }))}>{day}</button>)}</div></div>}
-              {draft.date && draft.repeatPreset !== 'none' && <div className="field-grid repeat-end-fields">
-                <label className="field"><span>结束</span><select value={draft.repeatEndMode} onChange={event => setDraft(current => ({ ...current, repeatEndMode: event.target.value as TaskDraft['repeatEndMode'] }))}><option value="never">永不</option><option value="date">按日期</option><option value="count">按次数</option></select></label>
-                {draft.repeatEndMode === 'date' && <label className="field"><span>结束日期</span><input type="date" min={draft.date} value={draft.repeatEndDate} onChange={event => setDraft(current => ({ ...current, repeatEndDate: event.target.value }))} /></label>}
-                {draft.repeatEndMode === 'count' && <label className="field"><span>重复次数</span><div className="repeat-count"><input type="number" min="1" max="9999" value={draft.repeatEndCount} onChange={event => setDraft(current => ({ ...current, repeatEndCount: Math.min(9999, Math.max(1, Number(event.target.value) || 1)) }))} /><span>次</span></div></label>}
-              </div>}
-              {editingTaskId && (() => {
-                const series = tasks.find(task => task.id === editingTaskId)
-                const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
-                if (!shown || shown.status !== 'completed') return null
-                return <div className="field full-field actual-duration-field">
-                  <span>实际用时 · 可选</span>
-                  <div className="actual-duration-inputs">
-                    <label><input type="number" min="0" inputMode="numeric" value={draft.actualDurationHours} onChange={event=>setDraft(current=>({...current,actualDurationHours:event.target.value}))} placeholder="0" /><small>小时</small></label>
-                    <label><input type="number" min="0" max="59" inputMode="numeric" value={draft.actualDurationMinutes} onChange={event=>setDraft(current=>({...current,actualDurationMinutes:event.target.value}))} onBlur={()=>setDraft(current=>({...current,actualDurationMinutes:String(Math.min(59,Math.max(0,Number.parseInt(current.actualDurationMinutes||'0',10)||0)))}))} placeholder="0" /><small>分钟</small></label>
-                  </div>
-                  <small>不计时、不强制填写，只记录你对这个任务实际耗时的大致估计。</small>
-                </div>
-              })()}
             </div>
 
             <div className="editor-footer">

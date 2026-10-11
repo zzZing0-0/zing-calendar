@@ -5,9 +5,9 @@ export type RecurrenceEnd = { type: 'date'; date: string } | { type: 'count'; co
 export type RecurrenceRule = { unit: RecurrenceUnit; interval: number; weekdays?: number[]; end?: RecurrenceEnd }
 export type PostponeEvent = { from: string; to: string; at: string }
 export type Attachment = { id: string; type: 'image' | 'audio'; filename: string; mimeType: string; size: number; storageKey: string; createdAt: string; duration?: number }
-export type TimerSession = { startedAt: string; endedAt: string; durationSeconds: number; focusTagIds?: string[] }
-export type FocusSession = { id:string; tagIds:string[]; mode:'stopwatch'|'countdown'; plannedSeconds?:number; startedAt:string; endedAt?:string; durationSeconds?:number; createdAt:string; updatedAt:string; trashedAt?:string }
-export type RecurrenceException = { deleted?: boolean; trashedAt?: string; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; actualDurationMinutes?: number; activeTimerStartedAt?: string; activeTimerFocusTagIds?: string[]; timerSessions?: TimerSession[]; timerSecondsRemainder?: number; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
+export type FocusContext = { kind: 'task'; taskId: string } | { kind: 'note'; noteId: string }
+export type FocusSession = { id:string; tagIds:string[]; mode:'stopwatch'|'countdown'; plannedSeconds?:number; startedAt:string; endedAt?:string; durationSeconds?:number; createdAt:string; updatedAt:string; trashedAt?:string; context?: FocusContext }
+export type RecurrenceException = { deleted?: boolean; trashedAt?: string; status?: TaskStatus; completedAt?: string; title?: string; date?: string; endDate?: string; priority?: TaskPriority; allDay?: boolean; time?: string; deadline?: string; notes?: string; tagIds?: string[]; postponeHistory?: PostponeEvent[]; attachments?: Attachment[]; updatedAt: string }
 
 export type CalendarDay = {
   date: Date
@@ -27,11 +27,6 @@ export type Task = {
   time?: string
   deadline?: string
   notes?: string
-  actualDurationMinutes?: number
-  activeTimerStartedAt?: string
-  activeTimerFocusTagIds?: string[]
-  timerSessions?: TimerSession[]
-  timerSecondsRemainder?: number
   createdAt: string
   updatedAt: string
   completedAt?: string
@@ -178,8 +173,6 @@ export type TaskDraft = {
   time: string
   deadline: string
   notes: string
-  actualDurationHours: string
-  actualDurationMinutes: string
   tagIds: string[]
   attachments: Attachment[]
   repeatPreset: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
