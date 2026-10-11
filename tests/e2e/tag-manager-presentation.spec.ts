@@ -75,3 +75,23 @@ test('tag manager regression › focus is a first-class tag scope beside shared 
   const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
   expect(app).toContain("['focus','专注']")
 })
+
+
+test('tag editor v2.9.1 regression › shows actual module references below scope without storing usage metadata', () => {
+  expect(source).toContain("当前引用：{tagUsageAreas(tag.id).join(' · ') || '暂无'}")
+  expect(source).toContain("taskUsed && '任务'")
+  expect(source).toContain("focusUsed && '专注'")
+  expect(source).toContain("journalUsed && '记录'")
+  expect(source).toContain("noteUsed && '笔记'")
+  expect(css).toContain('.tag-usage-hint{display:block;margin-top:7px')
+})
+
+test('tag editor v2.9.1 regression › focus usage includes free focus and task timer attribution', () => {
+  const helperStart = source.indexOf('const tagUsageAreas = (id: string) => {')
+  const helperEnd = source.indexOf('const setTagArchived', helperStart)
+  const helper = source.slice(helperStart, helperEnd)
+  expect(helper).toContain('focusSessions.some')
+  expect(helper).toContain('activeTimerFocusTagIds')
+  expect(helper).toContain('timerSessions')
+  expect(helper).toContain('recurrenceExceptions')
+})

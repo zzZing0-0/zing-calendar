@@ -3778,6 +3778,7 @@ button {
 .tag-detail-scope{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .tag-detail-scope button{border:1px solid #dfe5e1;border-radius:9px;background:#fff;color:#6d7872;padding:8px;font:inherit;font-size:11px;cursor:pointer}
 .tag-detail-scope button.active{border-color:#829d8f;background:#edf5ef;color:#365144;font-weight:700}
+.tag-usage-hint{display:block;margin-top:7px;color:#98a19c;font-size:10px;line-height:1.45}
 .compact-tag-detail-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid #e8ece9}
 .friend-link-row strong{font-size:13px}
 @media(max-width:620px){

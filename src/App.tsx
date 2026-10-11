@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.0'
+const APP_VERSION = '2.9.1'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -2305,6 +2305,24 @@ function App() {
     closeTagEditor()
   }
 
+  const tagUsageAreas = (id: string) => {
+    const taskUsed = tasks.some(task => !task.trashedAt && ((task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => !exception.trashedAt && (exception.tagIds ?? []).includes(id))))
+    const taskFocusUsed = tasks.some(task => !task.trashedAt && (
+      (task.activeTimerStartedAt && ((task.activeTimerFocusTagIds?.length ? task.activeTimerFocusTagIds : task.tagIds) ?? []).includes(id)) ||
+      (task.timerSessions ?? []).some(session => ((session.focusTagIds?.length ? session.focusTagIds : task.tagIds) ?? []).includes(id)) ||
+      Object.values(task.recurrenceExceptions ?? {}).some(exception => {
+        if (exception.trashedAt) return false
+        const fallbackIds = exception.tagIds?.length ? exception.tagIds : task.tagIds
+        return (exception.activeTimerStartedAt && ((exception.activeTimerFocusTagIds?.length ? exception.activeTimerFocusTagIds : fallbackIds) ?? []).includes(id)) ||
+          (exception.timerSessions ?? []).some(session => ((session.focusTagIds?.length ? session.focusTagIds : fallbackIds) ?? []).includes(id))
+      })
+    ))
+    const focusUsed = focusSessions.some(session => !session.trashedAt && (session.tagIds ?? []).includes(id)) || taskFocusUsed
+    const journalUsed = journalEntries.some(entry => !entry.trashedAt && (entry.tagIds ?? []).includes(id))
+    const noteUsed = notes.some(note => !note.trashedAt && (note.tagIds ?? []).includes(id))
+    return [taskUsed && '任务', focusUsed && '专注', journalUsed && '记录', noteUsed && '笔记'].filter(Boolean) as string[]
+  }
+
   const setTagArchived = (id: string, archived: boolean) => {
     const archivedAt = archived ? toDateKey(new Date()) : undefined
     setTags(current => current.map(tag => tag.id === id ? { ...tag, archived, archivedAt, updatedAt: new Date().toISOString() } : tag))
@@ -4575,7 +4593,7 @@ function App() {
               <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
               <div className="field"><span>分类</span><div className="tag-detail-scope">
                 {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>)}
-              </div></div>
+              </div><small className="tag-usage-hint">当前引用：{tagUsageAreas(tag.id).join(' · ') || '暂无'}</small></div>
             </div>
             <div className="editor-actions compact-tag-edit-actions">
               <div className="compact-tag-edit-secondary">
