@@ -1,4 +1,4 @@
-import type { DailyEnergy, DailyMood, FocusSession, JournalEntry, JournalImpact, MoodLevel, EnergyLevel, RecurrenceException, Tag, Task, TaskPriority } from '../types'
+import type { DailyEnergy, DailyMood, FocusSession, JournalEntry, JournalImpact, MoodLevel, EnergyLevel, RecurrenceException, Tag, Task, TaskPriority, TimerSession } from '../types'
 import { addDaysKey, combinedFocusSecondsByDate, dayDiff, expandTasks, taskEndDate, toDateKey } from './task'
 import { DEFAULT_TAG, DEFAULT_TAG_ID, isImportSourceTagId } from './preferences'
 import { tagColorRank } from './tags'
@@ -122,17 +122,29 @@ export function buildStatistics({
     const row=focusTagMap.get(tag.id)??{tag,seconds:0,sessions:0}
     row.seconds+=seconds; row.sessions+=sessions; focusTagMap.set(tag.id,row)
   }
+  const addTaskFocusValues=(fallbackIds:string[]|undefined,value:number,timerSessions:TimerSession[]|undefined)=>{
+    const sessions=timerSessions??[]
+    const rawTotal=sessions.reduce((sum,session)=>sum+Math.max(0,Number(session.durationSeconds??0)),0)
+    if(value<=0)return
+    if(!sessions.length||rawTotal<=0){addFocusTagValue(focusTagForIds(fallbackIds),value,1);return}
+    const grouped=new Map<string,{ids:string[];raw:number;count:number}>()
+    sessions.forEach(session=>{
+      const ids=session.focusTagIds?.length?session.focusTagIds:fallbackIds
+      const tag=focusTagForIds(ids),key=tag.id,row=grouped.get(key)??{ids:ids??[DEFAULT_TAG_ID],raw:0,count:0}
+      row.raw+=Math.max(0,Number(session.durationSeconds??0));row.count+=1;grouped.set(key,row)
+    })
+    grouped.forEach(row=>addFocusTagValue(focusTagForIds(row.ids),value*(row.raw/rawTotal),row.count))
+  }
   activeTasks.forEach(task=>{
-    const tag=focusTagForIds(task.tagIds)
     if(!task.recurrence){
       const focusDate=task.date ?? toDateKey(new Date(task.completedAt ?? task.timerSessions?.at(-1)?.endedAt ?? task.updatedAt))
-      if(inRange(focusDate)){const value=Math.max(0,Number(task.actualDurationMinutes??0)*60);addFocusTagValue(tag,value,value>0?(task.timerSessions?.length||1):0)}
+      if(inRange(focusDate)){const value=Math.max(0,Number(task.actualDurationMinutes??0)*60);addTaskFocusValues(task.tagIds,value,task.timerSessions)}
       return
     }
     Object.entries(task.recurrenceExceptions??{}).forEach(([date,exception]:[string,RecurrenceException])=>{
       if(!inRange(date)||exception.deleted||exception.trashedAt)return
       const value=Math.max(0,Number(exception.actualDurationMinutes??0)*60)
-      addFocusTagValue(focusTagForIds(exception.tagIds??task.tagIds),value,value>0?(exception.timerSessions?.length||1):0)
+      addTaskFocusValues(exception.tagIds??task.tagIds,value,exception.timerSessions)
     })
   })
   focusSessions.forEach(session=>{

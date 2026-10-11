@@ -69,3 +69,9 @@ test('tag manager regression › note is a first-class tag scope beside shared t
   const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
   expect(app).toContain("['note','笔记']")
 })
+
+
+test('tag manager regression › focus is a first-class tag scope beside shared task journal and note', () => {
+  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  expect(app).toContain("['focus','专注']")
+})

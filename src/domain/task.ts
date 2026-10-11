@@ -112,7 +112,7 @@ export function normalizedActualDurationMinutes(hoursValue: string | number, min
 }
 
 export function clearTaskFocusData<T extends Pick<Task, 'actualDurationMinutes' | 'timerSessions' | 'timerSecondsRemainder'>>(task: T): T {
-  return { ...task, actualDurationMinutes: 0, timerSessions: [], timerSecondsRemainder: 0 }
+  return { ...task, actualDurationMinutes: 0, activeTimerFocusTagIds: undefined, timerSessions: [], timerSecondsRemainder: 0 }
 }
 
 export function formatActualDuration(minutes?: number) {

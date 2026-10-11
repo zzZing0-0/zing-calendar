@@ -58,6 +58,7 @@ test.describe('tags domain regression', () => {
     expect(tagScopeLabel('task')).toBe('任务标签')
     expect(tagScopeLabel('journal')).toBe('记录标签')
     expect(tagScopeLabel('note')).toBe('笔记标签')
+    expect(tagScopeLabel('focus')).toBe('专注标签')
   })
 
   test('visible and focus-selectable tags exclude archived and import-source tags while respecting scope', () => {
@@ -65,13 +66,14 @@ test.describe('tags domain regression', () => {
       makeTag({ id: DEFAULT_TAG_ID, name: '默认', system: true, systemKind: 'default' }),
       makeTag({ id: 'task', name: '任务', scope: 'task', color: TAG_COLORS[1] }),
       makeTag({ id: 'journal', name: '记录', scope: 'journal', color: TAG_COLORS[2] }),
+      makeTag({ id: 'focus', name: '专注', scope: 'focus', color: TAG_COLORS[4] }),
       makeTag({ id: 'both', name: '共享', scope: 'both', color: TAG_COLORS[3] }),
       makeTag({ id: 'archived', name: '归档', archived: true }),
       makeTag({ id: DIDA_APP_SOURCE_TAG_ID, name: 'Dida', system: true, systemKind: 'import-source', sourceKey: 'dida-app' }),
     ]
     expect(tagsFor(tags, 'task').map(tag => tag.id)).toEqual([DEFAULT_TAG_ID, 'task', 'both'])
     expect(tagsFor(tags, 'journal').map(tag => tag.id)).toEqual([DEFAULT_TAG_ID, 'journal', 'both'])
-    expect(focusSelectableTags(tags).map(tag => tag.id)).toEqual([DEFAULT_TAG_ID, 'task', 'both'])
+    expect(focusSelectableTags(tags).map(tag => tag.id)).toEqual([DEFAULT_TAG_ID, 'both', 'focus'])
   })
 
   test('note tags are multi-select and accept only shared plus note scope in palette order', () => {

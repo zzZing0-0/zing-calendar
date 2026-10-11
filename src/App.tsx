@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.8.16'
+const APP_VERSION = '2.9.0'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -1709,7 +1709,7 @@ function App() {
   }
   const stopDirectFocus = (automatic=false) => {
     if (!activeFocusSession) return
-    const lastOrdinaryTagId=activeFocusSession.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='task'))))
+    const lastOrdinaryTagId=activeFocusSession.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))))
     // Keep the just-finished focus tag selected when the panel returns to
     // "Start focus", matching the tag restored after closing/reopening it.
     setFocusTagIds([lastOrdinaryTagId??DEFAULT_TAG_ID])
@@ -1831,8 +1831,18 @@ function App() {
 
   const startTaskTimer = (task: Task) => {
     if (activeTimerTask || activeFocusSession || task.status !== 'todo') return
+    const ordinaryId=(task.tagIds??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
+    const ordinaryTag=tags.find(tag=>tag.id===ordinaryId)
+    let focusTagIds=[ordinaryTag?.id??DEFAULT_TAG_ID]
+    if(ordinaryTag&&ordinaryTag.scope!=='both'&&ordinaryTag.scope!=='focus'){
+      const share=window.confirm(`#${ordinaryTag.name} 目前是「${tagScopeLabel(ordinaryTag.scope)}」，不能直接用于专注。\n\n确定：扩展为共享标签并用于本次专注\n取消：保持原标签，本次专注记入「默认」`)
+      if(share){
+        const now=new Date().toISOString()
+        setTags(current=>current.map(tag=>tag.id===ordinaryTag.id?{...tag,scope:'both',updatedAt:now}:tag))
+      }else focusTagIds=[DEFAULT_TAG_ID]
+    }
     const startedAt = new Date().toISOString()
-    updateTimedTask(task, () => ({ activeTimerStartedAt: startedAt }))
+    updateTimedTask(task, () => ({ activeTimerStartedAt: startedAt, activeTimerFocusTagIds: focusTagIds }))
     setTimerNow(Date.now())
   }
 
@@ -1849,7 +1859,8 @@ function App() {
       const addedMinutes = Math.floor(totalSeconds / 60)
       return {
         activeTimerStartedAt: undefined,
-        timerSessions: [...(current.timerSessions ?? task.timerSessions ?? []), { startedAt: task.activeTimerStartedAt!, endedAt: endedAt.toISOString(), durationSeconds }],
+        activeTimerFocusTagIds: undefined,
+        timerSessions: [...(current.timerSessions ?? task.timerSessions ?? []), { startedAt: task.activeTimerStartedAt!, endedAt: endedAt.toISOString(), durationSeconds, focusTagIds: current.activeTimerFocusTagIds ?? task.activeTimerFocusTagIds ?? [DEFAULT_TAG_ID] }],
         timerSecondsRemainder: totalSeconds % 60,
         actualDurationMinutes: previousMinutes + addedMinutes,
         ...(complete ? { status: 'completed' as TaskStatus, completedAt: endedAt.toISOString() } : {}),
@@ -2764,14 +2775,23 @@ function App() {
         existingIds.add(id)
         let ordinaryTag=tagByName.get(normalizedForestTag.toLowerCase())
         if(!ordinaryTag){
-          ordinaryTag={id:`import:forest:tag:${stableImportHash(normalizedForestTag.toLowerCase())}`,name:normalizedForestTag,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'both',updatedAt:new Date().toISOString()}
+          ordinaryTag={id:`import:forest:tag:${stableImportHash(normalizedForestTag.toLowerCase())}`,name:normalizedForestTag,color:TAG_COLORS[(tagByName.size+importedTags.length)%TAG_COLORS.length],scope:'focus',updatedAt:new Date().toISOString()}
           tagByName.set(normalizedForestTag.toLowerCase(),ordinaryTag); importedTags.push(ordinaryTag)
-        } else if(ordinaryTag.id!==DEFAULT_TAG_ID) reusedNames.add(ordinaryTag.id)
+        } else if(ordinaryTag.id!==DEFAULT_TAG_ID) {
+          reusedNames.add(ordinaryTag.id)
+          if(ordinaryTag.scope!=='both'&&ordinaryTag.scope!=='focus'){
+            ordinaryTag={...ordinaryTag,scope:'both',updatedAt:new Date().toISOString()}
+            tagByName.set(normalizedForestTag.toLowerCase(),ordinaryTag)
+            const index=importedTags.findIndex(tag=>tag.id===ordinaryTag!.id)
+            if(index>=0) importedTags[index]=ordinaryTag
+            else importedTags.push(ordinaryTag)
+          }
+        }
         const startedAt=start.toISOString(), endedAt=end.toISOString()
         sessions.push({id,tagIds:[...new Set([ordinaryTag.id,EXTERNAL_SOURCE_TAG_ID,FOREST_SOURCE_TAG_ID])],mode:'stopwatch',startedAt,endedAt,durationSeconds:Math.max(0,Math.round((end.getTime()-start.getTime())/1000)),createdAt:startedAt,updatedAt:new Date().toISOString()})
       })
       const requiredSystemTags=[EXTERNAL_SOURCE_TAG,FOREST_SOURCE_TAG].filter(required=>!tags.some(tag=>tag.id===required.id))
-      setForestImportPreview({fileName:file.name,total:sourceRows.length,sessions,tags:[...requiredSystemTags,...importedTags],duplicateCount,failedCount,invalidCount,createdTagCount:importedTags.length,reusedTagCount:reusedNames.size})
+      setForestImportPreview({fileName:file.name,total:sourceRows.length,sessions,tags:[...requiredSystemTags,...importedTags],duplicateCount,failedCount,invalidCount,createdTagCount:importedTags.filter(tag=>!tags.some(existing=>existing.id===tag.id)).length,reusedTagCount:reusedNames.size})
       setExternalImportStage('forest-preview'); setExternalImportMessage('')
     } catch(error) {
       console.error('Failed to inspect Forest CSV',error)
@@ -2786,8 +2806,8 @@ function App() {
     setExternalImportBusy(true); setExternalImportMessage('正在导入 Forest 专注记录…')
     try {
       const mergedSessions=[...focusSessions,...forestImportPreview.sessions]
-      const existingTagIds=new Set(tags.map(tag=>tag.id))
-      const mergedTags=[...tags,...forestImportPreview.tags.filter(tag=>!existingTagIds.has(tag.id))]
+      const importedTagById=new Map(forestImportPreview.tags.map(tag=>[tag.id,tag] as const))
+      const mergedTags=[...tags.map(tag=>importedTagById.get(tag.id)??tag),...forestImportPreview.tags.filter(tag=>!tags.some(existing=>existing.id===tag.id))]
       await Promise.all([saveFocusSessions(mergedSessions),saveTags(mergedTags)])
       setFocusSessions(mergedSessions); setTags(mergedTags)
       const imported=forestImportPreview.sessions.length
@@ -3247,7 +3267,7 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>今天</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='task'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
             <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
@@ -3909,7 +3929,7 @@ function App() {
                 <button className="import-back-link" type="button" onClick={()=>setExternalImportStage('sources')}>‹ 返回来源</button>
                 <div className="import-file-panel">
                   <strong>Forest CSV</strong>
-                  <p>导入 Forest 历史专注。保留开始时间、结束时间和标签；「未设置」归入默认标签，不存在的标签会自动创建为共享标签。</p>
+                  <p>导入 Forest 历史专注。保留开始时间、结束时间和标签；「未设置」归入默认标签，不存在的标签会自动创建为专注标签；已有同名的其他专属标签会扩展为共享标签。</p>
                   <button className="save-button" type="button" disabled={externalImportBusy} onClick={()=>externalImportInputRef.current?.click()}>{externalImportBusy?'正在解析…':'选择 Forest CSV'}</button>
                   <input ref={externalImportInputRef} className="backup-file-input" type="file" accept=".csv,text/csv" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectForestCsv(file)}} />
                 </div>
@@ -3928,7 +3948,7 @@ function App() {
                 </div>
                 <div className="import-rule-note">
                   <strong>Forest 映射</strong>
-                  <p>仅导入 Is Success=True 的记录；False 直接跳过。Start Time / End Time 转为实际专注时间，Forest Tag 保留；「未设置」使用默认标签。不存在的普通标签自动创建为共享标签。每条记录附加系统来源标签「从外部导入」和「Forest」。Tree Type 与 Note 不迁移。同一条 Forest 记录重复导入会自动跳过。</p>
+                  <p>仅导入 Is Success=True 的记录；False 直接跳过。Start Time / End Time 转为实际专注时间，Forest Tag 保留；「未设置」使用默认标签。不存在的普通标签自动创建为专注标签；已有同名的其他专属标签自动扩展为共享标签。每条记录附加系统来源标签「从外部导入」和「Forest」。Tree Type 与 Note 不迁移。同一条 Forest 记录重复导入会自动跳过。</p>
                 </div>
                 <div className="backup-restore-actions">
                   <button type="button" onClick={closeExternalImport} disabled={externalImportBusy}>取消</button>
@@ -4519,7 +4539,7 @@ function App() {
             <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => {setSelectedTagManageId(null);setTagEditDraft(null);setTagManagerOpen(false)}}>×</button></div>
             <div className="editor-body">
               <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
-                {([['both','共享'],['task','任务'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
+                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
               </div>
 
               <div className="compact-tag-create">
@@ -4554,7 +4574,7 @@ function App() {
               <label className="field"><span>名称</span><input value={tagEditDraft?.name ?? tag.name} onChange={e=>setTagEditDraft(current=>current?{...current,name:e.target.value}:current)} autoFocus /></label>
               <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
               <div className="field"><span>分类</span><div className="tag-detail-scope">
-                {([['both','共享'],['task','任务'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>)}
+                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>)}
               </div></div>
             </div>
             <div className="editor-actions compact-tag-edit-actions">

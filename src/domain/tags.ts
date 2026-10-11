@@ -23,7 +23,7 @@ export function toggleJournalTagIds(ids: string[], id: string) {
 }
 
 export function tagScopeLabel(scope: TagScope) {
-  return scope === 'both' ? '共享标签' : scope === 'task' ? '任务标签' : scope === 'journal' ? '记录标签' : '笔记标签'
+  return scope === 'both' ? '共享标签' : scope === 'task' ? '任务标签' : scope === 'journal' ? '记录标签' : scope === 'focus' ? '专注标签' : '笔记标签'
 }
 
 export function normalizedTagName(name: string) {
@@ -76,7 +76,7 @@ export function cleanupNoteTagIdsAfterDelete(ids: string[] | undefined, deletedI
 
 export function focusSelectableTags(tags: Tag[]) {
   return sortTagsByColor(
-    tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.id === DEFAULT_TAG_ID || tag.scope === 'both' || tag.scope === 'task')),
+    tags.filter(tag => !isImportSourceTag(tag) && !tag.archived && (tag.id === DEFAULT_TAG_ID || tag.scope === 'both' || tag.scope === 'focus')),
     tags,
   )
 }
