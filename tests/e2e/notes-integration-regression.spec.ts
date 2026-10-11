@@ -468,3 +468,28 @@ test('notes creation regression › a just-created note exposes Cancel and disca
   expect(page).toContain('newNoteId===editing.id?<button className="ghost-button" onClick={cancelNewNote}>取消</button>')
   expect(page).toContain('const finishEditing=()=>{setNewNoteId(null);setEditingId(null)}')
 })
+
+test('notes data-safety regression › full backup exports and restores notes and notebooks', () => {
+  const db = fs.readFileSync(path.resolve(process.cwd(), 'src/db/calendar.ts'), 'utf8')
+  expect(appSource).toContain("{path:'data/notes.json',bytes:json(notes)}")
+  expect(appSource).toContain("{path:'data/notebooks.json',bytes:json(notebooks)}")
+  expect(appSource).toContain('notes:backupPreview.notes,notebooks:ensureDefaultNotebook(backupPreview.notebooks)')
+  expect(appSource).toContain('setNotes(backupPreview.notes)')
+  expect(appSource).toContain('setNotebooks(ensureDefaultNotebook(backupPreview.notebooks))')
+  expect(db).toContain('replace(NOTE_STORE,payload.notes ?? [])')
+  expect(db).toContain('replace(NOTEBOOK_STORE,payload.notebooks ?? [])')
+})
+
+test('notes data-safety regression › reset-all clears notes/notebooks and propagates sync tombstones', () => {
+  const db = fs.readFileSync(path.resolve(process.cwd(), 'src/db/calendar.ts'), 'utf8')
+  expect(db).toContain("{entityType:'note',storeName:NOTE_STORE")
+  expect(db).toContain("{entityType:'notebook',storeName:NOTEBOOK_STORE")
+  expect(appSource).toContain('note:[], notebook:[]')
+  expect(appSource).toContain('setNotes([])')
+})
+
+test('notes sync regression › concurrent note attachment links use the shared tombstone-aware merge path', () => {
+  const db = fs.readFileSync(path.resolve(process.cwd(), 'src/db/calendar.ts'), 'utf8')
+  expect(db).toContain("remoteRecord.entityType === 'task' || remoteRecord.entityType === 'journal' || remoteRecord.entityType === 'note'")
+  expect(db).toContain("entityType === 'task' || entityType === 'journal' || entityType === 'note'")
+})

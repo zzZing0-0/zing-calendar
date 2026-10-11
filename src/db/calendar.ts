@@ -536,14 +536,14 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
     const localTime = localRecord ? (Date.parse(localRecord.updatedAt) || 0) : 0
     const deleteTime = localDelete ? (Date.parse(localDelete.deletedAt) || 0) : 0
 
-    // Task/journal attachment links are merged independently from the record-level LWW.
+    // Task/journal/note attachment links are merged independently from the record-level LWW.
     // If one device removed an old attachment while another added a newer one, the old
     // link stays removed and the new link survives. The binary itself is immutable/shared.
     if (localRecord && remoteRecord.entityType === 'settings' && deleteTime <= Math.max(localTime, remoteTime)) {
       const merged = mergeConcurrentSettings(localRecord, remoteRecord)
       if (JSON.stringify(merged.payload) !== JSON.stringify(localRecord.payload)) upserts.push(merged)
       else ignoredRemoteRecords += 1
-    } else if (localRecord && (remoteRecord.entityType === 'task' || remoteRecord.entityType === 'journal') && deleteTime <= Math.max(localTime, remoteTime)) {
+    } else if (localRecord && (remoteRecord.entityType === 'task' || remoteRecord.entityType === 'journal' || remoteRecord.entityType === 'note') && deleteTime <= Math.max(localTime, remoteTime)) {
       const merged = mergeConcurrentAttachments(localRecord, remoteRecord)
       if (JSON.stringify(merged.payload) !== JSON.stringify(localRecord.payload)) upserts.push(merged)
       else ignoredRemoteRecords += 1
@@ -1059,7 +1059,7 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
 
       let mergedRecord: SyncEntityRecord | undefined
       if (newestRecordTime >= newestDeleteTime && (localRecord || remoteRecord)) {
-        if (localRecord && remoteRecord && (entityType === 'task' || entityType === 'journal')) mergedRecord = mergeConcurrentAttachments(localRecord, remoteRecord)
+        if (localRecord && remoteRecord && (entityType === 'task' || entityType === 'journal' || entityType === 'note')) mergedRecord = mergeConcurrentAttachments(localRecord, remoteRecord)
         else if (remoteRecordTime > localRecordTime) mergedRecord = remoteRecord
         else mergedRecord = localRecord ?? remoteRecord
       }
@@ -1190,6 +1190,8 @@ export async function clearZingUserDataWithSync(systemTags:any[]): Promise<void>
   const entityStores: { entityType:SyncEntityType; storeName:string; id:(row:any)=>string; keep?:(row:any)=>boolean }[] = [
     {entityType:'task',storeName:TASK_STORE,id:row=>String(row.id)},
     {entityType:'journal',storeName:JOURNAL_STORE,id:row=>String(row.id)},
+    {entityType:'note',storeName:NOTE_STORE,id:row=>String(row.id)},
+    {entityType:'notebook',storeName:NOTEBOOK_STORE,id:row=>String(row.id)},
     {entityType:'mood',storeName:MOOD_STORE,id:row=>String(row.date)},
     {entityType:'energy',storeName:ENERGY_STORE,id:row=>String(row.date)},
     {entityType:'environment',storeName:ENVIRONMENT_STORE,id:row=>String(row.date)},
@@ -1230,7 +1232,7 @@ export async function clearZingUserDataWithSync(systemTags:any[]): Promise<void>
 }
 
 export async function replaceZingData(payload: {
-  tasks:any[]; journals:any[]; moods:any[]; energies:any[]; environments:any[]; periods:any[]; tags:any[]; anniversaries:any[]; focusSessions:any[];
+  tasks:any[]; journals:any[]; notes?:any[]; notebooks?:any[]; moods:any[]; energies:any[]; environments:any[]; periods:any[]; tags:any[]; anniversaries:any[]; focusSessions:any[];
   attachments:{key:string;blob:Blob}[]
 }): Promise<void> {
   const db=await openDatabase()
@@ -1239,7 +1241,7 @@ export async function replaceZingData(payload: {
     await new Promise<void>((resolve,reject)=>{
       const tx=db.transaction(stores,'readwrite')
       const replace=(name:string,rows:any[])=>{ const store=tx.objectStore(name); store.clear(); rows.forEach(row=>store.put(row)) }
-      replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(MOOD_STORE,payload.moods); replace(ENERGY_STORE,payload.energies); replace(ENVIRONMENT_STORE,payload.environments); replace(PERIOD_STORE,payload.periods)
+      replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(NOTE_STORE,payload.notes ?? []); replace(NOTEBOOK_STORE,payload.notebooks ?? []); replace(MOOD_STORE,payload.moods); replace(ENERGY_STORE,payload.energies); replace(ENVIRONMENT_STORE,payload.environments); replace(PERIOD_STORE,payload.periods)
       replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries); replace(FOCUS_STORE,payload.focusSessions)
       const attachments=tx.objectStore(ATTACHMENT_STORE); attachments.clear()
       payload.attachments.forEach(item=>attachments.put(item.blob,item.key))

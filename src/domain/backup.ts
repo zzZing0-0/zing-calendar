@@ -1,4 +1,4 @@
-import type { Attachment, Anniversary, DailyEnergy, DailyEnvironment, DailyMood, FocusSession, JournalEntry, MenstrualPeriod, Tag, Task, BackupPreview } from '../types'
+import type { Attachment, Anniversary, DailyEnergy, DailyEnvironment, DailyMood, FocusSession, JournalEntry, MenstrualPeriod, Note, Notebook, Tag, Task, BackupPreview } from '../types'
 
 export type ZipEntry = { path: string; bytes: Uint8Array }
 
@@ -107,6 +107,10 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
   if (manifest?.format !== 'zing-calendar-backup' || manifest?.schemaVersion !== 1) throw new Error('这不是可识别的 Zing Backup v1')
   const tasks = decodeBackupJson<Task[]>(entries, 'data/tasks.json')
   const journals = decodeBackupJson<JournalEntry[]>(entries, 'data/journals.json')
+  // Notes/notebooks were added after Backup v1 shipped. Keep them optional so older
+  // valid v1 archives remain restorable while new exports preserve the full Notes model.
+  const notes = entries.has('data/notes.json') ? decodeBackupJson<Note[]>(entries, 'data/notes.json') : []
+  const notebooks = entries.has('data/notebooks.json') ? decodeBackupJson<Notebook[]>(entries, 'data/notebooks.json') : []
   const moods = decodeBackupJson<DailyMood[]>(entries, 'data/moods.json')
   const energies = entries.has('data/energy.json') ? decodeBackupJson<DailyEnergy[]>(entries, 'data/energy.json') : []
   const environments = entries.has('data/environment.json') ? decodeBackupJson<DailyEnvironment[]>(entries, 'data/environment.json') : []
@@ -115,7 +119,7 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
   const anniversaries = decodeBackupJson<Anniversary[]>(entries, 'data/anniversaries.json')
   const focusSessions = entries.has('data/focus.json') ? decodeBackupJson<FocusSession[]>(entries, 'data/focus.json') : []
   const settings = decodeBackupJson<BackupPreview['settings']>(entries, 'data/settings.json')
-  if (![tasks, journals, moods, energies, environments, periods, tags, anniversaries, focusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
+  if (![tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
   const rows = Array.isArray(manifest.attachments) ? manifest.attachments : []
   const attachments = rows.map((row:any) => {
     if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
@@ -126,11 +130,12 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
   })
   const expected = manifest.counts ?? {}
   if ((expected.tasks ?? tasks.length) !== tasks.length || (expected.journals ?? journals.length) !== journals.length ||
+      (expected.notes ?? notes.length) !== notes.length || (expected.notebooks ?? notebooks.length) !== notebooks.length ||
       (expected.moods ?? moods.length) !== moods.length || (expected.energies ?? energies.length) !== energies.length ||
       (expected.environments ?? environments.length) !== environments.length || (expected.periods ?? periods.length) !== periods.length ||
       (expected.tags ?? tags.length) !== tags.length || (expected.anniversaries ?? anniversaries.length) !== anniversaries.length ||
       (expected.focusSessions ?? focusSessions.length) !== focusSessions.length || (expected.attachments ?? attachments.length) !== attachments.length) {
     throw new Error('备份数量校验失败')
   }
-  return { manifest, tasks, journals, moods, energies, environments, periods, tags, anniversaries, focusSessions, settings, attachments }
+  return { manifest, tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, settings, attachments }
 }

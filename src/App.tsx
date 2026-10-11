@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.10'
+const APP_VERSION = '2.9.13'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -2815,10 +2815,10 @@ function App() {
       // Clear user data and create sync tombstones in one IndexedDB transaction.
       // This makes “清空所有数据” a real cross-device deletion on the next GitHub sync.
       await clearZingUserDataWithSync(REQUIRED_SYSTEM_TAGS)
-      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], note:notes, notebook:notebooks, mood:[], energy:[], environment:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
+      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], note:[], notebook:[], mood:[], energy:[], environment:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
       syncSnapshotsRef.current = cleared
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
-      setRandomPoolGroups([]); setRandomPoolItems([]); setTasks([]); setJournalEntries([]); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
+      setRandomPoolGroups([]); setRandomPoolItems([]); setTasks([]); setJournalEntries([]); setNotes([]); setNotebooks(ensureDefaultNotebook([])); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
       setLocalWriteRevision(value=>value+1)
       setSelectedDate(today); closeDayDetailImmediately(); setSearchQuery('')
       setResetDataConfirm(false)
@@ -2902,6 +2902,8 @@ function App() {
       const entries:ZipEntry[]=[
         {path:'data/tasks.json',bytes:json(tasks)},
         {path:'data/journals.json',bytes:json(journalEntries)},
+        {path:'data/notes.json',bytes:json(notes)},
+        {path:'data/notebooks.json',bytes:json(notebooks)},
         {path:'data/moods.json',bytes:json(dailyMoods)},
         {path:'data/energy.json',bytes:json(dailyEnergy)},
         {path:'data/environment.json',bytes:json(dailyEnvironment)},
@@ -2922,7 +2924,7 @@ function App() {
         attachmentRows.push({storageKey:attachment.storageKey,path,filename:attachment.filename,mimeType:attachment.mimeType,size:blob.size,type:attachment.type,duration:attachment.duration,createdAt:attachment.createdAt})
       }
       const manifest={format:'zing-calendar-backup',schemaVersion:1,appVersion:APP_VERSION,exportedAt,
-        counts:{tasks:tasks.length,journals:journalEntries.length,moods:dailyMoods.length,energies:dailyEnergy.length,environments:dailyEnvironment.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,focusSessions:focusSessions.length,attachments:attachmentRows.length},
+        counts:{tasks:tasks.length,journals:journalEntries.length,notes:notes.length,notebooks:notebooks.length,moods:dailyMoods.length,energies:dailyEnergy.length,environments:dailyEnvironment.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,focusSessions:focusSessions.length,attachments:attachmentRows.length},
         attachments:attachmentRows}
       entries.unshift({path:'manifest.json',bytes:json(manifest)})
       setBackupMessage('正在生成 ZIP…')
@@ -2960,7 +2962,7 @@ function App() {
       // The archive is fully parsed and validated before any local write begins.
       const restoredTasks = backupPreview.tasks.map(normalizeTaskScheduling)
       await replaceZingData({
-        tasks:restoredTasks,journals:backupPreview.journals,moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
+        tasks:restoredTasks,journals:backupPreview.journals,notes:backupPreview.notes,notebooks:ensureDefaultNotebook(backupPreview.notebooks),moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
         tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,
         attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
           const copy = new Uint8Array(item.bytes.byteLength)
@@ -3005,9 +3007,9 @@ function App() {
       }
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
-      syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:notes, notebook:notebooks, mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
+      syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:backupPreview.notes, notebook:ensureDefaultNotebook(backupPreview.notebooks), mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
-      setTasks(restoredTasks); setJournalEntries(backupPreview.journals); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
+      setTasks(restoredTasks); setJournalEntries(backupPreview.journals); setNotes(backupPreview.notes); setNotebooks(ensureDefaultNotebook(backupPreview.notebooks)); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
       setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
       suppressNextSettingsSyncRef.current = true
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
@@ -3966,7 +3968,7 @@ function App() {
         <div className="backup-restore-backdrop" role="presentation">
           <section className="backup-restore-modal reset-data-modal" role="dialog" aria-modal="true" aria-label="确认清空所有数据">
             <span className="eyebrow">RESET DATA</span><h2>清空所有数据？</h2>
-            <p className="backup-restore-warning">任务、记录、Daily Mood、精力、经期、纪念日、专注记录、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。删除会在下次 GitHub 同步传播到其他设备。此操作不可撤销，建议先导出完整备份。</p>
+            <p className="backup-restore-warning">任务、记录、笔记、Daily Mood、精力、经期、纪念日、专注记录、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。删除会在下次 GitHub 同步传播到其他设备。此操作不可撤销，建议先导出完整备份。</p>
             <div className="backup-restore-actions">
               <button type="button" onClick={()=>setResetDataConfirm(false)} disabled={resettingData}>取消</button>
               <button className="danger-confirm" type="button" onClick={()=>void resetAllUserData()} disabled={resettingData}>{resettingData?'正在清空…':'确认清空'}</button>
@@ -4346,7 +4348,7 @@ function App() {
                 const focusTag=record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
                 return <div className="focus-history-item" key={record.id}>
                   <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
-                  {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{tagsFor(tags, 'task').map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
+                  {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
                     <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}}}>更改</button>
                     <button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;if(record.kind==='direct'&&record.session){const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}else if(record.task)clearTaskFocusRecord(record.task)}}>删除</button>
                   </div>}

@@ -28,3 +28,9 @@ test('focus tag scope regression › task timer statistics honor per-session foc
   expect(statistics).toContain('session.focusTagIds?.length?session.focusTagIds:fallbackIds')
   expect(statistics).toContain('value*(row.raw/rawTotal)')
 })
+
+test('focus tag scope regression › editing a free focus uses the same focus-selectable tag set as starting one', () => {
+  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  expect(app).toContain("focus-history-edit-tags\">{focusSelectableTags(tags).map")
+  expect(app).not.toContain("focus-history-edit-tags\">{tagsFor(tags, 'task').map")
+})

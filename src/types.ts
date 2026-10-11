@@ -232,6 +232,8 @@ export type BackupPreview = {
   manifest: any
   tasks: Task[]
   journals: JournalEntry[]
+  notes: Note[]
+  notebooks: Notebook[]
   moods: DailyMood[]
   energies: DailyEnergy[]
   environments: DailyEnvironment[]

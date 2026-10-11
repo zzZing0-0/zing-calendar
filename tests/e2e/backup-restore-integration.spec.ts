@@ -5,6 +5,10 @@ test('golden restore replaces all primary stores and restores attachment bytes a
   const result = await page.evaluate(async () => {
     const db:any = await import('/src/db/calendar.ts')
     const attachmentBytes = new Uint8Array([0, 255, 7, 42])
+    // Simulate a pre-Notes backup restoring over a database that already has newer stores.
+    // Missing legacy fields must mean "restore this store as empty", not leave stale rows behind.
+    await db.saveNotes([{id:'stale-note',notebookId:'default',title:'不应残留',content:'legacy restore must clear me',active:true,createdAt:'2026-10-03T10:00:00.000Z',updatedAt:'2026-10-03T10:00:00.000Z'}])
+    await db.saveNotebooks([{id:'stale-notebook',name:'不应残留',createdAt:'2026-10-03T10:00:00.000Z',updatedAt:'2026-10-03T10:00:00.000Z'}])
     await db.replaceZingData({
       tasks:[{id:'restore-task',title:'恢复任务 🐱',date:'2026-10-04',updatedAt:'2026-10-04T10:00:00.000Z'}],
       journals:[{id:'restore-journal',date:'2026-10-04',title:'恢复记录',content:'中文\nemoji 🌈',impact:1,createdAt:'2026-10-04T10:00:00.000Z',updatedAt:'2026-10-04T10:00:00.000Z'}],
@@ -19,12 +23,13 @@ test('golden restore replaces all primary stores and restores attachment bytes a
     })
     const blob = await db.getAttachmentBlob('blob:restore')
     return {
-      tasks:await db.loadTasks(), journals:await db.loadJournalEntries(), moods:await db.loadDailyMoods(), energies:await db.loadDailyEnergy(), environments:await db.loadDailyEnvironment(), periods:await db.loadMenstrualPeriods(), tags:await db.loadTags(), anniversaries:await db.loadAnniversaries(), focus:await db.loadFocusSessions(),
+      tasks:await db.loadTasks(), journals:await db.loadJournalEntries(), notes:await db.loadNotes(), notebooks:await db.loadNotebooks(), moods:await db.loadDailyMoods(), energies:await db.loadDailyEnergy(), environments:await db.loadDailyEnvironment(), periods:await db.loadMenstrualPeriods(), tags:await db.loadTags(), anniversaries:await db.loadAnniversaries(), focus:await db.loadFocusSessions(),
       attachment: blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : null,
     }
   })
   expect(result.tasks).toHaveLength(1); expect(result.tasks[0].title).toBe('恢复任务 🐱')
   expect(result.journals[0].content).toBe('中文\nemoji 🌈')
+  expect(result.notes).toEqual([]); expect(result.notebooks).toEqual([])
   expect(result.moods[0].level).toBe(5); expect(result.energies[0].level).toBe(1)
   expect(result.environments[0].locationCity).toBe('上海')
   expect(result.periods[0].id).toBe('restore-period'); expect(result.tags[0].name).toBe('恢复标签')
