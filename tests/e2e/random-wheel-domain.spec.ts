@@ -262,3 +262,15 @@ test.describe('random wheel v2.8.15 adaptive label regression', () => {
     expect(wheel).toContain('wheelLabelLines(ctx,item.name,maxWidth,maxLines)')
   })
 })
+
+
+test.describe('random wheel v2.8.16 ultra-narrow label regression', () => {
+  test('ultra-narrow sectors stay blank when even an ellipsis cannot fit comfortably', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(wheel).toContain("function wheelLabelHasReadableWidth")
+    expect(wheel).toContain("ctx.measureText('…').width * 1.35")
+    expect(wheel).toContain('const arcWidth=labelRadius*sweep*.82')
+    expect(wheel).not.toContain('Math.max(24,labelRadius*sweep*.82)')
+    expect(wheel).toContain('if(!wheelLabelHasReadableWidth(ctx,maxWidth)){ctx.restore();a+=sweep;return}')
+  })
+})
