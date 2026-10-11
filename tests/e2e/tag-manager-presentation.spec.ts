@@ -95,3 +95,22 @@ test('tag editor v2.9.1 regression › focus usage includes free focus and task 
   expect(helper).toContain('timerSessions')
   expect(helper).toContain('recurrenceExceptions')
 })
+
+
+test('tag editor v2.9.2 regression › multiple real usage areas force shared scope', () => {
+  expect(source).toContain("if (usage.length > 1) return false")
+  expect(source).toContain("跨多个分类使用时必须保持共享")
+  expect(source).toContain("const blocked=!canSetTagScope(tag.id,scope)")
+  expect(source).toContain("disabled={blocked}")
+})
+
+test('tag editor v2.9.2 regression › one real usage area can narrow only to that matching scope', () => {
+  expect(source).toContain("if (usage.length === 0) return true")
+  expect(source).toContain("return scopeForUsage[usage[0]] === nextScope")
+  expect(source).toContain("当前仅实际用于")
+})
+
+test('tag editor v2.9.2 regression › save path revalidates scope invariant', () => {
+  expect(source).toContain("const blockedReason = tagScopeBlockedReason(tag.id, tagEditDraft.scope)")
+  expect(source).toContain("setAutoSyncToast(`⚠ ${blockedReason}`)")
+})

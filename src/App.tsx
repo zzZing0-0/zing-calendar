@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.1'
+const APP_VERSION = '2.9.2'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -2292,6 +2292,11 @@ function App() {
 
   const saveTagEdit = (tag: Tag) => {
     if (!tagEditDraft) return
+    const blockedReason = tagScopeBlockedReason(tag.id, tagEditDraft.scope)
+    if (blockedReason) {
+      setAutoSyncToast(`⚠ ${blockedReason}`)
+      return
+    }
     const name = tagEditDraft.name.trim()
     if (!name) return
     if (tagNameTaken(tags, name, tag.id)) {
@@ -2321,6 +2326,23 @@ function App() {
     const journalUsed = journalEntries.some(entry => !entry.trashedAt && (entry.tagIds ?? []).includes(id))
     const noteUsed = notes.some(note => !note.trashedAt && (note.tagIds ?? []).includes(id))
     return [taskUsed && '任务', focusUsed && '专注', journalUsed && '记录', noteUsed && '笔记'].filter(Boolean) as string[]
+  }
+
+  const canSetTagScope = (tagId: string, nextScope: TagScope) => {
+    if (nextScope === 'both') return true
+    const usage = tagUsageAreas(tagId)
+    if (usage.length === 0) return true
+    if (usage.length > 1) return false
+    const scopeForUsage: Record<string, TagScope> = { '任务': 'task', '专注': 'focus', '记录': 'journal', '笔记': 'note' }
+    return scopeForUsage[usage[0]] === nextScope
+  }
+
+  const tagScopeBlockedReason = (tagId: string, nextScope: TagScope) => {
+    if (canSetTagScope(tagId, nextScope)) return ''
+    const usage = tagUsageAreas(tagId)
+    return usage.length > 1
+      ? `当前引用：${usage.join(' · ')}，跨多个分类使用时必须保持共享`
+      : `当前仅实际用于${usage[0]}，不能缩小到其他分类`
   }
 
   const setTagArchived = (id: string, archived: boolean) => {
@@ -4592,7 +4614,7 @@ function App() {
               <label className="field"><span>名称</span><input value={tagEditDraft?.name ?? tag.name} onChange={e=>setTagEditDraft(current=>current?{...current,name:e.target.value}:current)} autoFocus /></label>
               <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
               <div className="field"><span>分类</span><div className="tag-detail-scope">
-                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>)}
+                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={(tagEditDraft?.scope ?? tag.scope)===scope?'active':''} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
               </div><small className="tag-usage-hint">当前引用：{tagUsageAreas(tag.id).join(' · ') || '暂无'}</small></div>
             </div>
             <div className="editor-actions compact-tag-edit-actions">
