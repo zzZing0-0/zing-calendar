@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.21'
+const APP_VERSION = '2.9.24'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -48,8 +48,8 @@ import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
 import { cascadeRestoreTaskFocus, cascadeTrashTaskFocus, permanentlyDeleteTaskFocus, purgeTrashWithTaskFocus } from './domain/taskFocusLifecycle'
-import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, taskFocusSeconds, permanentlyDeleteFocusSession, restoreFocusSession, trashFocusSession } from './domain/focus'
-import { createDirectFocusSession, createTaskFocusSession, lastSelectableFocusTagId } from './domain/focusRuntime'
+import { activeFocusSession as findActiveFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, FOCUS_EDIT_MAX_MINUTES, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, noteFocusSeconds, taskFocusSeconds, permanentlyDeleteFocusSession, restoreFocusSession, trashFocusSession } from './domain/focus'
+import { createDirectFocusSession, createNoteFocusSession, createTaskFocusSession, lastSelectableFocusTagId } from './domain/focusRuntime'
 import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 import { useAppPreferences } from './hooks/useAppPreferences'
 import { useFocusWakeLock } from './hooks/useFocusWakeLock'
@@ -59,6 +59,7 @@ import { buildAttachmentLifecycle, referencedAttachmentKeys, renameAttachment, s
 import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, moveInboxSortKey, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
 import type { InboxSortKey } from './domain/inbox'
 import { ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
+import { cascadeRestoreNoteFocus, cascadeTrashNoteFocus, permanentlyDeleteNoteFocus, purgeTrashWithNoteFocus } from './domain/noteFocusLifecycle'
 import { NotesPage } from './features/notes/NotesPage'
 import { RandomWheelPage } from './features/random-wheel/RandomWheelPage'
 import { RandomPoolManager } from './features/random-wheel/RandomPoolManager'
@@ -1307,7 +1308,7 @@ function App() {
     journalEntries.forEach(journal => { if (journal.trashedAt) items.push({key:`journal:${journal.id}`,entity:'journal',journal,trashedAt:journal.trashedAt}) })
     anniversaries.forEach(anniversary => { if (anniversary.trashedAt) items.push({key:`anniversary:${anniversary.id}`,entity:'anniversary',anniversary,trashedAt:anniversary.trashedAt}) })
     notes.forEach(note => { if (note.trashedAt) items.push({key:`note:${note.id}`,entity:'note',note,trashedAt:note.trashedAt}) })
-    focusSessions.forEach(session => { if (session.trashedAt && !session.trashedByTaskId) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
+    focusSessions.forEach(session => { if (session.trashedAt && !session.trashedByTaskId && !session.trashedByNoteId) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
   },[tasks,journalEntries,anniversaries,notes,focusSessions])
   const trashTaskStatus = (item: Extract<TrashItem,{entity:'task'}>): TaskStatus => item.kind === 'occurrence' && item.occurrenceDate
@@ -1352,13 +1353,13 @@ function App() {
 
   const selectedFocusSeconds = useMemo(() => {
     if (!selectedDate) return 0
-    return combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow).get(toDateKey(selectedDate)) ?? 0
-  }, [selectedDate, activeTasks, focusSessions, timerNow])
+    return combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow, undefined, notes).get(toDateKey(selectedDate)) ?? 0
+  }, [selectedDate, activeTasks, notes, focusSessions, timerNow])
 
   const focusHistoryRecords = useMemo(() => {
     if (!focusHistoryDate) return []
-    return focusHistoryForDate(activeTasks, focusSessions, focusHistoryDate, timerNow)
-  },[focusHistoryDate,activeTasks,focusSessions,timerNow])
+    return focusHistoryForDate(activeTasks, notes, focusSessions, focusHistoryDate, timerNow)
+  },[focusHistoryDate,activeTasks,notes,focusSessions,timerNow])
 
   const beginEditDirectFocus = (session:FocusSession) => {
     setFocusEditId(session.id)
@@ -1671,7 +1672,7 @@ function App() {
     setTimerNow(Date.now())
   }
   const stopDirectFocus = (automatic=false) => {
-    if (!activeFocusSession || activeFocusSession.context?.kind === 'task') return
+    if (!activeFocusSession || activeFocusSession.context) return
     // Keep the just-finished focus tag selected when the panel returns to
     // "Start focus", matching the tag restored after closing/reopening it.
     setFocusTagIds([lastSelectableFocusTagId(activeFocusSession,tags)])
@@ -1682,6 +1683,31 @@ function App() {
     setFocusSessions(current=>current.map(session=>session.id===activeFocusSession.id?finishedFocusSession(session,endMs):session))
   }
 
+
+  const activeFocusNote = useMemo(() => {
+    const context = activeFocusSession?.context
+    if (context?.kind !== 'note') return null
+    return notes.find(note => note.id === context.noteId && !note.trashedAt) ?? null
+  }, [notes, activeFocusSession?.id])
+
+  const noteFocusSecondsById = useMemo(() => Object.fromEntries(notes.map(note => [note.id, noteFocusSeconds(note.id, focusSessions, timerNow)])), [notes, focusSessions, timerNow])
+
+  const startNoteFocus = (note: Note) => {
+    if (activeFocusSession || note.trashedAt) return
+    const eligible = focusSelectableTags(tags)
+    const tagId = (note.tagIds ?? []).find(id => eligible.some(tag => tag.id === id)) ?? DEFAULT_TAG_ID
+    const startedAt = new Date().toISOString()
+    setFocusSessions(current => [...current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[tagId], startedAt })])
+    setTimerNow(Date.now())
+  }
+
+  const stopNoteFocus = (note: Note, forcedEndMs?: number) => {
+    const session = activeFocusSession
+    if (!session || session.context?.kind !== 'note' || session.context.noteId !== note.id) return
+    const timing = focusTiming(session, Date.now(), maxFocusSeconds)
+    const endMs = Math.min(forcedEndMs ?? Date.now(), timing.dueAtMs ?? Date.now())
+    setFocusSessions(current => current.map(item => item.id === session.id ? finishedFocusSession(item,endMs) : item))
+  }
 
   const activeTimerTask = useMemo(() => {
     const context = activeFocusSession?.context
@@ -1699,10 +1725,16 @@ function App() {
   useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeFocusSession))
 
   useEffect(() => {
-    if (!activeFocusSession || activeFocusSession.context?.kind === 'task') return
+    if (!activeFocusSession || activeFocusSession.context) return
     const dueAtMs=focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
     if(dueAtMs!==null&&timerNow>=dueAtMs) stopDirectFocus(true)
   },[timerNow,activeFocusSession?.id,activeFocusSession?.plannedSeconds,maxFocusSeconds])
+
+  useEffect(() => {
+    if (!activeFocusNote || !activeFocusSession) return
+    const dueAtMs = focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
+    if (dueAtMs !== null && timerNow >= dueAtMs) stopNoteFocus(activeFocusNote,dueAtMs)
+  }, [timerNow,activeFocusNote?.id,activeFocusSession?.id,maxFocusSeconds])
 
   useEffect(() => {
     if (!focusHydrated || !activeFocusSession) return
@@ -1712,9 +1744,14 @@ function App() {
       if (task) { setMainView('calendar'); setViewingTask(task) }
       return
     }
+    if (context?.kind === 'note') {
+      const note = notes.find(item => item.id === context.noteId && !item.trashedAt)
+      if (note) { setMainView('notes'); setRequestedNoteId(note.id) }
+      return
+    }
     setMainView('calendar')
     setFocusOpen(true)
-  }, [focusHydrated, activeFocusSession?.id, activeTasks])
+  }, [focusHydrated, activeFocusSession?.id, activeTasks, notes])
 
   useEffect(() => {
     if (!viewingTask) return
@@ -2054,7 +2091,7 @@ function App() {
   const restoreTrashItem = (item: TrashItem) => {
     if(item.entity==='focus') { const now=new Date().toISOString(); setFocusSessions(current=>current.map(session=>session.id===item.session.id?restoreFocusSession(session,now):session)); setAutoSyncToast('✓ 已恢复专注'); return }
     if(item.entity==='journal') { const now=new Date().toISOString(); setJournalEntries(current=>current.map(entry=>entry.id===item.journal.id?{...entry,trashedAt:undefined,updatedAt:now}:entry)); setAutoSyncToast('✓ 已恢复记录'); return }
-    if(item.entity==='note') { const now=new Date().toISOString(); setNotes(current=>current.map(note=>note.id===item.note.id?restoreNote(note,now):note)); setAutoSyncToast('✓ 已恢复笔记'); return }
+    if(item.entity==='note') { const now=new Date().toISOString(); setNotes(current=>current.map(note=>note.id===item.note.id?restoreNote(note,now):note)); setFocusSessions(current=>cascadeRestoreNoteFocus(current,item.note.id,now)); setAutoSyncToast('✓ 已恢复笔记'); return }
     if(item.entity==='anniversary') { const now=new Date().toISOString(); setAnniversaries(current=>current.map(a=>a.id===item.anniversary.id?{...a,trashedAt:undefined,updatedAt:now}:a)); setAutoSyncToast('✓ 已恢复纪念日'); return }
     const now=new Date().toISOString()
     setTasks(current=>current.map(task=>{
@@ -2071,7 +2108,7 @@ function App() {
   const permanentlyDeleteTrashItem = (item: TrashItem) => {
     if(item.entity==='focus') { setFocusSessions(current=>permanentlyDeleteFocusSession(current,item.session.id)); return }
     if(item.entity==='journal') { setJournalEntries(current=>current.filter(entry=>entry.id!==item.journal.id)); return }
-    if(item.entity==='note') { setNotes(current=>permanentlyDeleteNote(current,item.note.id)); return }
+    if(item.entity==='note') { setNotes(current=>permanentlyDeleteNote(current,item.note.id)); setFocusSessions(current=>permanentlyDeleteNoteFocus(current,item.note.id)); return }
     if(item.entity==='anniversary') { setAnniversaries(current=>current.filter(a=>a.id!==item.anniversary.id)); return }
     const now=new Date().toISOString()
     if(item.kind==='series') { setTasks(current=>current.filter(task=>task.id!==item.task.id)); setFocusSessions(current=>permanentlyDeleteTaskFocus(current,item.task.id)); return }
@@ -2089,7 +2126,7 @@ function App() {
     setJournalEntries(current => current.filter(entry => !entry.trashedAt))
     setAnniversaries(current => current.filter(anniversary => !anniversary.trashedAt))
     setNotes(current => purgeTrashedNotes(current))
-    setFocusSessions(current => purgeTrashWithTaskFocus(current,tasks))
+    setFocusSessions(current => purgeTrashWithNoteFocus(purgeTrashWithTaskFocus(current,tasks),notes))
     setTasks(current => current.flatMap(task => {
       if (task.trashedAt) return []
       let next = task
@@ -2425,8 +2462,8 @@ function App() {
 
   const statistics = useMemo(() => buildStatistics({
     today, statsRange, weekStartsMonday, activeTasks, activeJournalEntries, dailyMoods, dailyEnergy, managedTags, tags,
-    focusSessions, wordCloudIgnored, timerNow, excludeDefaultFocusStats,
-  }),[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,tags,focusSessions,statsRange,weekStartsMonday,wordCloudIgnored,timerNow,excludeDefaultFocusStats])
+    focusSessions, notes, wordCloudIgnored, timerNow, excludeDefaultFocusStats,
+  }),[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,tags,focusSessions,notes,statsRange,weekStartsMonday,wordCloudIgnored,timerNow,excludeDefaultFocusStats])
 
   const statsPercent = (value:number) => `${Math.round(value*100)}%`
   const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
@@ -2931,7 +2968,7 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>今天</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusNote){setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
             <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
@@ -3202,7 +3239,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} />}
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={startNoteFocus} onStopNoteFocus={stopNoteFocus} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">
@@ -3920,14 +3957,14 @@ function App() {
           <section className="task-editor focus-history-panel" role="dialog" aria-modal="true" aria-label="专注记录">
             <div className="editor-header"><div><span className="eyebrow">FOCUS LOG</span><h2>{focusHistoryDate} · 专注记录</h2></div><button className="close-button" type="button" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null)}}>×</button></div>
             <div className="editor-body focus-history-body">
-              <div className="focus-history-summary"><strong>{formatFocusDuration(combinedFocusSecondsByDate(activeTasks,focusSessions,timerNow).get(focusHistoryDate)??0)}</strong><span>{focusHistoryRecords.length} 条记录</span></div>
+              <div className="focus-history-summary"><strong>{formatFocusDuration(combinedFocusSecondsByDate(activeTasks,focusSessions,timerNow,undefined,notes).get(focusHistoryDate)??0)}</strong><span>{focusHistoryRecords.length} 条记录</span></div>
               {focusHistoryRecords.length===0?<p className="page-empty compact">这一天还没有专注记录。</p>:<div className="focus-history-list">{focusHistoryRecords.map(record=>{
                 const editing=record.kind==='direct'&&record.session&&focusEditId===record.session.id
                 const focusTag=record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
                 return <div className="focus-history-item" key={record.id}>
-                  <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
+                  <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:record.kind==='note'?`笔记 · ${record.title}`:'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
                   {editing&&record.session?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveDirectFocusEdit}>保存</button></div></div>:<div className="focus-history-actions">
-                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}}}>{record.kind==='task'?'查看':'更改'}</button>
+                    <button type="button" onClick={()=>{if(record.kind==='direct'&&record.session)beginEditDirectFocus(record.session);else if(record.task){setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task)}else if(record.note){setFocusHistoryDate(null);setMainView('notes');setRequestedNoteId(record.note.id)}}}>{record.kind==='direct'?'更改':'查看'}</button>
                     {record.kind==='direct'&&record.session&&<button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button>}
                   </div>}
                 </div>})}</div>}
@@ -4204,7 +4241,7 @@ function App() {
                   ) : (
                     <>
                       <span className="task-timer-label">任务计时</span>
-                      <button className="task-timer-start" type="button" disabled={Boolean(activeFocusSession)} onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</button>{activeFocusSession && <small>已有自由专注正在进行，请先结束后再开始任务计时。</small>}
+                      <button className="task-timer-start" type="button" disabled={Boolean(activeFocusSession)} onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</button>{activeFocusSession && <small>已有其他专注正在进行，请先结束后再开始任务计时。</small>}
                     </>
                   )}
                 </section>

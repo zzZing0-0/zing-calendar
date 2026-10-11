@@ -27,10 +27,5 @@ export function purgeTrashWithTaskFocus(sessions: FocusSession[], tasks: Task[])
   })
 }
 
-export function focusSessionParticipatesInStats(session: FocusSession, tasks: Task[]) {
-  if (session.trashedAt) return false
-  const context = session.context
-  if (context?.kind !== 'task') return true
-  const task = tasks.find(row => row.id === context.taskId)
-  return Boolean(task && !task.trashedAt)
-}
+// Backward-compatible export for existing Task lifecycle callers/tests; the implementation now covers all Focus contexts.
+export { focusSessionParticipatesInStats } from './focusContextLifecycle'

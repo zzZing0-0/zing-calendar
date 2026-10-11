@@ -25,7 +25,7 @@ test('trashed Task Focus is excluded from Today and all focus statistics, then r
   const trashedTask=task({trashedAt:deletedAt})
   const trashedFocus=cascadeTrashTaskFocus([focus()],'task-1',deletedAt)[0]
   expect(focusSessionParticipatesInStats(trashedFocus,[trashedTask])).toBe(false)
-  expect(focusHistoryForDate([trashedTask],[trashedFocus],'2026-10-11',new Date('2026-10-11T12:00:00').getTime())).toEqual([])
+  expect(focusHistoryForDate([trashedTask],[],[trashedFocus],'2026-10-11',new Date('2026-10-11T12:00:00').getTime())).toEqual([])
   expect(combinedFocusSecondsByDate([trashedTask],[trashedFocus],new Date('2026-10-11T12:00:00').getTime()).size).toBe(0)
   const restoredFocus=cascadeRestoreTaskFocus([trashedFocus],'task-1','2026-10-11T10:00:00Z')[0]
   expect(combinedFocusSecondsByDate([task()],[restoredFocus],new Date('2026-10-11T12:00:00').getTime()).get('2026-10-11')).toBe(600)
@@ -42,6 +42,6 @@ test('permanent Task deletion and clear-trash remove all associated Focus facts,
 test('orphan task-context Focus never leaks into Today or statistics',()=>{
   const row=focus()
   expect(focusSessionParticipatesInStats(row,[])).toBe(false)
-  expect(focusHistoryForDate([], [row], '2026-10-11', new Date('2026-10-11T12:00:00').getTime())).toEqual([])
+  expect(focusHistoryForDate([], [], [row], '2026-10-11', new Date('2026-10-11T12:00:00').getTime())).toEqual([])
   expect(combinedFocusSecondsByDate([], [row], new Date('2026-10-11T12:00:00').getTime()).size).toBe(0)
 })

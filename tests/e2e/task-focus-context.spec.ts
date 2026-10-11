@@ -10,7 +10,7 @@ const session=(id:string,start:string,end:string):FocusSession=>({id,tagIds:['de
 test('task time is derived only from task-context FocusSessions',()=>{
   const rows=[session('a','2026-10-11T08:00:00Z','2026-10-11T08:20:00Z'),session('b','2026-10-11T09:00:00Z','2026-10-11T09:30:00Z')]
   expect(taskFocusSeconds('task-a',rows,new Date('2026-10-11T10:00:00Z').getTime())).toBe(3000)
-  expect(focusHistoryForDate([task],rows,'2026-10-11',new Date('2026-10-11T10:00:00Z').getTime())).toMatchObject([{kind:'task',title:'写报告',seconds:3000}])
+  expect(focusHistoryForDate([task],[],rows,'2026-10-11',new Date('2026-10-11T10:00:00Z').getTime())).toMatchObject([{kind:'task',title:'写报告',seconds:3000}])
 })
 
 test('recurring tasks expose no timer path and legacy task timer fields are gone',()=>{

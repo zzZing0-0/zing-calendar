@@ -285,8 +285,9 @@ test('notes desktop browser regression › the mounted UIW editor drives preview
 
 test('notes trash integration regression › Notes joins unified Trash restore and permanent-delete lifecycle', () => {
   const notesPage = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
-  expect(notesPage).toContain('trashNote(row,now)')
-  expect(notesPage).toContain('笔记将移入回收站')
+  expect(notesPage).toContain('onTrashNote(note)')
+  expect(appSource).toContain('cascadeTrashNoteFocus(current,note.id,now)')
+  expect(notesPage).toContain('笔记及其关联专注将移入回收站')
   expect(appSource).toContain("entity:'note'")
   expect(appSource).toContain("setAutoSyncToast('✓ 已恢复笔记')")
   expect(appSource).toContain('permanentlyDeleteNote(current,item.note.id)')
@@ -413,7 +414,7 @@ test('notes integration regression › shared UI date formatter is declared and 
   const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
   expect(app).toContain('formatUiDate={formatUiDate}')
   expect(page).toContain('formatUiDate:(date:Date)=>string')
-  expect(page).toContain('onPreviewImage,formatUiDate}:Props)')
+  expect(page).toContain('onPreviewImage,formatUiDate,focusSecondsByNoteId')
   expect(page).toContain('formatUiDate(new Date(n.updatedAt))')
 })
 

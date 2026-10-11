@@ -1,5 +1,5 @@
-import { focusSessionParticipatesInStats } from './taskFocusLifecycle'
-import type { DailyEnergy, DailyMood, FocusSession, JournalEntry, JournalImpact, MoodLevel, EnergyLevel, RecurrenceException, Tag, Task, TaskPriority } from '../types'
+import { focusSessionParticipatesInStats } from './focusContextLifecycle'
+import type { DailyEnergy, DailyMood, FocusSession, JournalEntry, Note, JournalImpact, MoodLevel, EnergyLevel, RecurrenceException, Tag, Task, TaskPriority } from '../types'
 import { addDaysKey, combinedFocusSecondsByDate, dayDiff, expandTasks, taskEndDate, toDateKey } from './task'
 import { DEFAULT_TAG, DEFAULT_TAG_ID, isImportSourceTagId } from './preferences'
 import { tagColorRank } from './tags'
@@ -17,6 +17,7 @@ export interface StatisticsInput {
   managedTags: Tag[]
   tags: Tag[]
   focusSessions: FocusSession[]
+  notes?: Note[]
   wordCloudIgnored: string[]
   timerNow: number
   excludeDefaultFocusStats: boolean
@@ -24,7 +25,7 @@ export interface StatisticsInput {
 
 export function buildStatistics({
   today, statsRange, weekStartsMonday, activeTasks, activeJournalEntries, dailyMoods, dailyEnergy,
-  managedTags, tags, focusSessions, wordCloudIgnored, timerNow, excludeDefaultFocusStats,
+  managedTags, tags, focusSessions, notes = [], wordCloudIgnored, timerNow, excludeDefaultFocusStats,
 }: StatisticsInput) {
   const todayKey = toDateKey(today)
   const startOfMonth = toDateKey(new Date(today.getFullYear(), today.getMonth(), 1))
@@ -111,7 +112,7 @@ export function buildStatistics({
     return tags.find(tag=>tag.id===(ordinaryId??DEFAULT_TAG_ID)) ?? DEFAULT_TAG
   }
   const includeFocusTagIds = (ids?:string[]) => !excludeDefaultFocusStats || focusTagForStats(ids).id !== DEFAULT_TAG_ID
-  const focusByDay = combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow, includeFocusTagIds)
+  const focusByDay = combinedFocusSecondsByDate(activeTasks, focusSessions, timerNow, includeFocusTagIds, notes)
   const focusTagMap = new Map<string,{tag:Tag,seconds:number,sessions:number}>()
   const focusTagForIds = (ids?:string[]) => {
     const ordinaryId=(ids??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
@@ -124,7 +125,7 @@ export function buildStatistics({
     row.seconds+=seconds; row.sessions+=sessions; focusTagMap.set(tag.id,row)
   }
   focusSessions.forEach(session=>{
-    if(!focusSessionParticipatesInStats(session,activeTasks))return
+    if(!focusSessionParticipatesInStats(session,activeTasks,notes))return
     const date=toDateKey(new Date(session.startedAt)); if(!inRange(date))return
     const start=new Date(session.startedAt).getTime(),end=session.endedAt?new Date(session.endedAt).getTime():timerNow
     const cap=session.mode==='countdown'&&session.plannedSeconds?start+session.plannedSeconds*1000:end

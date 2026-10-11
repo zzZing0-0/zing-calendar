@@ -41,7 +41,7 @@ test.describe('focus domain regression', () => {
     const trashed = session({ endedAt: '2026-10-04T10:30:00.000Z', trashedAt: '2026-10-04T11:00:00.000Z' })
     const trashedActive = session({ id: 'trashed-active', trashedAt: '2026-10-04T11:00:00.000Z' })
     expect(activeFocusSession([trashedActive])).toBeNull()
-    expect(focusHistoryForDate([], [trashed], '2026-10-04', new Date('2026-10-04T13:00:00Z').getTime())).toEqual([])
+    expect(focusHistoryForDate([], [], [trashed], '2026-10-04', new Date('2026-10-04T13:00:00Z').getTime())).toEqual([])
   })
   test('countdown input is enforced at 1 to 720 minutes even for typed values', () => {
     expect(countdownMinutes('1')).toBe(1)
@@ -103,14 +103,14 @@ test.describe('focus domain regression', () => {
   test('task-context sessions are aggregated into one task row for the day', () => {
     const taskSession1 = session({ id:'t1', startedAt:'2026-10-04T09:00:00.000Z', endedAt:'2026-10-04T09:10:00.000Z', context:{kind:'task',taskId:'task-1'} })
     const taskSession2 = session({ id:'t2', startedAt:'2026-10-04T10:00:00.000Z', endedAt:'2026-10-04T10:05:00.000Z', context:{kind:'task',taskId:'task-1'} })
-    const rows = focusHistoryForDate([task()], [taskSession1, taskSession2], '2026-10-04', new Date('2026-10-04T13:00:00Z').getTime())
+    const rows = focusHistoryForDate([task()], [], [taskSession1, taskSession2], '2026-10-04', new Date('2026-10-04T13:00:00Z').getTime())
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ kind:'task', title:'Paper', seconds:900 })
   })
 
   test('free focus remains separate and countdown overlap is capped', () => {
     const direct = session({ id:'direct', mode:'countdown', plannedSeconds:600, startedAt:'2026-10-04T12:00:00', endedAt:'2026-10-04T12:30:00' })
-    const rows = focusHistoryForDate([task()], [direct], '2026-10-04', new Date('2026-10-04T13:00:00').getTime())
+    const rows = focusHistoryForDate([task()], [], [direct], '2026-10-04', new Date('2026-10-04T13:00:00').getTime())
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ kind:'direct', title:'自由专注', seconds:600 })
   })

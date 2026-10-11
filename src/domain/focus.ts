@@ -1,4 +1,4 @@
-import type { FocusSession, Task } from '../types'
+import type { FocusSession, Note, Task } from '../types'
 
 
 export const COUNTDOWN_MIN_MINUTES = 1
@@ -17,11 +17,12 @@ export function countdownMinutes(value: string | number, fallback = 15) {
 
 export type FocusHistoryRecord = {
   id: string
-  kind: 'task' | 'direct'
+  kind: 'task' | 'note' | 'direct'
   title: string
   seconds: number
   tagIds: string[]
   task?: Task
+  note?: Note
   session?: FocusSession
 }
 
@@ -97,11 +98,23 @@ export function taskFocusSeconds(taskId: string, sessions: FocusSession[], nowMs
     }, 0)
 }
 
-export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dateKey: string, nowMs: number): FocusHistoryRecord[] {
+export function noteFocusSeconds(noteId: string, sessions: FocusSession[], nowMs: number) {
+  return sessions.filter(session => !session.trashedAt && session.context?.kind === 'note' && session.context.noteId === noteId)
+    .reduce((sum, session) => {
+      const start = new Date(session.startedAt).getTime()
+      if (!Number.isFinite(start)) return sum
+      const rawEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs
+      return sum + Math.max(0, Math.round((rawEnd - start) / 1000))
+    }, 0)
+}
+
+export function focusHistoryForDate(tasks: Task[], notes: Note[], sessions: FocusSession[], dateKey: string, nowMs: number): FocusHistoryRecord[] {
   const dayStart = new Date(`${dateKey}T00:00:00`).getTime()
   const dayEnd = new Date(`${dateKey}T23:59:59.999`).getTime() + 1
   const taskMap = new Map(tasks.filter(task=>!task.trashedAt&&!task.recurrence).map(task=>[task.id,task]))
   const taskRows = new Map<string, FocusHistoryRecord>()
+  const noteMap = new Map(notes.filter(note=>!note.trashedAt).map(note=>[note.id,note]))
+  const noteRows = new Map<string, FocusHistoryRecord>()
   const directRows: FocusHistoryRecord[] = []
   sessions.forEach(session => {
     if (session.trashedAt) return
@@ -121,7 +134,15 @@ export function focusHistoryForDate(tasks: Task[], sessions: FocusSession[], dat
       taskRows.set(session.context.taskId, { id:`task:${session.context.taskId}`, kind:'task', title:task.title, seconds, tagIds:session.tagIds, task, session })
       return
     }
+    if (session.context?.kind === 'note') {
+      const note = noteMap.get(session.context.noteId)
+      if (!note) return
+      const existing = noteRows.get(session.context.noteId)
+      if (existing) { existing.seconds += seconds; return }
+      noteRows.set(session.context.noteId, { id:`note:${session.context.noteId}`, kind:'note', title:note.title, seconds, tagIds:session.tagIds, note, session })
+      return
+    }
     directRows.push({ id:`direct:${session.id}`, kind:'direct', title:'自由专注', seconds, tagIds:session.tagIds, session })
   })
-  return [...taskRows.values(), ...directRows].sort((a,b)=>(b.session?.startedAt??'').localeCompare(a.session?.startedAt??''))
+  return [...taskRows.values(), ...noteRows.values(), ...directRows].sort((a,b)=>(b.session?.startedAt??'').localeCompare(a.session?.startedAt??''))
 }

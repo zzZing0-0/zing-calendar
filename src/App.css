@@ -5346,3 +5346,5 @@ button {
     padding-right:17px;
   }
 }
+.note-focus-meta{display:flex;align-items:center;gap:10px;min-width:0}.note-focus-controls{display:flex;align-items:center;gap:10px}.note-focus-controls>span{white-space:nowrap}.note-focus-controls button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:700px){.note-meta{align-items:flex-start;gap:8px}.note-focus-meta{min-width:0;flex-wrap:wrap}.note-focus-controls{margin-left:auto;flex-shrink:0}.note-focus-controls>span{display:none}.note-focus-controls button{white-space:nowrap}}
