@@ -237,13 +237,28 @@ test.describe('random wheel v2.8.13 usability regression', () => {
     expect(pool).toContain('toggleMixedGroup(groupItems,event.target.checked)')
   })
 
-  test('wheel labels use the outer sector in up to three lines and omit redundant metadata', async () => {
+  test('wheel labels use the outer sector and omit redundant metadata', async () => {
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
     expect(wheel).toContain('const labelRadius=r*.72')
-    expect(wheel).toContain('wheelLabelLines(ctx,item.name,maxWidth,3)')
-    expect(wheel).toContain("lines[maxLines - 1] = `${clipped}…`")
+    expect(wheel).toContain('wheelLabelLines(ctx,item.name,maxWidth,maxLines)')
+    expect(wheel).toContain("visible[maxLines - 1] = `${last}…`")
     expect(wheel).toContain('ctx.clip()')
     expect(wheel).not.toContain("Math.round(item.weight/total*100)")
     expect(wheel).not.toContain("item.amount!=null?")
+  })
+})
+
+
+test.describe('random wheel v2.8.15 adaptive label regression', () => {
+  test('labels keep a full name on one line whenever it already fits', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(wheel).toContain('if (ctx.measureText(clean).width <= maxWidth) return [clean]')
+  })
+
+  test('English words stay intact and line count follows available sector depth', async () => {
+    const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
+    expect(wheel).toContain("match(/[A-Za-z0-9]+(?:['’_-][A-Za-z0-9]+)*|[^\\s]/gu)")
+    expect(wheel).toContain('maxLines=Math.max(1,Math.floor((r*.58)/lineHeight))')
+    expect(wheel).toContain('wheelLabelLines(ctx,item.name,maxWidth,maxLines)')
   })
 })
