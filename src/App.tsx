@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.24'
+const APP_VERSION = '2.9.25'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -473,6 +473,7 @@ function App() {
   const [focusMinutes, setFocusMinutes] = useState('15')
   const [focusTagIds, setFocusTagIds] = useState<string[]>([DEFAULT_TAG_ID])
   const [focusTagSelectOpen, setFocusTagSelectOpen] = useState(false)
+  const [pendingNoteFocusId, setPendingNoteFocusId] = useState<string | null>(null)
   const [expandedFocusColor, setExpandedFocusColor] = useState<string | null>(null)
   const [focusHistoryDate, setFocusHistoryDate] = useState<string | null>(null)
   const [focusEditId, setFocusEditId] = useState<string | null>(null)
@@ -1692,13 +1693,21 @@ function App() {
 
   const noteFocusSecondsById = useMemo(() => Object.fromEntries(notes.map(note => [note.id, noteFocusSeconds(note.id, focusSessions, timerNow)])), [notes, focusSessions, timerNow])
 
-  const startNoteFocus = (note: Note) => {
+  const startNoteFocus = (note: Note, tagId: string) => {
     if (activeFocusSession || note.trashedAt) return
     const eligible = focusSelectableTags(tags)
-    const tagId = (note.tagIds ?? []).find(id => eligible.some(tag => tag.id === id)) ?? DEFAULT_TAG_ID
+    const selectedTagId = eligible.some(tag => tag.id === tagId) ? tagId : DEFAULT_TAG_ID
     const startedAt = new Date().toISOString()
-    setFocusSessions(current => [...current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[tagId], startedAt })])
+    setFocusSessions(current => [...current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[selectedTagId], startedAt })])
+    setPendingNoteFocusId(null)
     setTimerNow(Date.now())
+  }
+
+  const requestNoteFocus = (note: Note) => {
+    if (activeFocusSession || note.trashedAt) return
+    const last = [...activeFocusSessions(focusSessions)].filter(item => item.endedAt).sort((a,b) => b.startedAt.localeCompare(a.startedAt))[0]
+    setFocusTagIds([last ? lastSelectableFocusTagId(last,tags) : DEFAULT_TAG_ID])
+    setPendingNoteFocusId(note.id)
   }
 
   const stopNoteFocus = (note: Note, forcedEndMs?: number) => {
@@ -3239,7 +3248,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={startNoteFocus} onStopNoteFocus={stopNoteFocus} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
+      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={requestNoteFocus} onStopNoteFocus={stopNoteFocus} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
 
       {mainView === 'anniversaries' && (
         <section className="anniversary-page">
@@ -3994,6 +4003,7 @@ function App() {
               </>}
             </div>
           </section>
+          {pendingNoteFocusId&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setPendingNoteFocusId(null)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择笔记专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setPendingNoteFocusId(null)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags(tags).map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);const note=notes.find(item=>item.id===pendingNoteFocusId&&!item.trashedAt);if(note)startNoteFocus(note,tag.id);else setPendingNoteFocusId(null)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
           {focusTagSelectOpen&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setFocusTagSelectOpen(false)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setFocusTagSelectOpen(false)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags(tags).map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);setFocusTagSelectOpen(false)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
         </div>
       )}
