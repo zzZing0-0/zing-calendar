@@ -142,3 +142,15 @@ test('settings v2.9.5 regression › invalid tag scopes remain visibly disabled'
   expect(css).toContain('.tag-scope-grid button.scope-disabled')
   expect(css).toContain('cursor:not-allowed')
 })
+
+
+test('settings v2.9.6 regression › Settings title is an h2 and its scoped rule targets that exact element', () => {
+  expect(source).toContain('<span className="eyebrow">SETTINGS</span><h2>设置</h2>')
+  expect(css).toContain('.settings-page .page-heading h2{')
+  expect(css).not.toContain('.settings-page .page-heading h1{')
+})
+
+test('settings v2.9.6 regression › mobile Settings title rule also targets h2 rather than a nonexistent h1', () => {
+  expect(css).toContain('.settings-page .page-heading h2{font-size:27px}')
+  expect(css).not.toContain('.settings-page .page-heading h1{font-size:27px}')
+})

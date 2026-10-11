@@ -5274,7 +5274,7 @@ button {
   line-height:1.2;
   letter-spacing:.18em;
 }
-.settings-page .page-heading h1{
+.settings-page .page-heading h2{
   margin:0;
   font-size:28px;
   line-height:1.18;
@@ -5347,7 +5347,7 @@ button {
 
 @media(max-width:640px){
   .settings-page .page-heading{margin-bottom:16px}
-  .settings-page .page-heading h1{font-size:27px}
+  .settings-page .page-heading h2{font-size:27px}
   .settings-page .settings-group-title{
     min-height:52px;
     padding-left:17px;
