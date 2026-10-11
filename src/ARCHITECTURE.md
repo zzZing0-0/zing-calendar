@@ -8,6 +8,17 @@ Zing Calendar is local-first. IndexedDB is the primary local data store. Private
 
 `App.tsx` is intentionally the composition/orchestration layer. It owns cross-feature React state, browser effects, modal/view coordination, IndexedDB hydration/persistence, sync/backup orchestration, attachment UI, and the continuous-calendar/Day Detail interaction state machine. A large line count alone is not a reason to split it further.
 
+## Feature boundaries
+
+Large user-facing features should own their feature-local controller/state and presentation when that boundary is stable. `App.tsx` remains the application composition layer, but should not reimplement a feature’s parsing, modal workflow, or feature-local state machine. Do not split code merely to reduce line count; extract a feature when future work can then stay inside that feature directory with a small composition surface in `App.tsx`.
+
+Current extracted feature boundaries include:
+
+- `features/notes/` — Notes workspace/editor interactions.
+- `features/random-wheel/` — random wheel and pool management presentation.
+- `features/external-import/` — external CSV import workflow, previews, persistence, and modal presentation.
+- `domain/focusRuntime.ts` + `hooks/useFocusWakeLock.ts` — shared Focus runtime rules and Wake Lock lifecycle; the upcoming Task→Focus data-model migration should build on this boundary rather than adding timer arithmetic back to `App.tsx`.
+
 ## Where business rules live
 
 - `domain/task.ts` — task recurrence/materialization, date-task rules, overdue/deadline logic, sorting, task/Focus duration helpers.

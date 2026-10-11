@@ -3,10 +3,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 test('focus tag scope regression › Forest creates focus tags and upgrades existing non-focus tags to shared', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-  expect(app).toContain("scope:'focus',updatedAt:new Date().toISOString()")
-  expect(app).toContain("ordinaryTag.scope!=='both'&&ordinaryTag.scope!=='focus'")
-  expect(app).toContain("ordinaryTag={...ordinaryTag,scope:'both'")
+  const externalImport = fs.readFileSync(path.resolve(process.cwd(), 'src/features/external-import/useExternalImport.ts'), 'utf8')
+  expect(externalImport).toContain("scope:'focus',updatedAt:new Date().toISOString()")
+  expect(externalImport).toContain("ordinaryTag.scope!=='both'&&ordinaryTag.scope!=='focus'")
+  expect(externalImport).toContain("ordinaryTag={...ordinaryTag,scope:'both'")
 })
 
 test('focus tag scope regression › task timer inherits a compatible tag or explicitly falls back to default', () => {
