@@ -30,3 +30,7 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+
+## v2.9.31
+Task compact detail now exposes derived focus total and raw task-context FocusSession history with per-session edit/delete. Today Focus remains a summary/navigation surface.

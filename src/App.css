@@ -5370,3 +5370,6 @@ button {
   .note-title-row{padding:10px 12px 20px}.note-title-row input{font-size:18px}.note-title-row small{right:12px}
   .note-focus-row{padding:7px 12px}.note-media-toggle-row{padding:6px 12px}
 }
+
+/* v2.9.31 task focus history lives inside the compact task viewer. */
+.task-view-focus-summary{padding:13px 0}.task-focus-history-trigger{border:0;background:transparent;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer}.task-focus-history-trigger:hover{text-decoration:underline}.task-inline-focus-history{display:flex;flex-direction:column;gap:12px}.task-inline-focus-history-head{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid rgba(0,0,0,.07)}.task-inline-focus-history-head>button{border:0;background:transparent;padding:4px 0;color:#68756e;font:inherit;cursor:pointer}.task-inline-focus-history-head>div{display:flex;flex-direction:column;gap:2px}.task-inline-focus-history-head strong{font-size:15px;color:#344039}.task-inline-focus-history-head small{font-size:11px;color:#8a948f}

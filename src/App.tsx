@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.30'
+const APP_VERSION = '2.9.31'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -465,6 +465,7 @@ function App() {
   const [viewingJournalId, setViewingJournalId] = useState<string | null>(null)
   const [journalMessageDraft, setJournalMessageDraft] = useState('')
   const [viewingTask, setViewingTask] = useState<Task | null>(null)
+  const [taskFocusHistoryOpen, setTaskFocusHistoryOpen] = useState(false)
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([])
   const [focusHydrated, setFocusHydrated] = useState(false)
@@ -1366,6 +1367,8 @@ function App() {
   const noteFocusHistoryNote = useMemo(() => noteFocusHistoryId ? notes.find(note=>note.id===noteFocusHistoryId&&!note.trashedAt)??null : null, [noteFocusHistoryId,notes])
   const noteFocusHistorySessions = useMemo(() => noteFocusHistoryId ? focusSessions.filter(session=>!session.trashedAt&&session.context?.kind==='note'&&session.context.noteId===noteFocusHistoryId).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)) : [], [noteFocusHistoryId,focusSessions])
   const noteFocusHistorySeconds = useMemo(() => noteFocusHistoryId ? noteFocusSeconds(noteFocusHistoryId,focusSessions,timerNow) : 0, [noteFocusHistoryId,focusSessions,timerNow])
+  const taskFocusHistorySessions = useMemo(() => viewingTask && !viewingTask.seriesId ? focusSessions.filter(session=>!session.trashedAt&&session.context?.kind==='task'&&session.context.taskId===viewingTask.id).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)) : [], [viewingTask,focusSessions])
+  const taskFocusHistorySeconds = useMemo(() => viewingTask && !viewingTask.seriesId ? taskFocusSeconds(viewingTask.id,focusSessions,timerNow) : 0, [viewingTask,focusSessions,timerNow])
 
   const beginEditFocusSession = (session:FocusSession) => {
     setFocusEditId(session.id)
@@ -4252,7 +4255,7 @@ function App() {
 
       {viewingTask && (
         <div className="modal-layer task-view-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label={activeTimerTask?.id===viewingTask.id ? "任务计时中" : "关闭任务详情"} onClick={()=>{ if (activeTimerTask?.id!==viewingTask.id) setViewingTask(null) }} />
+          <button className="modal-backdrop" type="button" aria-label={activeTimerTask?.id===viewingTask.id ? "任务计时中" : "关闭任务详情"} onClick={()=>{ if (activeTimerTask?.id!==viewingTask.id) { setTaskFocusHistoryOpen(false); setFocusEditId(null); setViewingTask(null) } }} />
           <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
             <div className="editor-header task-view-header">
               <div className="task-view-heading">
@@ -4274,9 +4277,21 @@ function App() {
                   <h2 id="task-view-title">{viewingTask.title}</h2>
                 </div>
               </div>
-              {activeTimerTask?.id!==viewingTask.id && <button className="close-button" type="button" onClick={()=>setViewingTask(null)} aria-label="关闭">×</button>}
+              {activeTimerTask?.id!==viewingTask.id && <button className="close-button" type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} aria-label="关闭">×</button>}
             </div>
             <div className="editor-body task-view-body">
+              {taskFocusHistoryOpen ? <section className="task-inline-focus-history" aria-label="任务专注历史">
+                <div className="task-inline-focus-history-head"><button type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null)}}>‹ 返回</button><div><strong>专注记录</strong><small>{formatFocusDuration(taskFocusHistorySeconds)} · {taskFocusHistorySessions.length} 条</small></div></div>
+                {taskFocusHistorySessions.length===0?<p className="page-empty compact">这个任务还没有专注记录。</p>:<div className="focus-history-list">{taskFocusHistorySessions.map(session=>{
+                  const editing=focusEditId===session.id
+                  const focusTag=session.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
+                  const seconds=session.durationSeconds??Math.max(0,Math.round((timerNow-new Date(session.startedAt).getTime())/1000))
+                  const started=new Date(session.startedAt)
+                  return <div className="focus-history-item" key={session.id}>
+                    <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{formatUiDate(started)} · {started.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><small>{formatFocusDuration(seconds)}</small></div></div>
+                    {editing?<div className="focus-history-edit"><label>时长 <input type="number" min="1" max="1440" value={focusEditMinutes} onChange={e=>setFocusEditMinutes(e.target.value)} onBlur={()=>setFocusEditMinutes(String(boundedInteger(focusEditMinutes,1,FOCUS_EDIT_MAX_MINUTES,1)))} /> 分钟</label><div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!window.confirm('确定删除这条任务专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
+                  </div>})}</div>}
+              </section> : <>
               {viewingTask.date && <div className="task-view-schedule" aria-label="任务时间">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>
                 <span>{isMultiDayTask(viewingTask) ? formatTaskRange(viewingTask) : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}</span>
@@ -4310,9 +4325,9 @@ function App() {
                 </section>
               )}
 
-              {taskFocusSeconds(viewingTask.seriesId ?? viewingTask.id, focusSessions, timerNow) > 0 && !viewingTask.seriesId && (
-                <section className="task-view-section">
-                  <h3>实际用时</h3><p>{formatFocusDuration(taskFocusSeconds(viewingTask.id, focusSessions, timerNow))}</p>
+              {taskFocusHistorySeconds > 0 && !viewingTask.seriesId && (
+                <section className="task-view-section task-view-focus-summary">
+                  <button type="button" className="task-focus-history-trigger" onClick={()=>setTaskFocusHistoryOpen(true)}>累计专注 {formatFocusDuration(taskFocusHistorySeconds)} · 历史 ›</button>
                 </section>
               )}
 
@@ -4331,8 +4346,9 @@ function App() {
               )}
 
               {viewingTask.notes && <section className="task-view-section"><h3>备注</h3><div className="task-view-notes">{viewingTask.notes}</div></section>}
+              </>}
             </div>
-            <div className="editor-footer task-view-footer">
+            {!taskFocusHistoryOpen && <div className="editor-footer task-view-footer">
               {activeTimerTask?.id!==viewingTask.id && <button className="delete-button task-view-delete" type="button" onClick={()=>{
                       const task=viewingTask
                       const series=task.seriesId ? tasks.find(item=>item.id===task.seriesId) : task
@@ -4355,7 +4371,7 @@ function App() {
                   <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
                 </>)}
               </div>
-            </div>
+            </div>}
           </section>
         </div>
       )}
