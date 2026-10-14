@@ -3,7 +3,26 @@ import type { FocusSession, Note, Task } from '../types'
 
 export const COUNTDOWN_MIN_MINUTES = 1
 export const COUNTDOWN_MAX_MINUTES = 12 * 60
-export const FOCUS_EDIT_MAX_MINUTES = 24 * 60
+
+
+export function focusSessionEndMs(session: FocusSession, nowMs: number) {
+  const startMs = new Date(session.startedAt).getTime()
+  if (!Number.isFinite(startMs)) return nowMs
+  if (session.endedAt) {
+    const endedMs = new Date(session.endedAt).getTime()
+    return Number.isFinite(endedMs) ? Math.max(startMs, endedMs) : startMs
+  }
+  if (session.mode === 'countdown' && session.plannedSeconds) {
+    return Math.min(nowMs, startMs + session.plannedSeconds * 1000)
+  }
+  return Math.max(startMs, nowMs)
+}
+
+export function focusSessionDurationSeconds(session: FocusSession, nowMs: number) {
+  const startMs = new Date(session.startedAt).getTime()
+  if (!Number.isFinite(startMs)) return 0
+  return Math.max(0, Math.round((focusSessionEndMs(session, nowMs) - startMs) / 1000))
+}
 
 export function boundedInteger(value: string | number, min: number, max: number, fallback = min) {
   const parsed = typeof value === 'number' ? Math.trunc(value) : Number.parseInt(value, 10)
@@ -92,9 +111,8 @@ export function taskFocusSeconds(taskId: string, sessions: FocusSession[], nowMs
     .reduce((sum, session) => {
       const start = new Date(session.startedAt).getTime()
       if (!Number.isFinite(start)) return sum
-      const rawEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs
-      const plannedEnd = session.mode === 'countdown' && session.plannedSeconds ? start + session.plannedSeconds * 1000 : rawEnd
-      return sum + Math.max(0, Math.round((Math.min(rawEnd, plannedEnd) - start) / 1000))
+      const end = focusSessionEndMs(session, nowMs)
+      return sum + Math.max(0, Math.round((end - start) / 1000))
     }, 0)
 }
 
@@ -103,8 +121,8 @@ export function noteFocusSeconds(noteId: string, sessions: FocusSession[], nowMs
     .reduce((sum, session) => {
       const start = new Date(session.startedAt).getTime()
       if (!Number.isFinite(start)) return sum
-      const rawEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs
-      return sum + Math.max(0, Math.round((rawEnd - start) / 1000))
+      const end = focusSessionEndMs(session, nowMs)
+      return sum + Math.max(0, Math.round((end - start) / 1000))
     }, 0)
 }
 
@@ -120,9 +138,7 @@ export function focusHistoryForDate(tasks: Task[], notes: Note[], sessions: Focu
     if (session.trashedAt) return
     const start = new Date(session.startedAt).getTime()
     if (!Number.isFinite(start)) return
-    const rawEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs
-    const plannedEnd = session.mode === 'countdown' && session.plannedSeconds ? start + session.plannedSeconds * 1000 : rawEnd
-    const end = Math.min(rawEnd, plannedEnd)
+    const end = focusSessionEndMs(session, nowMs)
     const overlap = Math.max(0, Math.min(end, dayEnd) - Math.max(start, dayStart))
     if (overlap <= 0) return
     const seconds = Math.round(overlap / 1000)

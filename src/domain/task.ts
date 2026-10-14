@@ -40,9 +40,9 @@ export function directFocusSecondsByDate(sessions: FocusSession[], nowMs: number
     if (!includeTagIds(session.tagIds)) return
     const start = new Date(session.startedAt).getTime()
     if (!Number.isFinite(start)) return
-    const plannedEnd = session.mode==='countdown' && session.plannedSeconds ? start + session.plannedSeconds*1000 : Infinity
     const explicitEnd = session.endedAt ? new Date(session.endedAt).getTime() : nowMs
-    const end = Math.min(Number.isFinite(explicitEnd)?explicitEnd:nowMs, plannedEnd)
+    const activePlannedEnd = !session.endedAt && session.mode==='countdown' && session.plannedSeconds ? start + session.plannedSeconds*1000 : Infinity
+    const end = Math.min(Number.isFinite(explicitEnd)?explicitEnd:nowMs, activePlannedEnd)
     if (end<=start) return
     let cursor=start
     while(cursor<end){

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { FocusSession, Task } from '../../src/types'
-import { activeFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, finishedFocusSession, focusHistoryForDate, focusTiming, formatFocusClock, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from '../../src/domain/focus'
+import { activeFocusSession, activeFocusSessions, boundedInteger, countdownMinutes, finishedFocusSession, focusHistoryForDate, focusSessionDurationSeconds, focusTiming, formatFocusClock, permanentlyDeleteFocusSession, purgeTrashedFocusSessions, restoreFocusSession, trashFocusSession } from '../../src/domain/focus'
 
 const session = (patch: Partial<FocusSession> = {}): FocusSession => ({
   id: 'focus-1', tagIds: ['default'], mode: 'stopwatch', startedAt: '2026-10-04T10:00:00.000Z',
@@ -108,11 +108,23 @@ test.describe('focus domain regression', () => {
     expect(rows[0]).toMatchObject({ kind:'task', title:'Paper', seconds:900 })
   })
 
-  test('free focus remains separate and countdown overlap is capped', () => {
-    const direct = session({ id:'direct', mode:'countdown', plannedSeconds:600, startedAt:'2026-10-04T12:00:00', endedAt:'2026-10-04T12:30:00' })
+  test('finished focus uses its actual start/end interval even when a stale duration or countdown plan disagrees', () => {
+    const direct = session({ id:'direct', mode:'countdown', plannedSeconds:600, startedAt:'2026-10-04T12:00:00', endedAt:'2026-10-04T12:30:00', durationSeconds:60 })
     const rows = focusHistoryForDate([task()], [], [direct], '2026-10-04', new Date('2026-10-04T13:00:00').getTime())
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ kind:'direct', title:'自由专注', seconds:600 })
+    expect(rows[0]).toMatchObject({ kind:'direct', title:'自由专注', seconds:1800 })
+    expect(focusSessionDurationSeconds(direct, new Date('2026-10-04T13:00:00').getTime())).toBe(1800)
+  })
+
+  test('one cross-midnight FocusSession is projected into two day slices without becoming two records', () => {
+    const crossMidnight = session({ id:'cross', startedAt:'2026-10-04T23:55:00', endedAt:'2026-10-05T00:05:00', durationSeconds:600 })
+    const now = new Date('2026-10-05T01:00:00').getTime()
+    const first = focusHistoryForDate([], [], [crossMidnight], '2026-10-04', now)
+    const second = focusHistoryForDate([], [], [crossMidnight], '2026-10-05', now)
+    expect(first).toHaveLength(1); expect(second).toHaveLength(1)
+    expect(first[0]).toMatchObject({ id:'direct:cross', seconds:300 })
+    expect(second[0]).toMatchObject({ id:'direct:cross', seconds:300 })
+    expect(first[0].session).toBe(crossMidnight); expect(second[0].session).toBe(crossMidnight)
   })
 
 })

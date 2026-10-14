@@ -58,6 +58,7 @@ test('editing a contextual focus session changes time and tags without replacing
   const start = app.indexOf('const saveFocusSessionEdit =')
   const end = app.indexOf('const anniversaryOccurrencesByDate', start)
   const body = app.slice(start, end)
-  expect(body).toContain('return {...session,tagIds:')
+  expect(body).toContain('{...session,tagIds:')
+  expect(body).toContain('startedAt:start.toISOString(),endedAt:end.toISOString(),durationSeconds')
   expect(body).not.toContain('context:')
 })
