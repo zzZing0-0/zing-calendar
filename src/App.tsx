@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.33'
+const APP_VERSION = '2.9.35'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -1733,7 +1733,7 @@ function App() {
     const startedAt = new Date().toISOString()
     setFocusSessions(current => [...current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[selectedTagId], startedAt })])
     setPendingNoteFocusId(null)
-    setFocusOpen(true)
+    setFocusOpen(false)
     setMainView('notes')
     setRequestedNoteId(note.id)
     setTimerNow(Date.now())
@@ -3020,7 +3020,7 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>今天</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusNote){setMainView('notes');setRequestedNoteId(activeFocusNote.id);setFocusOpen(true);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusNote){setFocusOpen(false);setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
             <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
@@ -4053,9 +4053,9 @@ function App() {
 
       {focusOpen && (
         <div className="modal-layer focus-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label={activeFocusSession?'专注进行中':'关闭专注'} onClick={()=>{if(!activeFocusSession)setFocusOpen(false)}} />
+          <button className="modal-backdrop" type="button" aria-label="关闭专注界面" onClick={()=>setFocusOpen(false)} />
           <section className="task-editor focus-panel" role="dialog" aria-modal="true" aria-label="专注">
-            <div className="editor-header"><div><span className="eyebrow">FOCUS</span><h2>{activeFocusSession?'正在专注':'开始专注'}</h2></div>{!activeFocusSession&&<button className="close-button" type="button" onClick={()=>setFocusOpen(false)}>×</button>}</div>
+            <div className="editor-header"><div><span className="eyebrow">FOCUS</span><h2>{activeFocusSession?'正在专注':'开始专注'}</h2></div><button className="close-button" type="button" onClick={()=>setFocusOpen(false)} aria-label="关闭专注界面">×</button></div>
             <div className="editor-body focus-body">
               {activeFocusSession ? <>
                 <div className="focus-live-clock">{formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}</div>
@@ -4280,7 +4280,7 @@ function App() {
 
       {viewingTask && (
         <div className="modal-layer task-view-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label={activeTimerTask?.id===viewingTask.id ? "任务计时中" : "关闭任务详情"} onClick={()=>{ if (activeTimerTask?.id!==viewingTask.id) { setTaskFocusHistoryOpen(false); setFocusEditId(null); setViewingTask(null) } }} />
+          <button className="modal-backdrop" type="button" aria-label="关闭任务详情" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} />
           <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
             <div className="editor-header task-view-header">
               <div className="task-view-heading">
@@ -4302,7 +4302,7 @@ function App() {
                   <h2 id="task-view-title">{viewingTask.title}</h2>
                 </div>
               </div>
-              {activeTimerTask?.id!==viewingTask.id && <button className="close-button" type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} aria-label="关闭">×</button>}
+              <button className="close-button" type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} aria-label="关闭任务详情">×</button>
             </div>
             <div className="editor-body task-view-body">
               {taskFocusHistoryOpen ? <section className="task-inline-focus-history" aria-label="任务专注历史">
@@ -4390,7 +4390,7 @@ function App() {
               }}>删除</button>}
               <div className="editor-primary-actions">
                 {activeTimerTask?.id===viewingTask.id ? (
-                  <span className="task-timer-lock-note">🔒 计时中，结束计时后可编辑或退出</span>
+                  <><span className="task-timer-lock-note">🔒 计时中，结束后可编辑</span><button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button></>
                 ) : (<>
                   <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
                   <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>

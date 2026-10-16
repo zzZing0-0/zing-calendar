@@ -14,12 +14,12 @@ test('note tag picker is mounted independently of the global focus modal', () =>
   expect(focusBlock).not.toContain('aria-label="选择笔记专注标签"')
 })
 
-test('starting note focus locks the originating note workspace with the shared focus modal', () => {
+test('starting note focus keeps the originating note workspace available without a blocking modal', () => {
   const start = app.indexOf('const startNoteFocus =')
   const request = app.indexOf('const requestNoteFocus =')
   const body = app.slice(start, request)
   expect(body).toContain('createNoteFocusSession')
-  expect(body).toContain('setFocusOpen(true)')
+  expect(body).toContain('setFocusOpen(false)')
   expect(body).toContain("setMainView('notes')")
   expect(body).toContain('setRequestedNoteId(note.id)')
 })
@@ -37,6 +37,6 @@ test('hydrated note focus restores the originating note workspace under the focu
   expect(branch).toContain('setRequestedNoteId(note.id)')
 })
 
-test('global focus trigger keeps active note focus locked above its note workspace', () => {
-  expect(app).toContain("if(activeFocusNote){setMainView('notes');setRequestedNoteId(activeFocusNote.id);setFocusOpen(true);return}")
+test('global focus trigger navigates to active note focus without reopening a blocking modal', () => {
+  expect(app).toContain("if(activeFocusNote){setFocusOpen(false);setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}")
 })
