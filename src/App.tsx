@@ -5,7 +5,7 @@ import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getO
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 
-const APP_VERSION = '2.9.35'
+const APP_VERSION = '2.9.36'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -469,6 +469,7 @@ function App() {
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([])
   const [focusHydrated, setFocusHydrated] = useState(false)
+  const routedFocusSessionIdRef = useRef<string | null>(null)
   const [focusOpen, setFocusOpen] = useState(false)
   const [focusMode, setFocusMode] = useState<'stopwatch'|'countdown'>('stopwatch')
   const [focusMinutes, setFocusMinutes] = useState('15')
@@ -1786,21 +1787,30 @@ function App() {
 
   useEffect(() => {
     if (!focusHydrated || !activeFocusSession) return
+    // Restore a running session's panel once. Task/note mutations must never
+    // reopen it after the user has dismissed it to work elsewhere.
+    if (routedFocusSessionIdRef.current === activeFocusSession.id) return
     const context = activeFocusSession.context
     if (context?.kind === 'task') {
       const task = activeTasks.find(item => item.id === context.taskId)
-      if (task) { setMainView('calendar'); setViewingTask(task) }
+      if (task) {
+        routedFocusSessionIdRef.current = activeFocusSession.id
+        setMainView('calendar')
+        setViewingTask(task)
+      }
       return
     }
     if (context?.kind === 'note') {
       const note = notes.find(item => item.id === context.noteId && !item.trashedAt)
       if (note) {
+        routedFocusSessionIdRef.current = activeFocusSession.id
         setMainView('notes')
         setRequestedNoteId(note.id)
         setFocusOpen(true)
       }
       return
     }
+    routedFocusSessionIdRef.current = activeFocusSession.id
     setMainView('calendar')
     setFocusOpen(true)
   }, [focusHydrated, activeFocusSession?.id, activeTasks, notes])
