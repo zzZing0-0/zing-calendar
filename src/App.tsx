@@ -1,11 +1,17 @@
+import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav } from './features/navigation/navigationConfig'
+import type { MobileNavConfig } from './features/navigation/navigationConfig'
+import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
+import { MobileNavigation, DesktopNavigation, MobileNavigationExtras } from './features/navigation/MobileNavigation'
+import { MobileNavigationSettings } from './features/navigation/MobileNavigationSettings'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, KeyboardEvent } from 'react'
 import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadNotes, loadNotebooks, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveNotes, saveNotebooks, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
+import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.9.36'
+const APP_VERSION = '2.10.3'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -253,6 +259,20 @@ async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], n
 }
 
 function App() {
+  const [mobileNav, setMobileNav] = useState<MobileNavConfig>(initialMobileNavigation)
+  const [mobileNavConfigured, setMobileNavConfigured] = useState(() => localStorage.getItem('zing:mobileNavigation') !== null)
+  const [syncedDefaultMobileNav, setSyncedDefaultMobileNav] = useState<MobileNavConfig | undefined>(loadDefaultNavigation)
+  const [mobileNavSettingsOpen, setMobileNavSettingsOpen] = useState(false)
+  const [mobileNavToast, setMobileNavToast] = useState('')
+  const updateMobileNav = (value: MobileNavConfig) => { setMobileNavConfigured(true); setMobileNav(value); saveLocalNavigation(value); setMobileNavToast('') }
+  const receiveDefaultMobileNav = (value: MobileNavConfig) => {
+    const saved = normalizeMobileNav(value)
+    setSyncedDefaultMobileNav(saved)
+    saveDefaultNavigation(saved)
+    const initialized = initializeFromSyncedDefault(saved)
+    if (initialized) { setMobileNav(initialized); setMobileNavConfigured(true) }
+  }
+
   // v1.1.6: keep the current-day object stable across ordinary UI renders.
   // A fresh Date here invalidated the entire continuous-calendar memo on every
   // button click (search, Today, Day Detail, etc.), rebuilding all month cells.
@@ -1232,13 +1252,14 @@ function App() {
   useEffect(()=>{localStorage.setItem('zing:randomPoolItems',JSON.stringify(randomPoolItems))},[randomPoolItems])
   useEffect(()=>{const live=new Set(randomPoolItems.map(item=>item.id));const clean=mixedPoolItemIds.filter(id=>live.has(id));if(clean.length!==mixedPoolItemIds.length){setMixedPoolItemIds(clean);return}localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(clean))},[randomPoolItems,mixedPoolItemIds])
   useEffect(() => { localStorage.setItem('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
+  useEffect(() => { if (mobileNavConfigured) saveLocalNavigation(mobileNav) }, [mobileNav, mobileNavConfigured])
   useEffect(() => {
     const now = new Date().toISOString()
     const clocks = advanceWordClock(wordCloudIgnored, settingsWordClockRef.current, now)
     settingsWordClockRef.current = clocks
     const next = buildSyncedSettings({
       greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
-      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds,
+      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds, defaultMobileNavigation: syncedDefaultMobileNav,
     }, clocks, now)
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -1246,6 +1267,7 @@ function App() {
         if (rows.length) {
           const existing=rows[0]
           settingsWordClockRef.current=hydrateWordClock(existing, now)
+          if (existing.defaultMobileNavigation) receiveDefaultMobileNav(existing.defaultMobileNavigation)
           syncSnapshotsRef.current.settings = rows; syncSnapshotReadyRef.current.settings = true; return
         }
         await saveUserSettings([next])
@@ -1261,7 +1283,7 @@ function App() {
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -2700,7 +2722,7 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -2792,8 +2814,9 @@ function App() {
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
         maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
         keepScreenAwakeDuringFocus:typeof s.keepScreenAwakeDuringFocus==='boolean'?s.keepScreenAwakeDuringFocus:keepScreenAwakeDuringFocus,
-        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds,
+        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds, defaultMobileNavigation: s.defaultMobileNavigation ? normalizeMobileNav(s.defaultMobileNavigation) : syncedDefaultMobileNav,
       }
+      if (s.defaultMobileNavigation) receiveDefaultMobileNav(normalizeMobileNav(s.defaultMobileNavigation))
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
       syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:backupPreview.notes, notebook:ensureDefaultNotebook(backupPreview.notebooks), mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
@@ -2901,6 +2924,7 @@ function App() {
       if (syncedSettings) {
         settingsWordClockRef.current=hydrateWordClock(syncedSettings, new Date().toISOString())
         const incoming=normalizedIncomingSettings(syncedSettings)
+        if (incoming.defaultMobileNavigation) receiveDefaultMobileNav(incoming.defaultMobileNavigation)
         suppressNextSettingsSyncRef.current = true
         localStorage.setItem('zing:greeting',incoming.greeting)
         localStorage.setItem('zing:weekStart',incoming.weekStartsMonday?'monday':'sunday')
@@ -3334,6 +3358,12 @@ function App() {
       {mainView === 'settings' && (
         <section className="settings-page">
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
+          <div className="settings-group mobile-nav-settings-group">
+            <div className="settings-group-title"><h3>导航</h3></div>
+            <button className="settings-link-row" type="button" onClick={() => { setMobileNavToast(''); setMobileNavSettingsOpen(true) }}><span><strong>导航栏设置</strong><small>选择底部导航的数量、内容与顺序。</small></span><b>›</b></button>
+            <MobileNavigationExtras missing={missingMobileNav(mobileNav)} onNavigate={switchMainView} />
+          </div>
+
 
           <div className="settings-group calendar-task-settings">
             <div className="settings-group-title"><h3>日历任务</h3></div>
@@ -3688,14 +3718,17 @@ function App() {
       )}
 
       {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !noteFocusHistoryId && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && (
-      <nav className="bottom-nav" aria-label="主要功能">
-        <button type="button" className={mainView==='calendar'?'active':''} onClick={() => switchMainView('calendar')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4.5 8.5h15M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" /></svg>日历</button>
-        <button type="button" className={mainView==='notes'?'active':''} onClick={() => switchMainView('notes')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3V4.5Zm3 0V20M11 9h5M11 13h5" /></svg>笔记</button>
-        <button type="button" className={mainView==='anniversaries'?'active':''} onClick={() => switchMainView('anniversaries')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10h12v10H6zM4 10h16M12 10v10M8.5 7.5c-1.8 0-3-1-3-2.3C5.5 4 6.4 3.4 7.4 3.4c1.7 0 3.2 2 4.6 4.1M15.5 7.5c1.8 0 3-1 3-2.3 0-1.2-.9-1.8-1.9-1.8-1.7 0-3.2 2-4.6 4.1" /></svg>纪念日</button>
-        <button type="button" className={mainView==='statistics'?'active':''} onClick={() => switchMainView('statistics')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11h3v9M10.5 20V5h3v15M16 20v-7h3v7M3.5 20.5h17" /></svg>统计</button>
-        <button type="button" className={mainView==='settings'?'active':''} onClick={() => switchMainView('settings')}><svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /></svg>设置</button>
-      </nav>
+      <>
+        <MobileNavigation config={mobileNav} active={mainView} onNavigate={switchMainView} />
+        <DesktopNavigation active={mainView} onNavigate={switchMainView} />
+      </>
       )}
+
+      {mobileNavSettingsOpen && mainView === 'settings' && <MobileNavigationSettings
+        config={mobileNav} onChange={updateMobileNav} onClose={() => setMobileNavSettingsOpen(false)} status={mobileNavToast}
+        onSaveDefault={() => { const saved = normalizeMobileNav(mobileNav); setSyncedDefaultMobileNav(saved); saveDefaultNavigation(saved); setMobileNavToast('✓ 已设为默认导航，下次云同步时保存') }}
+        onRestoreDefault={() => { updateMobileNav(syncedDefaultMobileNav ?? BUILTIN_MOBILE_NAV); setMobileNavToast('✓ 已恢复默认导航') }}
+      />}
 
       {orphanCleanupOpen && (
         <div className="modal-layer storage-browser-layer orphan-cleanup-layer" role="presentation">
