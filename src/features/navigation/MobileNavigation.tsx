@@ -23,6 +23,6 @@ export function MobileNavigation({ config, active, onNavigate }: { config: Mobil
 export function DesktopNavigation({ active, onNavigate }: { active: NavigationPage; onNavigate: (page: NavigationPage) => void }) {
   const pages: NavigationPage[] = ['calendar', 'notes', 'anniversaries', 'statistics', 'settings']
   return <nav className="desktop-navigation" aria-label="主要功能">{pages.map(id =>
-    <button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>{mobileNavIcon(id)}{mobileNavLabel(id)}</button>
+    <button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>{mobileNavLabel(id)}</button>
   )}</nav>
 }

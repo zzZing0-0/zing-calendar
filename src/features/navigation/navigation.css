@@ -16,18 +16,58 @@
 .mobile-nav-panel p[role=status] { margin:10px 0 0; font-size:13px; color:#426a4f; }
 @media(max-width:700px) { .mobile-nav-settings-group { display:block; } .bottom-nav button { min-width:0; } }
 
-/* Desktop navigation occupies the existing header row, rather than overlaying content. */
+/* Desktop: a single fixed-height sticky header; local sticky page controls start below it. */
 @media (min-width:701px) {
-  .topbar { position:sticky; top:0; z-index:46; flex-wrap:wrap; background:rgba(250,251,250,.97); padding:10px 0; }
-  .desktop-navigation { display:flex; position:static; transform:none; inset:auto; flex:0 0 auto; margin-left:auto; box-shadow:none; border-radius:13px; gap:2px; }
-  .desktop-navigation button { min-width:62px; padding:7px 9px; }
+  .topbar {
+    position:sticky; top:0; z-index:80;
+    box-sizing:border-box; height:72px;
+    display:flex; flex-wrap:nowrap; align-items:center; gap:clamp(12px,2vw,28px);
+    padding:12px 0; background:#f5f7f4;
+    backdrop-filter:none;
+  }
+  .topbar .brand-block { order:0; flex:0 0 auto; min-width:0; }
+  .topbar .desktop-navigation {
+    order:1; display:flex; position:static; inset:auto; transform:none;
+    flex:0 0 auto; align-items:center; gap:clamp(3px,.5vw,10px);
+    margin:0; padding:0; border:0; border-radius:0;
+    background:transparent; box-shadow:none; backdrop-filter:none;
+  }
+  .topbar .desktop-navigation button {
+    display:inline-flex; align-items:center; justify-content:center;
+    position:relative; min-width:0; min-height:42px; padding:10px clamp(8px,1vw,15px);
+    border:0; border-radius:8px; background:transparent;
+    color:#7a8780; font-size:14px; font-weight:500; line-height:1.4;
+    white-space:nowrap; cursor:pointer;
+  }
+  .topbar .desktop-navigation button:hover { background:#f0f4f1; color:#42594b; }
+  .topbar .desktop-navigation button.active { background:transparent; color:#354f40; font-weight:650; }
+  .topbar .desktop-navigation button.active::after {
+    content:''; position:absolute; left:24%; right:24%; bottom:2px;
+    height:2px; border-radius:2px; background:#527563;
+  }
+  .topbar .global-search-wrap {
+    order:2; flex:1 1 220px; min-width:150px; max-width:360px;
+    width:auto; margin-left:auto;
+  }
   .app-shell { padding-top:20px; padding-bottom:36px; }
+  /* The app already has sticky calendar, anniversary and statistics controls.
+     Reserve the global header's vertical space instead of layering them at top:0. */
+  .calendar-sticky-header,
+  .anniversary-page .page-heading,
+  .statistics-page .stats-range { top:72px; }
+  .topbar .brand-block { display:flex; }
+
 }
-@media (min-width:701px) and (max-width:1040px) {
-  .topbar .global-search-wrap { order:3; flex:1 1 100%; }
+@media (min-width:701px) and (max-width:1080px) {
+  .topbar { height:120px; flex-wrap:wrap; row-gap:8px; }
+  .calendar-sticky-header,
+  .anniversary-page .page-heading,
+  .statistics-page .stats-range { top:120px; }
+  .topbar .global-search-wrap { order:3; flex:1 1 100%; max-width:none; margin-left:0; }
+  .topbar .desktop-navigation { margin-left:auto; }
 }
 .mobile-nav-setting-line > strong { white-space:nowrap; flex-shrink:0; }
 .mobile-nav-setting-line .setting-segment { flex:1; min-width:0; }
 
 @media (min-width:701px) { .bottom-nav { display:none; } }
-@media (max-width:700px) { .desktop-navigation { display:none; } }
+@media (max-width:700px) { .desktop-navigation { display:none; } .topbar .settings-brand { display:none!important; } }

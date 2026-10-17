@@ -11,7 +11,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.10.6'
+const APP_VERSION = '2.10.8'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3015,12 +3015,12 @@ function App() {
   return (
     <main className="app-shell">
       <header className={`topbar${mainView==='calendar'?' calendar-topbar':''}`}>
-        {mainView!=='settings' && <div className={`brand-block${mobileSearchVisible ? " search-open" : ""}`}>
+        <div className={`brand-block${mainView==='settings' ? ' settings-brand' : ''}${mobileSearchVisible ? " search-open" : ""}`}>
           <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}><span className="brand-mark-desktop">Z</span><span className="brand-mark-mobile" aria-hidden="true">🔍</span></button>
           <div className="brand-copy">
             <p>{greeting}</p>
           </div>
-        </div>}
+        </div>
 
         {mobileSearchVisible && <button className="mobile-search-backdrop" type="button" aria-label="关闭搜索" onClick={()=>{setMobileSearchVisible(false);setSearchOpen(false)}} />}
         <div className={`global-search-wrap${mobileSearchVisible ? ' mobile-open' : ''}`} ref={searchWrapRef}>
