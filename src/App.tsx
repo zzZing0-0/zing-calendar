@@ -4,6 +4,8 @@ import type { MobileNavConfig } from './features/navigation/navigationConfig'
 import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
 import { MobileNavigation } from './features/navigation/MobileNavigation'
 import { DesktopNavigationDrawer } from './features/navigation/DesktopNavigationDrawer'
+import { DEFAULT_MODULE_ORDER, normalizeModuleOrder, moveModule, orderedCategories } from './domain/modulePriority'
+import type { ModuleKey } from './domain/modulePriority'
 import { MobileNavigationSettings } from './features/navigation/MobileNavigationSettings'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -13,7 +15,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.11.24'
+const APP_VERSION = '2.11.25'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -305,6 +307,9 @@ function App() {
   const inboxSortDragRef = useRef<InboxSortKey | null>(null)
   const [inboxSortDropTarget, setInboxSortDropTarget] = useState<InboxSortKey | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
+  const [modulePriorityOpen, setModulePriorityOpen] = useState(false)
+  const [moduleOrder, setModuleOrder] = useState<ModuleKey[]>(() => { try { return normalizeModuleOrder(JSON.parse(localStorage.getItem('zing:modulePriority') || 'null')) } catch { return [...DEFAULT_MODULE_ORDER] } })
+  const moduleDragRef = useRef<ModuleKey | null>(null)
   const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'note'|'anniversary'|'focus'|'habit'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -1265,6 +1270,7 @@ function App() {
   useEffect(()=>{localStorage.setItem('zing:randomPoolGroups',JSON.stringify(randomPoolGroups))},[randomPoolGroups])
   useEffect(()=>{localStorage.setItem('zing:randomPoolItems',JSON.stringify(randomPoolItems))},[randomPoolItems])
   useEffect(()=>{const live=new Set(randomPoolItems.map(item=>item.id));const clean=mixedPoolItemIds.filter(id=>live.has(id));if(clean.length!==mixedPoolItemIds.length){setMixedPoolItemIds(clean);return}localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(clean))},[randomPoolItems,mixedPoolItemIds])
+  useEffect(() => { localStorage.setItem('zing:modulePriority', JSON.stringify(moduleOrder)) }, [moduleOrder])
   useEffect(() => { localStorage.setItem('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
   useEffect(() => { if (mobileNavConfigured) saveLocalNavigation(mobileNav) }, [mobileNav, mobileNavConfigured])
   useEffect(() => {
@@ -1273,7 +1279,7 @@ function App() {
     settingsWordClockRef.current = clocks
     const next = buildSyncedSettings({
       greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
-      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds, defaultMobileNavigation: syncedDefaultMobileNav,
+      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds, defaultMobileNavigation: syncedDefaultMobileNav, modulePriority: moduleOrder,
     }, clocks, now)
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -1282,6 +1288,7 @@ function App() {
           const existing=rows[0]
           settingsWordClockRef.current=hydrateWordClock(existing, now)
           if (existing.defaultMobileNavigation) receiveDefaultMobileNav(existing.defaultMobileNavigation)
+          if (existing.modulePriority) setModuleOrder(normalizeModuleOrder(existing.modulePriority))
           syncSnapshotsRef.current.settings = rows; syncSnapshotReadyRef.current.settings = true; return
         }
         await saveUserSettings([next])
@@ -1297,7 +1304,7 @@ function App() {
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav,moduleOrder])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -2751,7 +2758,7 @@ function App() {
         {path:'data/focus.json',bytes:json(focusSessions)},
         {path:'data/habits.json',bytes:json(habits)},
         {path:'data/habit-checkins.json',bytes:json(habitCheckIns)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav,modulePriority:moduleOrder})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -2843,9 +2850,10 @@ function App() {
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
         maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
         keepScreenAwakeDuringFocus:typeof s.keepScreenAwakeDuringFocus==='boolean'?s.keepScreenAwakeDuringFocus:keepScreenAwakeDuringFocus,
-        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds, defaultMobileNavigation: s.defaultMobileNavigation ? normalizeMobileNav(s.defaultMobileNavigation) : syncedDefaultMobileNav,
+        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds, defaultMobileNavigation: s.defaultMobileNavigation ? normalizeMobileNav(s.defaultMobileNavigation) : syncedDefaultMobileNav, modulePriority:normalizeModuleOrder(s.modulePriority),
       }
       if (s.defaultMobileNavigation) receiveDefaultMobileNav(normalizeMobileNav(s.defaultMobileNavigation))
+      setModuleOrder(normalizeModuleOrder(s.modulePriority))
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
       syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:backupPreview.notes, notebook:ensureDefaultNotebook(backupPreview.notebooks), mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, habit:backupPreview.habits, habitCheckIn:backupPreview.habitCheckIns, settings:[restoredSettings] }
@@ -2955,6 +2963,7 @@ function App() {
         settingsWordClockRef.current=hydrateWordClock(syncedSettings, new Date().toISOString())
         const incoming=normalizedIncomingSettings(syncedSettings)
         if (incoming.defaultMobileNavigation) receiveDefaultMobileNav(incoming.defaultMobileNavigation)
+        setModuleOrder(normalizeModuleOrder(incoming.modulePriority))
         suppressNextSettingsSyncRef.current = true
         localStorage.setItem('zing:greeting',incoming.greeting)
         localStorage.setItem('zing:weekStart',incoming.weekStartsMonday?'monday':'sunday')
@@ -3080,7 +3089,7 @@ function App() {
           {searchOpen && normalizedSearch && (
             <div className="search-panel">
               {tagSearchMode ? <div className="search-tag-mode"># 标签搜索</div> : <div className="search-filters">
-                {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['habit','习惯']] as const).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
+                {orderedCategories([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['habit','习惯']] as const,moduleOrder).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
               </div>}
               <div className="search-results">
                 {searchResults.length === 0 ? <p className="search-empty">没有找到结果。</p> : searchResults.map(result => (
@@ -3413,6 +3422,7 @@ function App() {
           <div className="settings-group mobile-nav-settings-group">
             <div className="settings-group-title"><h3>导航</h3></div>
             <button className="settings-link-row" type="button" onClick={() => { setMobileNavToast(''); setMobileNavSettingsOpen(true) }}><span><strong>导航栏设置</strong></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={() => setModulePriorityOpen(true)}><span><strong>模块优先级</strong><small>统一搜索、回收站与标签管理的分类顺序</small></span><b>›</b></button>
             {missingMobileNav(mobileNav).map(page => <button key={page} className="settings-link-row" type="button" aria-label={mobileNavLabel(page)} onClick={() => switchMainView(page)}><span><strong>{mobileNavLabel(page)}</strong></span><b>›</b></button>)}
           </div>
 
@@ -3775,6 +3785,19 @@ function App() {
       </>
       )}
 
+      {modulePriorityOpen && mainView === 'settings' && <div className="modal-layer" role="presentation">
+        <button className="modal-backdrop" type="button" aria-label="关闭模块优先级" onClick={() => setModulePriorityOpen(false)} />
+        <section className="task-editor module-priority-dialog" role="dialog" aria-modal="true" aria-label="模块优先级">
+          <div className="editor-header"><div><span className="eyebrow">MODULE PRIORITY</span><h2>模块优先级</h2></div><button className="close-button" type="button" onClick={() => setModulePriorityOpen(false)}>×</button></div>
+          <div className="editor-body"><p className="module-priority-hint">拖动调整顺序，或使用上下按钮。只改变跨模块分类入口的顺序，不影响内容排序和导航栏。</p>
+            <div className="module-priority-list">{moduleOrder.map((key,index) => <div key={key} className="module-priority-item" draggable onDragStart={event => {moduleDragRef.current=key;event.dataTransfer.effectAllowed='move'}} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();if(moduleDragRef.current)setModuleOrder(current=>moveModule(current,moduleDragRef.current!,key));moduleDragRef.current=null}} onDragEnd={()=>{moduleDragRef.current=null}}>
+              <span className="module-priority-handle" aria-hidden="true">☰</span><strong>{({task:'任务',note:'笔记',habit:'习惯',journal:'记录',anniversary:'纪念日',focus:'专注'} as const)[key]}</strong>
+              <button type="button" aria-label={`上移${key}`} disabled={index===0} onClick={()=>setModuleOrder(current=>moveModule(current,key,current[index-1]))}>↑</button><button type="button" aria-label={`下移${key}`} disabled={index===moduleOrder.length-1} onClick={()=>setModuleOrder(current=>moveModule(current,key,current[index+1],true))}>↓</button>
+            </div>)}</div>
+            <button type="button" className="ghost-button" onClick={()=>setModuleOrder([...DEFAULT_MODULE_ORDER])}>恢复默认</button>
+          </div>
+        </section>
+      </div>}
       {mobileNavSettingsOpen && mainView === 'settings' && <MobileNavigationSettings
         config={mobileNav} onChange={updateMobileNav} onClose={() => setMobileNavSettingsOpen(false)} status={mobileNavToast}
         onSaveDefault={() => { const saved = normalizeMobileNav(mobileNav); setSyncedDefaultMobileNav(saved); saveDefaultNavigation(saved); setMobileNavToast('✓ 已设为默认导航，下次云同步时保存') }}
@@ -4117,7 +4140,7 @@ function App() {
                     {editing&&record.session?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions">
                       {record.kind==='note'&&record.note&&<button type="button" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null);setNoteFocusHistoryId(record.note!.id);setMainView('notes');setRequestedNoteId(record.note!.id)}}>查看</button>}
                       {record.kind==='task'&&record.task&&<button type="button" onClick={()=>{setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task!)}}>查看</button>}
-                      {record.kind==='direct'&&record.session&&<><button type="button" onClick={()=>beginEditFocusSession(record.session!)}>更改</button><button type="button" className="danger" onClick={()=>{if(!window.confirm('确定删除这条专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></>}
+                      {record.kind==='direct'&&record.session&&<><button type="button" disabled={!record.session.endedAt} onClick={()=>beginEditFocusSession(record.session!)}>更改</button><button type="button" className="danger" disabled={!record.session.endedAt} onClick={()=>{if(!record.session?.endedAt)return;if(!window.confirm('确定删除这条专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></>}
                     </div>}
                   </div>})}</div></section>})}</div>}
             </div>
@@ -4139,7 +4162,7 @@ function App() {
                 const started=new Date(session.startedAt)
                 return <div className="focus-history-item" key={session.id}>
                   <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{formatUiDate(started)} · {started.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><small>{formatFocusDuration(seconds)}</small></div></div>
-                  {editing?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!window.confirm('确定删除这条笔记专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
+                  {editing?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!session.endedAt)return;if(!window.confirm('确定删除这条笔记专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
                 </div>})}</div>}
             </div>
           </section>
@@ -4185,7 +4208,7 @@ function App() {
             <div className="editor-body overdue-inbox-body">
               {trashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <>
                 <div className="trash-filter-row" role="group" aria-label="回收站类型筛选">
-                  {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['focus','专注'],['habit','习惯']] as const).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
+                  {orderedCategories([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['focus','专注'],['habit','习惯']] as const,moduleOrder).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
                 </div>
                 {visibleTrashItems.length===0 ? <p className="page-empty compact">这一类还没有内容。</p> : <div className="overdue-inbox-list trash-inbox-list">
                   {(trashTaskGroups ? [
@@ -4304,7 +4327,7 @@ function App() {
             <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => {setSelectedTagManageId(null);setTagEditDraft(null);setTagManagerOpen(false)}}>×</button></div>
             <div className="editor-body">
               <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
-                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
+                {orderedCategories([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const,moduleOrder).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
               </div>
 
               <div className="compact-tag-create">
@@ -4339,7 +4362,7 @@ function App() {
               <label className="field"><span>名称</span><input value={tagEditDraft?.name ?? tag.name} onChange={e=>setTagEditDraft(current=>current?{...current,name:e.target.value}:current)} autoFocus /></label>
               <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
               <div className="field"><span>分类</span><div className="tag-detail-scope">
-                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={`${(tagEditDraft?.scope ?? tag.scope)===scope?'active ':''}${blocked?'scope-disabled':''}`.trim()} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
+                {orderedCategories([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const,moduleOrder).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={`${(tagEditDraft?.scope ?? tag.scope)===scope?'active ':''}${blocked?'scope-disabled':''}`.trim()} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
               </div><small className="tag-usage-hint">当前引用：{tagUsageAreas(tag.id).join(' · ') || '暂无'}</small></div>
             </div>
             <div className="editor-actions compact-tag-edit-actions">
@@ -4409,7 +4432,7 @@ function App() {
                   const started=new Date(session.startedAt)
                   return <div className="focus-history-item" key={session.id}>
                     <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{formatUiDate(started)} · {started.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><small>{formatFocusDuration(seconds)}</small></div></div>
-                    {editing?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!window.confirm('确定删除这条任务专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
+                    {editing?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!session.endedAt)return;if(!window.confirm('确定删除这条任务专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
                   </div>})}</div>}
               </section> : <>
               {viewingTask.date && <div className="task-view-schedule" aria-label="任务时间">

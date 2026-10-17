@@ -196,6 +196,7 @@ export type EncouragementMessage = {
 export type EncouragementStyle = 'dark' | 'light' | 'random'
 
 export type SyncedUserSettings = {
+  modulePriority?: import('./domain/modulePriority').ModuleKey[]
   defaultMobileNavigation?: import('./features/navigation/navigationConfig').MobileNavConfig
   id: 'settings'
   updatedAt: string
@@ -256,7 +257,8 @@ export type BackupPreview = {
     randomPoolGroups?: RandomPoolGroup[]
     randomPoolItems?: RandomPoolItem[]
   mixedPoolItemIds?: string[]
-    defaultMobileNavigation?: import('./features/navigation/navigationConfig').MobileNavConfig
+    modulePriority?: import('./domain/modulePriority').ModuleKey[]
+  defaultMobileNavigation?: import('./features/navigation/navigationConfig').MobileNavConfig
   }
   attachments: {
     storageKey: string
