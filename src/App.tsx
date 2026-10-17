@@ -13,7 +13,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.11.18'
+const APP_VERSION = '2.11.20'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3376,7 +3376,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'habits' && <HabitsPage habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} />}
+      {mainView === 'habits' && <HabitsPage formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} />}
       {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={requestNoteFocus} onStopNoteFocus={stopNoteFocus} onOpenFocusHistory={note=>{setFocusEditId(null);setNoteFocusHistoryId(note.id)}} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
 
       {mainView === 'anniversaries' && (

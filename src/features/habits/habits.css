@@ -129,3 +129,31 @@
  .habit-log-editor label{width:100%;min-width:0}
  .habits-page .habit-card-main{color:#30463a}
 }
+
+/* v2.11.19 — iOS Safari: constrain the native date picker independently of its
+   intrinsic text width. The visible date uses the app-wide formatter; the native
+   input remains an accessible, full-area hit target for the OS date picker. */
+.habit-log-editor .habit-date-control{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  width:100%;min-width:0;max-width:100%;height:46px;box-sizing:border-box;
+  overflow:hidden;border:1px solid #d6ded9;border-radius:9px;background:#f3f5f3;
+}
+.habit-log-editor .habit-date-display{
+  display:block;max-width:100%;min-width:0;padding:0 12px;
+  box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#30463a;-webkit-text-fill-color:#30463a;text-align:center;
+  font-size:15px;line-height:1.4;pointer-events:none;
+}
+.habit-log-editor .habit-date-control input[type="date"]{
+  position:absolute;inset:0;width:100%;height:100%;min-width:0;max-width:100%;
+  margin:0;padding:0;border:0;border-radius:0;box-sizing:border-box;
+  opacity:0;cursor:pointer;z-index:1;
+}
+.habit-log-editor .habit-date-control:focus-within{outline:2px solid #4d8967;outline-offset:2px}
+/* Explicitly beat the generic modal-button palette rule: submit text must
+   remain visible on the dark green fill, including on WebKit. */
+.habit-modal .habit-log-editor > button:not(.danger){
+  background:#3c7058;border-color:#3c7058;color:#fff;
+  -webkit-text-fill-color:#fff;opacity:1;
+}
+.habit-modal .habit-log-editor > button:disabled{opacity:.55}
