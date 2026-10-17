@@ -261,3 +261,15 @@
 .mobile-nav-empty { padding:15px; text-align:center; color:#859087; font-size:13px; }
 .mobile-nav-drop-end { height:3px; background:#5a9d70; margin:2px 0; }
 @media(max-width:390px) { .mobile-nav-panel { padding:14px; } .mobile-nav-sort-row { gap:5px; padding:4px; } .mobile-nav-row-actions button { padding:5px; } }
+
+/* v2.11.18: drag handle is the only editing control; no browser-blue action links. */
+.mobile-nav-panel,.mobile-nav-panel button,.mobile-nav-panel span{color:#344b3c}
+.mobile-nav-panel button{font-family:inherit}
+.mobile-nav-panel header button{color:#536b5b}
+.mobile-nav-sort-row,.mobile-nav-fixed-row{color:#344b3c}
+.mobile-nav-sort-row>span{color:#344b3c}
+.mobile-nav-drag-handle{color:#718579!important;touch-action:none}
+.mobile-nav-row-actions{display:none}
+.mobile-nav-dropzone.drop-active{box-shadow:inset 0 0 0 1px #68a57d}
+.mobile-nav-panel .mobile-nav-default-action{color:#fff}
+.mobile-nav-panel .mobile-nav-restore-action{color:#3c7058}

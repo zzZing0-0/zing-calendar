@@ -63,19 +63,15 @@ export function MobileNavigationSettings({ config, onChange, onSaveDefault, onRe
   }
   const finishPointer = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const state = drag.current
-    if (state?.ready && dragging) commit(state.id, targetAt(event.clientX, event.clientY) ?? overRef.current)
+    if (state?.ready) commit(state.id, targetAt(event.clientX, event.clientY) ?? overRef.current)
     else cancel()
   }
 
   const rows = (area: Area, ids: MobileNavChoice[]) => <div className={`mobile-nav-dropzone ${over?.area === area ? 'drop-active' : ''}`} data-nav-area={area} aria-label={area === 'shown' ? '底部显示' : '不显示'}>
     {ids.map((id, index) => <div key={id} data-nav-area={area} data-nav-index={index} className={`mobile-nav-sort-row ${dragging === id ? 'dragging' : ''} ${over?.area === area && over.index === index ? 'drop-before' : ''}`}>
-      <button className="mobile-nav-drag-handle" type="button" aria-label={`拖动${mobileNavLabel(id)}`} onPointerDown={event => startPointer(event, id)} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={cancel}>⠿</button>
+      <button className="mobile-nav-drag-handle" type="button" aria-label={`拖动${mobileNavLabel(id)}`} onPointerDown={event => startPointer(event, id)} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={cancel} onLostPointerCapture={cancel}>⠿</button>
       {mobileNavIcon(id)}<span>{mobileNavLabel(id)}</span>
-      <div className="mobile-nav-row-actions">
-        <button type="button" aria-label={`${mobileNavLabel(id)}上移`} disabled={index === 0} onClick={() => onChange(moveMobileNav(config, id, area, index - 1))}>↑</button>
-        <button type="button" aria-label={`${mobileNavLabel(id)}下移`} disabled={index === ids.length - 1} onClick={() => onChange(moveMobileNav(config, id, area, index + 2))}>↓</button>
-        <button type="button" aria-label={`${mobileNavLabel(id)}${area === 'shown' ? '移至不显示' : '移至底部显示'}`} disabled={area === 'shown' ? config.middleItems.length <= 2 : config.middleItems.length >= 3} onClick={() => onChange(moveMobileNav(config, id, area === 'shown' ? 'hidden' : 'shown', area === 'shown' ? missingMobileNav(config).length : config.middleItems.length))}>{area === 'shown' ? '隐藏' : '显示'}</button>
-      </div>
+
     </div>)}
     {over?.area === area && over.index === ids.length && <div className="mobile-nav-drop-end" />}
     {ids.length === 0 && <div className="mobile-nav-empty">拖动项目到这里</div>}
@@ -84,7 +80,7 @@ export function MobileNavigationSettings({ config, onChange, onSaveDefault, onRe
   return <div className="mobile-nav-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="mobile-nav-panel" role="dialog" aria-modal="true" aria-label="导航栏设置">
       <header><h3>导航栏设置</h3><button type="button" onClick={onClose} aria-label="关闭导航栏设置">×</button></header>
-      <p className="mobile-nav-help">长按左侧把手拖动排序或移动到另一栏；也可使用右侧按钮。</p>
+      <p className="mobile-nav-help">长按左侧把手拖动排序，或拖到另一栏调整显示位置。底部最多显示 5 项。</p>
       <div className="mobile-nav-section-title"><strong>底部显示</strong><span>{config.middleItems.length + 2} / 5</span></div>
       <div className="mobile-nav-fixed-row">{mobileNavIcon('calendar')}<span>日历</span><small>固定首位</small></div>
       {rows('shown', config.middleItems)}

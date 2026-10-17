@@ -114,3 +114,18 @@
  .habit-daily-section .habit-daily-row button{border-radius:10px;padding:7px 9px;font-size:12px!important;min-height:34px;max-width:155px;white-space:normal;line-height:1.3;color:#3c7058}
  .habit-daily-section .habit-daily-archived{font-size:12px;white-space:normal;text-align:right}
 }
+
+/* v2.11.18: native iOS form controls must shrink inside the modal grid. */
+.habit-modal,.habit-log-editor,.habit-form,.habit-log-editor label,.habit-form label{min-width:0;max-width:100%;box-sizing:border-box}
+.habit-log-editor input,.habit-form input,.habit-form select{display:block;width:100%;min-width:0;max-width:100%;box-sizing:border-box;color:#30463a;-webkit-text-fill-color:#30463a}
+.habit-log-editor input[type="date"]{appearance:auto;-webkit-appearance:auto;min-inline-size:0;max-inline-size:100%;overflow:hidden}
+.habit-card-main,.habit-card-main:link,.habit-card-main:visited,.habit-card-main strong,.habit-daily-section .habit-daily-name{color:#30463a;-webkit-text-fill-color:currentColor;text-decoration:none}
+.habit-card-main:focus-visible,.habit-modal button:focus-visible{outline:2px solid #4d8967;outline-offset:2px}
+.habit-modal button:not(.danger):not(.primary-button),.habit-archive-row button,.habit-daily-row button{color:#3c7058;text-decoration:none}
+@media(max-width:600px){
+ .habit-modal-backdrop{box-sizing:border-box;min-width:0}
+ .habit-modal{min-width:0;max-width:100%;overflow-x:hidden}
+ .habit-log-editor{grid-template-columns:minmax(0,1fr)}
+ .habit-log-editor label{width:100%;min-width:0}
+ .habits-page .habit-card-main{color:#30463a}
+}
