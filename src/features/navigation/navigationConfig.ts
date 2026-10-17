@@ -2,7 +2,7 @@
 export const MOBILE_NAV_CHOICES = ['notes', 'habits', 'anniversaries', 'statistics'] as const
 export type MobileNavChoice = typeof MOBILE_NAV_CHOICES[number]
 export type MobileNavConfig = { itemCount: 4 | 5; middleItems: MobileNavChoice[] }
-export const BUILTIN_MOBILE_NAV: MobileNavConfig = { itemCount: 5, middleItems: ['notes', 'anniversaries', 'statistics'] }
+export const BUILTIN_MOBILE_NAV: MobileNavConfig = { itemCount: 4, middleItems: ['notes', 'habits'] }
 
 export function normalizeMobileNav(value: unknown): MobileNavConfig {
   const candidate = value && typeof value === 'object' ? value as Partial<MobileNavConfig> : {}

@@ -1,4 +1,5 @@
-import { BUILTIN_MOBILE_NAV, normalizeMobileNav } from './features/navigation/navigationConfig'
+import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav } from './features/navigation/navigationConfig'
+import { mobileNavLabel } from './features/navigation/MobileNavigation'
 import type { MobileNavConfig } from './features/navigation/navigationConfig'
 import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
 import { MobileNavigation } from './features/navigation/MobileNavigation'
@@ -3412,7 +3413,7 @@ function App() {
           <div className="settings-group mobile-nav-settings-group">
             <div className="settings-group-title"><h3>导航</h3></div>
             <button className="settings-link-row" type="button" onClick={() => { setMobileNavToast(''); setMobileNavSettingsOpen(true) }}><span><strong>导航栏设置</strong></span><b>›</b></button>
-            <button className="settings-link-row" type="button" aria-label="统计" onClick={() => switchMainView('statistics')}><span><strong>统计</strong></span><b>›</b></button>
+            {missingMobileNav(mobileNav).map(page => <button key={page} className="settings-link-row" type="button" aria-label={mobileNavLabel(page)} onClick={() => switchMainView(page)}><span><strong>{mobileNavLabel(page)}</strong></span><b>›</b></button>)}
           </div>
 
 
