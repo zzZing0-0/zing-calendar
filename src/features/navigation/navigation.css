@@ -236,3 +236,28 @@
 @media (min-width:701px) and (max-width:1150px) {
   .app-shell .calendar-sticky-header .calendar-toolbar { padding:20px 18px; }
 }
+/* Two-area mobile navigation editor */
+.mobile-nav-panel { width:min(100%,480px); }
+.mobile-nav-help { margin:0 0 16px; color:#69776f; font-size:13px; line-height:1.6; }
+.mobile-nav-section-title { display:flex; align-items:center; justify-content:space-between; margin:18px 0 9px; gap:12px; }
+.mobile-nav-section-title strong { font-size:15px; }
+.mobile-nav-section-title span { color:#718077; font-size:12px; }
+.mobile-nav-dropzone { min-height:52px; border-radius:12px; background:#f8faf8; border:1px dashed #dce7de; padding:3px 8px; }
+.mobile-nav-dropzone.drop-active { border-color:#68a57d; background:#f0f8f1; }
+.mobile-nav-sort-row,.mobile-nav-fixed-row { display:flex; align-items:center; gap:10px; min-height:48px; padding:4px 8px; border-bottom:1px solid #e9eee9; }
+.mobile-nav-sort-row:last-child { border-bottom:0; }
+.mobile-nav-sort-row.dragging { opacity:.5; background:#dceee0; }
+.mobile-nav-sort-row.drop-before { border-top:3px solid #5a9d70; }
+.mobile-nav-sort-row .bottom-nav-icon,.mobile-nav-fixed-row .bottom-nav-icon { width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; }
+.mobile-nav-sort-row>span,.mobile-nav-fixed-row>span { flex:1; font-size:14px; }
+.mobile-nav-fixed-row { color:#67746b; background:#f6f8f6; border-radius:10px; }
+.mobile-nav-fixed-row:first-of-type { margin-bottom:4px; }
+.mobile-nav-fixed-row small { font-size:12px; }
+.mobile-nav-drag-handle { border:0; background:transparent; color:#738579; font-size:24px; padding:7px 5px; cursor:grab; touch-action:none; user-select:none; }
+.mobile-nav-drag-handle:active { cursor:grabbing; }
+.mobile-nav-row-actions { display:flex; gap:3px; }
+.mobile-nav-row-actions button { border:1px solid #e1e8e2; border-radius:7px; background:white; padding:5px 7px; font-size:12px; min-height:30px; }
+.mobile-nav-row-actions button:disabled { opacity:.3; }
+.mobile-nav-empty { padding:15px; text-align:center; color:#859087; font-size:13px; }
+.mobile-nav-drop-end { height:3px; background:#5a9d70; margin:2px 0; }
+@media(max-width:390px) { .mobile-nav-panel { padding:14px; } .mobile-nav-sort-row { gap:5px; padding:4px; } .mobile-nav-row-actions button { padding:5px; } }

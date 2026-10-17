@@ -1,6 +1,11 @@
-import { MOBILE_NAV_CHOICES, resizeMobileNav, selectMobileNav } from './navigationConfig'
+import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
+import { missingMobileNav, moveMobileNav } from './navigationConfig'
 import type { MobileNavConfig, MobileNavChoice } from './navigationConfig'
-import { mobileNavLabel } from './MobileNavigation'
+import { mobileNavIcon, mobileNavLabel } from './MobileNavigation'
+
+type Area = 'shown' | 'hidden'
+type Target = { area: Area; index: number }
 
 export function MobileNavigationSettings({ config, onChange, onSaveDefault, onRestoreDefault, onClose, status }: {
   config: MobileNavConfig
@@ -10,21 +15,82 @@ export function MobileNavigationSettings({ config, onChange, onSaveDefault, onRe
   onClose: () => void
   status: string
 }) {
+  const [dragging, setDragging] = useState<MobileNavChoice | null>(null)
+  const [over, setOver] = useState<Target | null>(null)
+  const drag = useRef<{ id: MobileNavChoice; startX: number; startY: number; ready: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null)
+  const overRef = useRef<Target | null>(null)
+  const cancel = () => { if (drag.current?.timer) clearTimeout(drag.current.timer); drag.current = null; overRef.current = null; setDragging(null); setOver(null) }
+  useEffect(() => () => { if (drag.current?.timer) clearTimeout(drag.current.timer) }, [])
+
+  const targetAt = (x: number, y: number): Target | null => {
+    const element = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-nav-area]')
+    if (!element) return null
+    const area = element.dataset.navArea as Area
+    if (area !== 'shown' && area !== 'hidden') return null
+    const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-nav-index]')
+    if (row && row.dataset.navArea === area) {
+      const rect = row.getBoundingClientRect()
+      return { area, index: Number(row.dataset.navIndex) + (y > rect.top + rect.height / 2 ? 1 : 0) }
+    }
+    return { area, index: area === 'shown' ? config.middleItems.length : missingMobileNav(config).length }
+  }
+  const updateTarget = (x: number, y: number) => {
+    const target = targetAt(x, y)
+    overRef.current = target
+    setOver(target)
+  }
+  const commit = (id: MobileNavChoice, target: Target | null) => {
+    if (target) onChange(moveMobileNav(config, id, target.area, target.index))
+    cancel()
+  }
+  const startPointer = (event: ReactPointerEvent<HTMLButtonElement>, id: MobileNavChoice) => {
+    if (event.button !== 0) return
+    cancel()
+    const state = { id, startX: event.clientX, startY: event.clientY, ready: event.pointerType === 'mouse', timer: undefined as ReturnType<typeof setTimeout> | undefined }
+    drag.current = state
+    if (event.pointerType !== 'mouse') state.timer = setTimeout(() => { if (drag.current === state) { state.ready = true; setDragging(id); navigator.vibrate?.(12) } }, 280)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const movePointer = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const state = drag.current
+    if (!state) return
+    if (!state.ready) {
+      if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) > 9) cancel()
+      return
+    }
+    if (!dragging) setDragging(state.id)
+    updateTarget(event.clientX, event.clientY)
+  }
+  const finishPointer = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const state = drag.current
+    if (state?.ready && dragging) commit(state.id, targetAt(event.clientX, event.clientY) ?? overRef.current)
+    else cancel()
+  }
+
+  const rows = (area: Area, ids: MobileNavChoice[]) => <div className={`mobile-nav-dropzone ${over?.area === area ? 'drop-active' : ''}`} data-nav-area={area} aria-label={area === 'shown' ? '底部显示' : '不显示'}>
+    {ids.map((id, index) => <div key={id} data-nav-area={area} data-nav-index={index} className={`mobile-nav-sort-row ${dragging === id ? 'dragging' : ''} ${over?.area === area && over.index === index ? 'drop-before' : ''}`}>
+      <button className="mobile-nav-drag-handle" type="button" aria-label={`拖动${mobileNavLabel(id)}`} onPointerDown={event => startPointer(event, id)} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={cancel}>⠿</button>
+      {mobileNavIcon(id)}<span>{mobileNavLabel(id)}</span>
+      <div className="mobile-nav-row-actions">
+        <button type="button" aria-label={`${mobileNavLabel(id)}上移`} disabled={index === 0} onClick={() => onChange(moveMobileNav(config, id, area, index - 1))}>↑</button>
+        <button type="button" aria-label={`${mobileNavLabel(id)}下移`} disabled={index === ids.length - 1} onClick={() => onChange(moveMobileNav(config, id, area, index + 2))}>↓</button>
+        <button type="button" aria-label={`${mobileNavLabel(id)}${area === 'shown' ? '移至不显示' : '移至底部显示'}`} disabled={area === 'shown' ? config.middleItems.length <= 2 : config.middleItems.length >= 3} onClick={() => onChange(moveMobileNav(config, id, area === 'shown' ? 'hidden' : 'shown', area === 'shown' ? missingMobileNav(config).length : config.middleItems.length))}>{area === 'shown' ? '隐藏' : '显示'}</button>
+      </div>
+    </div>)}
+    {over?.area === area && over.index === ids.length && <div className="mobile-nav-drop-end" />}
+    {ids.length === 0 && <div className="mobile-nav-empty">拖动项目到这里</div>}
+  </div>
+
   return <div className="mobile-nav-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="mobile-nav-panel" role="dialog" aria-modal="true" aria-label="导航栏设置">
       <header><h3>导航栏设置</h3><button type="button" onClick={onClose} aria-label="关闭导航栏设置">×</button></header>
-      <div className="mobile-nav-setting-line"><strong>数量</strong><div className="setting-segment">
-        <button type="button" className={config.itemCount === 4 ? 'active' : ''} onClick={() => onChange(resizeMobileNav(config, 4))}>4项</button>
-        <button type="button" className={config.itemCount === 5 ? 'active' : ''} onClick={() => onChange(resizeMobileNav(config, 5))}>5项</button>
-      </div></div>
-      <div className="mobile-nav-editor">
-        <div><span>位置 1</span><strong>日历</strong></div>
-        {config.middleItems.map((id, index) => <label key={index}><span>位置 {index + 2}</span>
-          <select aria-label={`导航位置 ${index + 2}`} value={id} onChange={event => onChange(selectMobileNav(config, index, event.target.value as MobileNavChoice))}>
-            {MOBILE_NAV_CHOICES.map(choice => <option key={choice} value={choice}>{mobileNavLabel(choice)}</option>)}
-          </select></label>)}
-        <div><span>位置 {config.itemCount}</span><strong>设置</strong></div>
-      </div>
+      <p className="mobile-nav-help">长按左侧把手拖动排序或移动到另一栏；也可使用右侧按钮。</p>
+      <div className="mobile-nav-section-title"><strong>底部显示</strong><span>{config.middleItems.length + 2} / 5</span></div>
+      <div className="mobile-nav-fixed-row">{mobileNavIcon('calendar')}<span>日历</span><small>固定首位</small></div>
+      {rows('shown', config.middleItems)}
+      <div className="mobile-nav-fixed-row">{mobileNavIcon('settings')}<span>设置</span><small>固定末位</small></div>
+      <div className="mobile-nav-section-title"><strong>不显示</strong><span>按此顺序显示在设置页</span></div>
+      {rows('hidden', missingMobileNav(config))}
       <button className="mobile-nav-default-action" type="button" onClick={onSaveDefault}>将当前导航设置为默认</button>
       <button className="mobile-nav-restore-action" type="button" onClick={onRestoreDefault}>恢复默认导航</button>
       {status && <p role="status">{status}</p>}

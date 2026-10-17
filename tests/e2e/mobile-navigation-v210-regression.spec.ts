@@ -6,8 +6,8 @@ const app = fs.readFileSync('src/App.tsx', 'utf8')
 const storage = fs.readFileSync('src/features/navigation/navigationStorage.ts', 'utf8')
 
 test('mobile navigation normalizes malformed values and preserves fixed ends', () => {
-  expect(normalizeMobileNav({ itemCount: 4, middleItems: ['statistics', 'statistics', 'unknown'] })).toEqual({ itemCount: 4, middleItems: ['statistics', 'notes'] })
-  expect(normalizeMobileNav({ itemCount: 5, middleItems: ['notes', 'anniversaries', 'statistics'] })).toEqual({ itemCount: 5, middleItems: ['notes', 'anniversaries', 'statistics'] })
+  expect(normalizeMobileNav({ itemCount: 4, middleItems: ['statistics', 'statistics', 'unknown'] })).toEqual({ itemCount: 4, middleItems: ['statistics', 'notes'], hiddenItems: ['habits', 'anniversaries'] })
+  expect(normalizeMobileNav({ itemCount: 5, middleItems: ['notes', 'anniversaries', 'statistics'], hiddenItems: ['habits'] })).toEqual({ itemCount: 5, middleItems: ['notes', 'anniversaries', 'statistics'], hiddenItems: ['habits'] })
   expect(missingMobileNav({ itemCount: 4, middleItems: ['notes', 'statistics'] })).toEqual(['habits', 'anniversaries'])
 })
 
@@ -37,9 +37,11 @@ test('mobile navigation settings save default and shortcuts follow hidden destin
   await expect(group.getByText('其他功能')).toHaveCount(0)
   await page.getByRole('button', { name: /导航栏设置/ }).click()
   const dialog = page.getByRole('dialog', { name: '导航栏设置' })
-  await dialog.getByRole('button', { name: '4项' }).click()
-  // Replace the habits slot, leaving notes in place; habits should become a Settings shortcut.
-  await dialog.getByLabel('导航位置 3').selectOption('statistics')
+  // The bottom bar must retain at least four entries: add a fifth before hiding habits.
+  await expect(dialog.getByRole('button', { name: '习惯移至不显示' })).toBeDisabled()
+  await dialog.getByRole('button', { name: '统计移至底部显示' }).click()
+  await expect(dialog.getByRole('button', { name: '习惯移至不显示' })).toBeEnabled()
+  await dialog.getByRole('button', { name: '习惯移至不显示' }).click()
   const bottomNav = page.getByRole('navigation', { name: '主要功能' })
   await expect(bottomNav.getByRole('button')).toHaveCount(4)
   await expect(bottomNav.getByRole('button', { name: '统计', exact: true })).toBeVisible()

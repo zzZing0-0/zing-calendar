@@ -4,7 +4,7 @@ import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav, selectMobileN
 import { initialMobileNavigation, loadLocalNavigation, saveLocalNavigation } from '../../src/features/navigation/navigationStorage'
 
 test('fresh installation defaults to calendar, notes, habits, settings', () => {
-  expect(BUILTIN_MOBILE_NAV).toEqual({ itemCount: 4, middleItems: ['notes', 'habits'] })
+  expect(BUILTIN_MOBILE_NAV).toEqual({ itemCount: 4, middleItems: ['notes', 'habits'], hiddenItems: ['anniversaries', 'statistics'] })
   expect(['calendar', ...BUILTIN_MOBILE_NAV.middleItems, 'settings']).toEqual(['calendar', 'notes', 'habits', 'settings'])
 })
 
