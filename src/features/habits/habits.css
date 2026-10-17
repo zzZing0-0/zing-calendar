@@ -157,3 +157,19 @@
   -webkit-text-fill-color:#fff;opacity:1;
 }
 .habit-modal .habit-log-editor > button:disabled{opacity:.55}
+
+/* v2.11.21 — compact target fields and unobstructed iOS date picker */
+.habit-target-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;min-width:0;align-items:end}
+.habit-target-fields:has(>label:nth-child(2):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}
+.habit-target-fields label{min-width:0;max-width:100%;font-size:13px}
+.habit-target-fields input{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+/* Native iOS picker overlays the web content. Hide underlying actions while
+   its date input holds focus, restoring them as soon as focus leaves. */
+.habit-modal:has(.habit-date-control:focus-within)>footer{visibility:hidden;pointer-events:none}
+@media(max-width:600px){
+ .habit-target-fields{gap:7px}
+ .habit-target-fields label{font-size:12px;white-space:nowrap}
+ .habit-target-fields input{padding:8px 9px;font-size:16px}
+ .habit-form{gap:10px}
+ .habit-modal:has(.habit-date-control:focus-within){overflow:hidden}
+}
