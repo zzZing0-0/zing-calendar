@@ -12,7 +12,7 @@ test('notes integration regression › note search results route to Notes instea
 })
 
 test('notes integration regression › explicit sync snapshots include note and notebook keys', () => {
-  const explicitReadySnapshot = "{ task:true, journal:true, note:true, notebook:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, settings:true }"
+  const explicitReadySnapshot = "{ task:true, journal:true, note:true, notebook:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, habit:true, habitCheckIn:true, settings:true }"
   expect(appSource).toContain(explicitReadySnapshot)
   expect(appSource).toContain('note: nextNotes')
   expect(appSource).toContain('notebook: nextNotebooks')

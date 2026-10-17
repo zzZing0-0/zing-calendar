@@ -8,14 +8,14 @@ const storage = fs.readFileSync('src/features/navigation/navigationStorage.ts', 
 test('mobile navigation normalizes malformed values and preserves fixed ends', () => {
   expect(normalizeMobileNav({ itemCount: 4, middleItems: ['statistics', 'statistics', 'unknown'] })).toEqual({ itemCount: 4, middleItems: ['statistics', 'notes'] })
   expect(normalizeMobileNav({ itemCount: 5, middleItems: ['notes', 'anniversaries', 'statistics'] })).toEqual(BUILTIN_MOBILE_NAV)
-  expect(missingMobileNav({ itemCount: 4, middleItems: ['notes', 'statistics'] })).toEqual(['anniversaries'])
+  expect(missingMobileNav({ itemCount: 4, middleItems: ['notes', 'statistics'] })).toEqual(['habits', 'anniversaries'])
 })
 
 test('mobile navigation swaps occupied entries and extends four to five', () => {
   const four = resizeMobileNav(BUILTIN_MOBILE_NAV, 4)
   expect(four.middleItems).toEqual(['notes', 'anniversaries'])
   expect(selectMobileNav(four, 0, 'anniversaries').middleItems).toEqual(['anniversaries', 'notes'])
-  expect(resizeMobileNav(four, 5).middleItems).toEqual(['notes', 'anniversaries', 'statistics'])
+  expect(resizeMobileNav(four, 5).middleItems).toEqual(['notes', 'anniversaries', 'habits'])
 })
 
 test('navigation is modular, only default template syncs, and desktop keeps all existing entries', () => {

@@ -1,5 +1,5 @@
 /** Navigation is a device-local preference; only the explicitly saved template syncs. */
-export const MOBILE_NAV_CHOICES = ['notes', 'anniversaries', 'statistics'] as const
+export const MOBILE_NAV_CHOICES = ['notes', 'habits', 'anniversaries', 'statistics'] as const
 export type MobileNavChoice = typeof MOBILE_NAV_CHOICES[number]
 export type MobileNavConfig = { itemCount: 4 | 5; middleItems: MobileNavChoice[] }
 export const BUILTIN_MOBILE_NAV: MobileNavConfig = { itemCount: 5, middleItems: ['notes', 'anniversaries', 'statistics'] }

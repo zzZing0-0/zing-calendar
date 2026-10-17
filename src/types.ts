@@ -151,7 +151,7 @@ export type AnniversaryDraft = {
   notes: string
 }
 
-export type TagScope = 'task' | 'focus' | 'journal' | 'note' | 'both'
+export type TagScope = 'task' | 'focus' | 'journal' | 'note' | 'habit' | 'both'
 export type Tag = { id: string; name: string; color: string; scope: TagScope; sortOrder?: number; archived?: boolean; archivedAt?: string; system?: boolean; systemKind?: 'default' | 'import-source'; sourceKey?: string; updatedAt: string }
 
 export type JournalDraft = {
@@ -235,6 +235,8 @@ export type BackupPreview = {
   tags: Tag[]
   anniversaries: Anniversary[]
   focusSessions: FocusSession[]
+  habits: import('./features/habits/habitDomain').Habit[]
+  habitCheckIns: import('./features/habits/habitDomain').HabitCheckIn[]
   settings: {
     greeting?: string
     weekStart?: 'monday' | 'sunday'

@@ -28,7 +28,7 @@ test('desktop sidebar is always visible and navigates without a drawer', async (
   await page.goto('/')
   const sidebar = page.getByRole('navigation', { name: '电脑端导航' })
   await expect(sidebar).toBeVisible()
-  await expect(sidebar.getByRole('button')).toHaveCount(5)
+  await expect(sidebar.getByRole('button')).toHaveCount(6)
   await expect(page.getByRole('searchbox', { name: '全局搜索' })).toBeVisible().catch(async () => {
     await expect(page.getByRole('textbox', { name: '全局搜索' })).toBeVisible()
   })
@@ -49,7 +49,7 @@ test('desktop sidebar collapses to SVG icons and restores its width', async ({ p
   await page.setViewportSize({ width: 1400, height: 900 })
   await page.goto('/')
   const sidebar = page.getByRole('navigation', { name: '电脑端导航' })
-  await expect(sidebar.locator('svg')).toHaveCount(5)
+  await expect(sidebar.locator('svg')).toHaveCount(6)
   const toggle = page.getByRole('button', { name: '折叠侧边栏' })
   await toggle.click()
   await expect(page.locator('.app-shell')).toHaveClass(/sidebar-collapsed/)

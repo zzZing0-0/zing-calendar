@@ -1,8 +1,9 @@
+import type { Habit } from '../features/habits/habitDomain'
 import type { Anniversary, JournalEntry, Note, Tag, Task } from '../types'
 import { anniversaryOccurrence } from './calendar'
 import { toDateKey } from './task'
 
-export type SearchFilter = 'all' | 'task' | 'journal' | 'note' | 'anniversary'
+export type SearchFilter = 'all' | 'task' | 'journal' | 'note' | 'anniversary' | 'habit'
 
 export type TagSearchUsage = { tasks: number; journals: number; days: number }
 
@@ -11,6 +12,7 @@ export type SearchResult =
   | { kind: 'journal'; id: string; title: string; date: string; snippet: string; item: JournalEntry }
   | { kind: 'note'; id: string; title: string; date: string; snippet: string; item: Note }
   | { kind: 'anniversary'; id: string; title: string; date: string; snippet: string; item: Anniversary; nextOccurrence?: Date }
+  | { kind: 'habit'; id: string; title: string; date: string; snippet: string; item: Habit }
   | { kind: 'tag'; id: string; title: string; date: string; snippet: string; item: Tag }
 
 export function normalizeSearchQuery(query: string) {
@@ -42,6 +44,7 @@ export function buildSearchResults({
   activeJournalEntries,
   activeAnniversaries,
   activeNotes = [],
+  activeHabits = [],
   managedTags,
   tagUsage,
   today,
@@ -52,6 +55,7 @@ export function buildSearchResults({
   activeJournalEntries: JournalEntry[]
   activeAnniversaries: Anniversary[]
   activeNotes?: Note[]
+  activeHabits?: Habit[]
   managedTags: Tag[]
   tagUsage: Map<string, TagSearchUsage>
   today: Date
@@ -97,6 +101,11 @@ export function buildSearchResults({
     activeNotes.forEach(note => {
       const hay = `${note.title} ${note.content}`.toLocaleLowerCase()
       if (hay.includes(normalizedSearch)) results.push({ kind:'note', id:note.id, title:note.title, date:note.updatedAt, snippet:searchSnippet(note.content,normalizedSearch), item:note })
+    })
+  }
+  if (searchFilter === 'all' || searchFilter === 'habit') {
+    activeHabits.forEach(habit => {
+      if (habit.name.toLocaleLowerCase().includes(normalizedSearch)) results.push({kind:'habit',id:habit.id,title:habit.name,date:habit.updatedAt.slice(0,10),snippet:'习惯',item:habit})
     })
   }
   if (searchFilter === 'all' || searchFilter === 'anniversary') {

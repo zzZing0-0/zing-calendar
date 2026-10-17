@@ -7,12 +7,12 @@ import { MobileNavigationSettings } from './features/navigation/MobileNavigation
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, KeyboardEvent } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadNotes, loadNotebooks, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveNotes, saveNotebooks, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
+import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadNotes, loadNotebooks, loadHabits, loadHabitCheckIns, saveHabits, saveHabitCheckIns, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveNotes, saveNotebooks, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
 import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.10.14'
+const APP_VERSION = '2.11.11'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -67,6 +67,10 @@ import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxAc
 import type { InboxSortKey } from './domain/inbox'
 import { ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
 import { cascadeRestoreNoteFocus, cascadeTrashNoteFocus, permanentlyDeleteNoteFocus, purgeTrashWithNoteFocus } from './domain/noteFocusLifecycle'
+import { HabitsPage } from './features/habits/HabitsPage'
+import { HabitIcon } from './features/habits/HabitIcons'
+import { orderedDailyHabits, liveCheckIns, progressForDate } from './features/habits/habitDomain'
+import type { Habit, HabitCheckIn } from './features/habits/habitDomain'
 import { NotesPage } from './features/notes/NotesPage'
 import { RandomWheelPage } from './features/random-wheel/RandomWheelPage'
 import { RandomPoolManager } from './features/random-wheel/RandomPoolManager'
@@ -85,7 +89,7 @@ function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const SYNC_ENTITY_LABELS: Record<SyncEntityType | 'trash', string> = {
-  task:'任务', journal:'日记', note:'笔记', notebook:'笔记本', mood:'心情', energy:'能量', environment:'天气/体感', period:'月经', tag:'标签', anniversary:'纪念日', focus:'专注', settings:'设置', trash:'回收站',
+  task:'任务', journal:'日记', note:'笔记', notebook:'笔记本', mood:'心情', energy:'能量', environment:'天气/体感', period:'月经', tag:'标签', anniversary:'纪念日', focus:'专注', habit:'习惯', habitCheckIn:'习惯打卡', settings:'设置', trash:'回收站',
 }
 function syncEntityLabel(entityType: string) {
   return Object.prototype.hasOwnProperty.call(SYNC_ENTITY_LABELS, entityType)
@@ -300,11 +304,11 @@ function App() {
   const inboxSortDragRef = useRef<InboxSortKey | null>(null)
   const [inboxSortDropTarget, setInboxSortDropTarget] = useState<InboxSortKey | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
-  const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'note'|'anniversary'|'focus'>('all')
+  const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'note'|'anniversary'|'focus'|'habit'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [dayDetailOpen, setDayDetailOpen] = useState(false)
-  const [mainView, setMainView] = useState<'calendar' | 'notes' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
+  const [mainView, setMainView] = useState<'calendar' | 'notes' | 'habits' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
   const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
   const [weatherOptions, setWeatherOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:weatherOptions', DEFAULT_WEATHER_OPTIONS))
   const [thermalOptions, setThermalOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:thermalOptions', DEFAULT_THERMAL_OPTIONS))
@@ -457,6 +461,14 @@ function App() {
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
   const [dailyEnergy, setDailyEnergy] = useState<DailyEnergy[]>([])
   const [dailyEnvironment, setDailyEnvironment] = useState<DailyEnvironment[]>([])
+  const [habits, setHabits] = useState<Habit[]>([])
+  const [habitCheckIns, setHabitCheckIns] = useState<HabitCheckIn[]>([])
+  const [habitsHydrated, setHabitsHydrated] = useState(false)
+  useEffect(() => { let active=true; Promise.all([loadHabits<Habit>(),loadHabitCheckIns<HabitCheckIn>()]).then(([h,c])=>{if(active){setHabits(h);setHabitCheckIns(c);setHabitsHydrated(true)}}).catch(error=>{console.error('Habit hydration failed',error);if(active)setHabitsHydrated(true)});return ()=>{active=false} },[])
+  useEffect(()=>{if(!habitsHydrated)return;void saveHabits(habits).then(()=>{if(!syncSnapshotReadyRef.current.habit){syncSnapshotsRef.current.habit=habits;syncSnapshotReadyRef.current.habit=true}else{const previous=syncSnapshotsRef.current.habit;syncSnapshotsRef.current.habit=habits;void recordSyncDiff('habit',previous,habits).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}}).catch(console.error)},[habits,habitsHydrated])
+  useEffect(()=>{if(!habitsHydrated)return;void saveHabitCheckIns(habitCheckIns).then(()=>{if(!syncSnapshotReadyRef.current.habitCheckIn){syncSnapshotsRef.current.habitCheckIn=habitCheckIns;syncSnapshotReadyRef.current.habitCheckIn=true}else{const previous=syncSnapshotsRef.current.habitCheckIn;syncSnapshotsRef.current.habitCheckIn=habitCheckIns;void recordSyncDiff('habitCheckIn',previous,habitCheckIns).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}}).catch(console.error)},[habitCheckIns,habitsHydrated])
+  const quickHabitCheckIn=(habit:Habit,date:string)=>{if(habit.archivedAt)return;const now=new Date().toISOString();setHabitCheckIns(current=>[...current,{id:crypto.randomUUID(),habitId:habit.id,occurredDate:date,quantity:habit.quantityTarget,createdAt:now,updatedAt:now}])}
+  const undoHabitCheckIn=(habit:Habit,date:string)=>{if(habit.archivedAt)return;setHabitCheckIns(current=>{const entry=[...current].reverse().find(row=>row.habitId===habit.id&&row.occurredDate===date&&!row.deletedAt);if(!entry)return current;const now=new Date().toISOString();return current.map(row=>row.id===entry.id?{...row,deletedAt:now,updatedAt:now}:row)})}
   const [menstrualPeriods, setMenstrualPeriods] = useState<MenstrualPeriod[]>([])
   const [energyHydrated, setEnergyHydrated] = useState(false)
   const [environmentHydrated, setEnvironmentHydrated] = useState(false)
@@ -513,8 +525,8 @@ function App() {
   const [tagsHydrated, setTagsHydrated] = useState(false)
   const externalImport = useExternalImport({tasks,tags,focusSessions,defaultPriority,setTasks,setTags,setFocusSessions})
   const { externalImportOpen, openExternalImport } = externalImport
-  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], note: [], notebook: [], mood: [], energy: [], environment: [], period: [], tag: [], anniversary: [], focus: [], settings: [] })
-  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, note: false, notebook: false, mood: false, energy: false, environment: false, period: false, tag: false, anniversary: false, focus: false, settings: false })
+  const syncSnapshotsRef = useRef<Record<SyncEntityType, any[]>>({ task: [], journal: [], note: [], notebook: [], mood: [], energy: [], environment: [], period: [], tag: [], anniversary: [], focus: [], habit: [], habitCheckIn: [], settings: [] })
+  const syncSnapshotReadyRef = useRef<Record<SyncEntityType, boolean>>({ task: false, journal: false, note: false, notebook: false, mood: false, energy: false, environment: false, period: false, tag: false, anniversary: false, focus: false, habit: false, habitCheckIn: false, settings: false })
   const settingsSyncReadyRef = useRef(false)
   const suppressNextSettingsSyncRef = useRef(false)
   const settingsWordClockRef = useRef<{added:Record<string,string>;removed:Record<string,string>}>({added:{},removed:{}})
@@ -1325,6 +1337,7 @@ function App() {
     | { key:string; entity:'anniversary'; anniversary:Anniversary; trashedAt:string }
     | { key:string; entity:'note'; note:Note; trashedAt:string }
     | { key:string; entity:'focus'; session:FocusSession; trashedAt:string }
+    | { key:string; entity:'habit'; habit:Habit; trashedAt:string }
   const trashItems = useMemo<TrashItem[]>(() => {
     const items:TrashItem[]=[]
     tasks.forEach(task => {
@@ -1338,6 +1351,7 @@ function App() {
     anniversaries.forEach(anniversary => { if (anniversary.trashedAt) items.push({key:`anniversary:${anniversary.id}`,entity:'anniversary',anniversary,trashedAt:anniversary.trashedAt}) })
     notes.forEach(note => { if (note.trashedAt) items.push({key:`note:${note.id}`,entity:'note',note,trashedAt:note.trashedAt}) })
     focusSessions.forEach(session => { if (session.trashedAt && !session.trashedByTaskId && !session.trashedByNoteId) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
+    habits.forEach(habit => { if(habit.deletedAt) items.push({key:`habit:${habit.id}`,entity:'habit',habit,trashedAt:habit.deletedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
   },[tasks,journalEntries,anniversaries,notes,focusSessions])
   const trashTaskStatus = (item: Extract<TrashItem,{entity:'task'}>): TaskStatus => item.kind === 'occurrence' && item.occurrenceDate
@@ -2174,6 +2188,7 @@ function App() {
   }
 
   const restoreTrashItem = (item: TrashItem) => {
+    if(item.entity==='habit') { const now=new Date().toISOString();setHabits(current=>current.map(h=>h.id===item.habit.id?{...h,deletedAt:undefined,updatedAt:now}:h));setAutoSyncToast('✓ 已恢复习惯');return }
     if(item.entity==='focus') { const now=new Date().toISOString(); setFocusSessions(current=>current.map(session=>session.id===item.session.id?restoreFocusSession(session,now):session)); setAutoSyncToast('✓ 已恢复专注'); return }
     if(item.entity==='journal') { const now=new Date().toISOString(); setJournalEntries(current=>current.map(entry=>entry.id===item.journal.id?{...entry,trashedAt:undefined,updatedAt:now}:entry)); setAutoSyncToast('✓ 已恢复记录'); return }
     if(item.entity==='note') { const now=new Date().toISOString(); setNotes(current=>current.map(note=>note.id===item.note.id?restoreNote(note,now):note)); setFocusSessions(current=>cascadeRestoreNoteFocus(current,item.note.id,now)); setAutoSyncToast('✓ 已恢复笔记'); return }
@@ -2191,6 +2206,7 @@ function App() {
   }
 
   const permanentlyDeleteTrashItem = (item: TrashItem) => {
+    if(item.entity==='habit') { setHabits(current=>current.filter(h=>h.id!==item.habit.id));setHabitCheckIns(current=>current.filter(r=>r.habitId!==item.habit.id));return }
     if(item.entity==='focus') { setFocusSessions(current=>permanentlyDeleteFocusSession(current,item.session.id)); return }
     if(item.entity==='journal') { setJournalEntries(current=>current.filter(entry=>entry.id!==item.journal.id)); return }
     if(item.entity==='note') { setNotes(current=>permanentlyDeleteNote(current,item.note.id)); setFocusSessions(current=>permanentlyDeleteNoteFocus(current,item.note.id)); return }
@@ -2208,6 +2224,9 @@ function App() {
   const clearTrash = () => {
     if (!trashItems.length) return
     const now = new Date().toISOString()
+    const trashedHabitIds=new Set(habits.filter(h=>h.deletedAt).map(h=>h.id))
+    setHabits(current=>current.filter(h=>!h.deletedAt))
+    setHabitCheckIns(current=>current.filter(r=>!trashedHabitIds.has(r.habitId)))
     setJournalEntries(current => current.filter(entry => !entry.trashedAt))
     setAnniversaries(current => current.filter(anniversary => !anniversary.trashedAt))
     setNotes(current => purgeTrashedNotes(current))
@@ -2309,7 +2328,8 @@ function App() {
     const focusUsed = focusSessions.some(session => !session.trashedAt && (session.tagIds ?? []).includes(id))
     const journalUsed = journalEntries.some(entry => !entry.trashedAt && (entry.tagIds ?? []).includes(id))
     const noteUsed = notes.some(note => !note.trashedAt && (note.tagIds ?? []).includes(id))
-    return [taskUsed && '任务', focusUsed && '专注', journalUsed && '记录', noteUsed && '笔记'].filter(Boolean) as string[]
+    const habitUsed = habits.some(habit => !habit.deletedAt && habit.tagId===id)
+    return [taskUsed && '任务', focusUsed && '专注', journalUsed && '记录', noteUsed && '笔记',habitUsed && '习惯'].filter(Boolean) as string[]
   }
 
   const canSetTagScope = (tagId: string, nextScope: TagScope) => {
@@ -2317,7 +2337,7 @@ function App() {
     const usage = tagUsageAreas(tagId)
     if (usage.length === 0) return true
     if (usage.length > 1) return false
-    const scopeForUsage: Record<string, TagScope> = { '任务': 'task', '专注': 'focus', '记录': 'journal', '笔记': 'note' }
+    const scopeForUsage: Record<string, TagScope> = { '任务': 'task', '专注': 'focus', '记录': 'journal', '笔记': 'note', '习惯': 'habit' }
     return scopeForUsage[usage[0]] === nextScope
   }
 
@@ -2341,8 +2361,9 @@ function App() {
     const focusCount = focusSessions.filter(session => (session.tagIds ?? []).includes(id)).length
     const journalCount = journalEntries.filter(entry => (entry.tagIds ?? []).includes(id)).length
     const noteCount = notes.filter(note => !note.trashedAt && (note.tagIds ?? []).includes(id)).length
-    const linked = taskCount + focusCount + journalCount + noteCount
-    if (linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？\n\n关联任务 ${taskCount} 条 · 专注 ${focusCount} 条 · 记录 ${journalCount} 条 · 笔记 ${noteCount} 条\n关联内容会保留。`)) return
+    const habitCount=habits.filter(h=>h.tagId===id).length
+    const linked = taskCount + focusCount + journalCount + noteCount + habitCount
+    if (linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？\n\n关联任务 ${taskCount} 条 · 专注 ${focusCount} 条 · 记录 ${journalCount} 条 · 笔记 ${noteCount} 条 · 习惯 ${habitCount} 条\n关联内容会保留。`)) return
     if (!linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？`)) return
     const now = new Date().toISOString()
     setTags(current => current.filter(item => item.id !== id))
@@ -2355,6 +2376,7 @@ function App() {
     setFocusSessions(current => current.map(session => (session.tagIds ?? []).includes(id) ? {...session,tagIds:cleanupTaskTagIdsAfterDelete(session.tagIds,id),updatedAt:now} : session))
     setJournalEntries(current => current.map(entry => (entry.tagIds ?? []).includes(id) ? {...entry,tagIds:cleanupJournalTagIdsAfterDelete(entry.tagIds,id),updatedAt:now} : entry))
     setNotes(current => current.map(note => (note.tagIds ?? []).includes(id) ? {...note,tagIds:cleanupNoteTagIdsAfterDelete(note.tagIds,id),updatedAt:now} : note))
+    setHabits(current=>current.map(h=>h.tagId===id?{...h,tagId:undefined,updatedAt:now}:h))
     setSelectedTagManageId(null)
     setAutoSyncToast(`✓ #${tag?.name ?? '标签'} 已删除`)
   }
@@ -2438,10 +2460,11 @@ function App() {
     activeJournalEntries,
     activeAnniversaries,
     activeNotes: notes.filter(note=>!note.trashedAt),
+    activeHabits: habits.filter(h=>!h.deletedAt),
     managedTags,
     tagUsage,
     today,
-  }), [normalizedSearch, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, notes, managedTags, tagUsage])
+  }), [normalizedSearch, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, notes, habits, managedTags, tagUsage])
 
   const searchDateLabel = (result: SearchResult) => {
     if (result.kind === 'tag') return ''
@@ -2470,6 +2493,7 @@ function App() {
     if (result.kind === 'tag') return <span className="search-tag-marker" style={{background:result.item.color}} />
     if (result.kind === 'task') return <span className={`search-task-marker priority-${result.item.priority} status-${result.item.status}`}>{result.item.status === 'completed' ? '✓' : result.item.status === 'abandoned' ? '×' : ''}</span>
     if (result.kind === 'journal') return <span className={`search-journal-marker impact-${result.item.impact}`} />
+    if (result.kind === 'habit') return <span className="search-anniversary-marker">◉</span>
     if (result.kind === 'note') return <span className="search-anniversary-marker">▤</span>
     return <span className="search-anniversary-marker">{anniversaryIcon(result.item.type)}</span>
   }
@@ -2516,6 +2540,7 @@ function App() {
       },0)
       return
     }
+    if (result.kind === 'habit') {setMainView('habits');return}
     if (result.kind === 'note') {
       setMainView('notes')
       setRequestedNoteId(result.id)
@@ -2627,10 +2652,10 @@ function App() {
       // Clear user data and create sync tombstones in one IndexedDB transaction.
       // This makes “清空所有数据” a real cross-device deletion on the next GitHub sync.
       await clearZingUserDataWithSync(REQUIRED_SYSTEM_TAGS)
-      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], note:[], notebook:[], mood:[], energy:[], environment:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], settings:syncSnapshotsRef.current.settings }
+      const cleared: Record<SyncEntityType, any[]> = { task:[], journal:[], note:[], notebook:[], mood:[], energy:[], environment:[], period:[], tag:REQUIRED_SYSTEM_TAGS, anniversary:[], focus:[], habit:[], habitCheckIn:[], settings:syncSnapshotsRef.current.settings }
       syncSnapshotsRef.current = cleared
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
-      setRandomPoolGroups([]); setRandomPoolItems([]); setTasks([]); setJournalEntries([]); setNotes([]); setNotebooks(ensureDefaultNotebook([])); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([])
+      setRandomPoolGroups([]); setRandomPoolItems([]); setTasks([]); setJournalEntries([]); setNotes([]); setNotebooks(ensureDefaultNotebook([])); setDailyMoods([]); setDailyEnergy([]); setDailyEnvironment([]); setMenstrualPeriods([]); setTags(REQUIRED_SYSTEM_TAGS); setAnniversaries([]); setFocusSessions([]); setHabits([]); setHabitCheckIns([])
       setLocalWriteRevision(value=>value+1)
       setSelectedDate(today); closeDayDetailImmediately(); setSearchQuery('')
       setResetDataConfirm(false)
@@ -2723,6 +2748,8 @@ function App() {
         {path:'data/tags.json',bytes:json(tags)},
         {path:'data/anniversaries.json',bytes:json(anniversaries)},
         {path:'data/focus.json',bytes:json(focusSessions)},
+        {path:'data/habits.json',bytes:json(habits)},
+        {path:'data/habit-checkins.json',bytes:json(habitCheckIns)},
         {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
@@ -2736,7 +2763,7 @@ function App() {
         attachmentRows.push({storageKey:attachment.storageKey,path,filename:attachment.filename,mimeType:attachment.mimeType,size:blob.size,type:attachment.type,duration:attachment.duration,createdAt:attachment.createdAt})
       }
       const manifest={format:'zing-calendar-backup',schemaVersion:1,appVersion:APP_VERSION,exportedAt,
-        counts:{tasks:tasks.length,journals:journalEntries.length,notes:notes.length,notebooks:notebooks.length,moods:dailyMoods.length,energies:dailyEnergy.length,environments:dailyEnvironment.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,focusSessions:focusSessions.length,attachments:attachmentRows.length},
+        counts:{tasks:tasks.length,journals:journalEntries.length,notes:notes.length,notebooks:notebooks.length,moods:dailyMoods.length,energies:dailyEnergy.length,environments:dailyEnvironment.length,periods:menstrualPeriods.length,tags:tags.length,anniversaries:anniversaries.length,focusSessions:focusSessions.length,habits:habits.length,habitCheckIns:habitCheckIns.length,attachments:attachmentRows.length},
         attachments:attachmentRows}
       entries.unshift({path:'manifest.json',bytes:json(manifest)})
       setBackupMessage('正在生成 ZIP…')
@@ -2775,7 +2802,7 @@ function App() {
       const restoredTasks = backupPreview.tasks.map(normalizeTaskScheduling)
       await replaceZingData({
         tasks:restoredTasks,journals:backupPreview.journals,notes:backupPreview.notes,notebooks:ensureDefaultNotebook(backupPreview.notebooks),moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
-        tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,
+        tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,habits:backupPreview.habits,habitCheckIns:backupPreview.habitCheckIns,
         attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
           const copy = new Uint8Array(item.bytes.byteLength)
           copy.set(item.bytes)
@@ -2820,10 +2847,10 @@ function App() {
       if (s.defaultMobileNavigation) receiveDefaultMobileNav(normalizeMobileNav(s.defaultMobileNavigation))
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
-      syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:backupPreview.notes, notebook:ensureDefaultNotebook(backupPreview.notebooks), mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, settings:[restoredSettings] }
+      syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:backupPreview.notes, notebook:ensureDefaultNotebook(backupPreview.notebooks), mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, habit:backupPreview.habits, habitCheckIn:backupPreview.habitCheckIns, settings:[restoredSettings] }
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks(restoredTasks); setJournalEntries(backupPreview.journals); setNotes(backupPreview.notes); setNotebooks(ensureDefaultNotebook(backupPreview.notebooks)); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
-      setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions)
+      setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions);setHabits(backupPreview.habits);setHabitCheckIns(backupPreview.habitCheckIns)
       suppressNextSettingsSyncRef.current = true
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
@@ -2886,8 +2913,8 @@ function App() {
           : `✓ 同步完成 · 云端现有 ${result.pushedRecords} 条数据 · ${result.attachments.total} 个附件${result.attachments.missing ? ` · ⚠ ${result.attachments.missing} 个附件缺失` : ''}`)
       if (automatic) setAutoSyncToast('✓ 今日首次修改已自动同步')
       // Rehydrate merged records so remote changes become visible immediately.
-      const [nextTasks,nextJournals,nextNotes,nextNotebooks,nextMoods,nextEnergy,nextEnvironment,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings] = await Promise.all([
-        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadNotes<Note>(), loadNotebooks<Notebook>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadDailyEnvironment<DailyEnvironment>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>()
+      const [nextTasks,nextJournals,nextNotes,nextNotebooks,nextMoods,nextEnergy,nextEnvironment,nextPeriods,nextTags,nextAnniversaries,nextFocusSessions,nextSettings,nextHabits,nextHabitCheckIns] = await Promise.all([
+        loadTasks<Task>(), loadJournalEntries<JournalEntry>(), loadNotes<Note>(), loadNotebooks<Notebook>(), loadDailyMoods<DailyMood>(), loadDailyEnergy<DailyEnergy>(), loadDailyEnvironment<DailyEnvironment>(), loadMenstrualPeriods<MenstrualPeriod>(), loadTags<Tag>(), loadAnniversaries<Anniversary>(), loadFocusSessions<FocusSession>(), loadUserSettings<SyncedUserSettings>(), loadHabits<Habit>(), loadHabitCheckIns<HabitCheckIn>()
       ])
       const normalizedNextTasks = nextTasks.map(normalizeTaskScheduling)
       if (JSON.stringify(normalizedNextTasks) !== JSON.stringify(nextTasks)) await saveTasks(normalizedNextTasks)
@@ -2914,13 +2941,14 @@ function App() {
         tag: hydratedTags,
         anniversary: nextAnniversaries,
         focus: nextFocusSessions,
+        habit: nextHabits, habitCheckIn: nextHabitCheckIns,
         settings: nextSettings,
       }
-      syncSnapshotReadyRef.current = { task:true, journal:true, note:true, notebook:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, settings:true }
+      syncSnapshotReadyRef.current = { task:true, journal:true, note:true, notebook:true, mood:true, energy:true, environment:true, period:true, tag:true, anniversary:true, focus:true, habit:true, habitCheckIn:true, settings:true }
       setTasks(normalizedNextTasks); setJournalEntries(nextJournals); setNotes(nextNotes); setNotebooks(ensureDefaultNotebook(nextNotebooks)); setDailyMoods(nextMoods); setDailyEnergy(nextEnergy); setDailyEnvironment(nextEnvironment); setMenstrualPeriods(nextPeriods)
       setTags(hydratedTags)
       setAnniversaries(nextAnniversaries)
-      setFocusSessions(nextFocusSessions)
+      setFocusSessions(nextFocusSessions);setHabits(nextHabits);setHabitCheckIns(nextHabitCheckIns)
       const syncedSettings = nextSettings[0]
       if (syncedSettings) {
         settingsWordClockRef.current=hydrateWordClock(syncedSettings, new Date().toISOString())
@@ -2950,7 +2978,7 @@ function App() {
     }
   }
 
-  const switchMainView = (view: 'calendar' | 'notes' | 'statistics' | 'anniversaries' | 'settings') => {
+  const switchMainView = (view: 'calendar' | 'notes' | 'habits' | 'statistics' | 'anniversaries' | 'settings') => {
     if (view === 'calendar' && isMobileCalendar) {
       // A calendar entry is a fresh navigation to Today. Reset the finite month
       // window before mounting the page so the IntersectionObserver cannot inherit
@@ -3051,7 +3079,7 @@ function App() {
           {searchOpen && normalizedSearch && (
             <div className="search-panel">
               {tagSearchMode ? <div className="search-tag-mode"># 标签搜索</div> : <div className="search-filters">
-                {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日']] as const).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
+                {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['habit','习惯']] as const).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
               </div>}
               <div className="search-results">
                 {searchResults.length === 0 ? <p className="search-empty">没有找到结果。</p> : searchResults.map(result => (
@@ -3347,6 +3375,7 @@ function App() {
         </section>
       )}
 
+      {mainView === 'habits' && <HabitsPage habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} />}
       {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={requestNoteFocus} onStopNoteFocus={stopNoteFocus} onOpenFocusHistory={note=>{setFocusEditId(null);setNoteFocusHistoryId(note.id)}} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
 
       {mainView === 'anniversaries' && (
@@ -4028,6 +4057,7 @@ function App() {
               <button className="add-button" type="button" onClick={openJournalEditor}>＋ 添加记录</button>
             </section>
 
+            {selectedDate && orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).length>0 && <section className="detail-section habit-daily-section"><div className="section-heading"><h3>习惯</h3></div>{orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).map(habit=>{const rows=liveCheckIns(habit.id,habitCheckIns).filter(row=>row.occurredDate===toDateKey(selectedDate));const progress=progressForDate(habit,habitCheckIns,toDateKey(selectedDate));const done=progress.met;const hasLog=rows.length>0;return <div className="habit-daily-row" key={habit.id}><span className="habit-daily-name"><HabitIcon name={habit.icon} color={tags.find(t=>t.id===habit.tagId)?.color} />{habit.name}</span>{habit.archivedAt?<span className="habit-daily-archived">{done?'✓ 已达标 · 已归档':hasLog?'已打卡 · 已归档':'已归档'}</span>:<button type="button" onClick={()=>hasLog?undoHabitCheckIn(habit,toDateKey(selectedDate)):quickHabitCheckIn(habit,toDateKey(selectedDate))}>{done?'✓ 已达标':hasLog?`已打卡 ${progress.done}/${progress.target??'-'} · 撤销`:'○ 打卡'}</button>}</div>})}</section>}
             <section className="detail-section menstrual-section">
               <div className="section-heading">
                 <h3>{selectedIsFuture ? '预计经期' : '月经记录'}</h3>
@@ -4154,14 +4184,14 @@ function App() {
             <div className="editor-body overdue-inbox-body">
               {trashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <>
                 <div className="trash-filter-row" role="group" aria-label="回收站类型筛选">
-                  {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['focus','专注']] as const).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
+                  {([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['focus','专注'],['habit','习惯']] as const).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
                 </div>
                 {visibleTrashItems.length===0 ? <p className="page-empty compact">这一类还没有内容。</p> : <div className="overdue-inbox-list trash-inbox-list">
                   {(trashTaskGroups ? [
                     {label:'未完成',items:trashTaskGroups.active},
                     ...(showEndedTasks ? [{label:'已完成',items:trashTaskGroups.ended}] : []),
                   ] : [{label:'',items:visibleTrashItems}]).map(group=>group.items.length>0&&<div className="trash-task-group" key={group.label||'all'}>{group.label&&<div className="trash-task-group-label">{group.label} · {group.items.length}</div>}{group.items.map(item=><article key={item.key} className={`trash-inbox-item${item.entity==='task'&&trashTaskStatus(item)!=='todo'?' completed':''}`}>
-                    <div className="trash-inbox-main"><strong>{item.entity==='task'&&trashTaskStatus(item)!=='todo'&&<span className="trash-task-status" aria-label="已完成">✓</span>}{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='note'?item.note.title:item.entity==='anniversary'?item.anniversary.title:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='note'?`${notebooks.find(book=>book.id===item.note.notebookId)?.name??'默认'} · 笔记`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
+                    <div className="trash-inbox-main"><strong>{item.entity==='task'&&trashTaskStatus(item)!=='todo'&&<span className="trash-task-status" aria-label="已完成">✓</span>}{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='note'?item.note.title:item.entity==='anniversary'?item.anniversary.title:item.entity==='habit'?item.habit.name:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='note'?`${notebooks.find(book=>book.id===item.note.notebookId)?.name??'默认'} · 笔记`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='habit'?'习惯 · 历史打卡可恢复':item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
                     <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
                   </article>)}</div>)}
                 </div>}
@@ -4273,7 +4303,7 @@ function App() {
             <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => {setSelectedTagManageId(null);setTagEditDraft(null);setTagManagerOpen(false)}}>×</button></div>
             <div className="editor-body">
               <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
-                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
+                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
               </div>
 
               <div className="compact-tag-create">
@@ -4308,7 +4338,7 @@ function App() {
               <label className="field"><span>名称</span><input value={tagEditDraft?.name ?? tag.name} onChange={e=>setTagEditDraft(current=>current?{...current,name:e.target.value}:current)} autoFocus /></label>
               <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
               <div className="field"><span>分类</span><div className="tag-detail-scope">
-                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记']] as const).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={`${(tagEditDraft?.scope ?? tag.scope)===scope?'active ':''}${blocked?'scope-disabled':''}`.trim()} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
+                {([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={`${(tagEditDraft?.scope ?? tag.scope)===scope?'active ':''}${blocked?'scope-disabled':''}`.trim()} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
               </div><small className="tag-usage-hint">当前引用：{tagUsageAreas(tag.id).join(' · ') || '暂无'}</small></div>
             </div>
             <div className="editor-actions compact-tag-edit-actions">

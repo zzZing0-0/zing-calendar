@@ -118,8 +118,10 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
   const tags = decodeBackupJson<Tag[]>(entries, 'data/tags.json')
   const anniversaries = decodeBackupJson<Anniversary[]>(entries, 'data/anniversaries.json')
   const focusSessions = entries.has('data/focus.json') ? decodeBackupJson<FocusSession[]>(entries, 'data/focus.json') : []
+  const habits = entries.has('data/habits.json') ? decodeBackupJson<BackupPreview['habits']>(entries, 'data/habits.json') : []
+  const habitCheckIns = entries.has('data/habit-checkins.json') ? decodeBackupJson<BackupPreview['habitCheckIns']>(entries, 'data/habit-checkins.json') : []
   const settings = decodeBackupJson<BackupPreview['settings']>(entries, 'data/settings.json')
-  if (![tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
+  if (![tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, habits, habitCheckIns].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
   const rows = Array.isArray(manifest.attachments) ? manifest.attachments : []
   const attachments = rows.map((row:any) => {
     if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
@@ -134,8 +136,9 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
       (expected.moods ?? moods.length) !== moods.length || (expected.energies ?? energies.length) !== energies.length ||
       (expected.environments ?? environments.length) !== environments.length || (expected.periods ?? periods.length) !== periods.length ||
       (expected.tags ?? tags.length) !== tags.length || (expected.anniversaries ?? anniversaries.length) !== anniversaries.length ||
+      (expected.habits ?? habits.length) !== habits.length || (expected.habitCheckIns ?? habitCheckIns.length) !== habitCheckIns.length ||
       (expected.focusSessions ?? focusSessions.length) !== focusSessions.length || (expected.attachments ?? attachments.length) !== attachments.length) {
     throw new Error('备份数量校验失败')
   }
-  return { manifest, tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, settings, attachments }
+  return { manifest, tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, habits, habitCheckIns, settings, attachments }
 }

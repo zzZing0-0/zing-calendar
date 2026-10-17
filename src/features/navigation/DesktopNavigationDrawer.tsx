@@ -1,7 +1,7 @@
 import { mobileNavIcon, mobileNavLabel } from './MobileNavigation'
 import type { NavigationPage } from './MobileNavigation'
 
-const pages: NavigationPage[] = ['calendar', 'notes', 'anniversaries', 'statistics', 'settings']
+const pages: NavigationPage[] = ['calendar', 'notes', 'habits', 'anniversaries', 'statistics', 'settings']
 
 /** Desktop navigation shares the same SVG icon set as mobile. */
 export function DesktopNavigationDrawer({ active, onNavigate, collapsed }: {

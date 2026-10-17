@@ -1,9 +1,11 @@
 const DB_NAME = 'zing-calendar'
-const DB_VERSION = 11
+const DB_VERSION = 12
 const TASK_STORE = 'tasks'
 const JOURNAL_STORE = 'journalEntries'
 const NOTE_STORE = 'notes'
 const NOTEBOOK_STORE = 'notebooks'
+const HABIT_STORE = 'habits'
+const HABIT_CHECKIN_STORE = 'habitCheckIns'
 const MOOD_STORE = 'dailyMoods'
 const ENERGY_STORE = 'dailyEnergy'
 const ENVIRONMENT_STORE = 'dailyEnvironment'
@@ -25,6 +27,8 @@ function openDatabase(): Promise<IDBDatabase> {
       const db = request.result
       if (!db.objectStoreNames.contains(TASK_STORE)) db.createObjectStore(TASK_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(JOURNAL_STORE)) db.createObjectStore(JOURNAL_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(HABIT_STORE)) db.createObjectStore(HABIT_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(HABIT_CHECKIN_STORE)) db.createObjectStore(HABIT_CHECKIN_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(NOTE_STORE)) db.createObjectStore(NOTE_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(NOTEBOOK_STORE)) db.createObjectStore(NOTEBOOK_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(MOOD_STORE)) db.createObjectStore(MOOD_STORE, { keyPath: 'date' })
@@ -96,6 +100,10 @@ export const saveDailyEnvironment = <T,>(rows: T[]) => replaceAll(ENVIRONMENT_ST
 export const loadMenstrualPeriods = <T,>() => loadAll<T>(PERIOD_STORE)
 export const saveMenstrualPeriods = <T,>(rows: T[]) => replaceAll(PERIOD_STORE, rows)
 
+export const loadHabits = <T,>() => loadAll<T>(HABIT_STORE)
+export const saveHabits = <T,>(rows:T[]) => replaceAll(HABIT_STORE,rows)
+export const loadHabitCheckIns = <T,>() => loadAll<T>(HABIT_CHECKIN_STORE)
+export const saveHabitCheckIns = <T,>(rows:T[]) => replaceAll(HABIT_CHECKIN_STORE,rows)
 export const loadNotes = <T,>() => loadAll<T>(NOTE_STORE)
 export const saveNotes = <T,>(rows: T[]) => replaceAll(NOTE_STORE, rows)
 export const loadNotebooks = <T,>() => loadAll<T>(NOTEBOOK_STORE)
@@ -172,7 +180,7 @@ export async function cleanupOrphanAttachmentBlobs(referencedKeys: string[]): Pr
 // working exactly as before. Later sync releases can use this metadata without
 // changing the user's task/journal data model or exposing credentials client-side.
 
-export type SyncEntityType = 'task' | 'journal' | 'note' | 'notebook' | 'mood' | 'energy' | 'environment' | 'period' | 'tag' | 'anniversary' | 'focus' | 'settings'
+export type SyncEntityType = 'task' | 'journal' | 'note' | 'notebook' | 'mood' | 'energy' | 'environment' | 'period' | 'tag' | 'anniversary' | 'focus' | 'habit' | 'habitCheckIn' | 'settings'
 export type SyncOperation = 'upsert' | 'delete'
 
 export type SyncChange = {
@@ -362,6 +370,8 @@ export type SyncBundle = {
 }
 
 function entityStoreName(entityType: SyncEntityType): string {
+  if (entityType === 'habit') return HABIT_STORE
+  if (entityType === 'habitCheckIn') return HABIT_CHECKIN_STORE
   if (entityType === 'task') return TASK_STORE
   if (entityType === 'journal') return JOURNAL_STORE
   if (entityType === 'note') return NOTE_STORE
@@ -398,7 +408,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
   const tombstones = await loadSyncTombstones()
   if (!tombstones.length) return 0
   const liveTimes = new Map<string, number>()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'note', 'notebook', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'settings']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'note', 'notebook', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'habit', 'habitCheckIn', 'settings']
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
     rows.forEach(row => liveTimes.set(`${entityType}:${entityIdOf(entityType, row)}`, Date.parse(entityUpdatedAt(row)) || 0))
@@ -413,7 +423,7 @@ async function pruneStaleSyncTombstones(): Promise<number> {
 export async function createSyncBundle(): Promise<SyncBundle> {
   const deviceId = getOrCreateDeviceId()
   await pruneStaleSyncTombstones()
-  const entityTypes: SyncEntityType[] = ['task', 'journal', 'note', 'notebook', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'settings']
+  const entityTypes: SyncEntityType[] = ['task', 'journal', 'note', 'notebook', 'mood', 'energy', 'environment', 'period', 'tag', 'anniversary', 'focus', 'habit', 'habitCheckIn', 'settings']
   const records: SyncEntityRecord[] = []
   for (const entityType of entityTypes) {
     const rows = await loadAll<any>(entityStoreName(entityType))
@@ -1013,7 +1023,7 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
   if (!config.token.trim()) throw new Error('GitHub 访问令牌为空')
   const remote = await readGitHubBundleFile(config)
   const local = await createSyncBundle()
-  const types: SyncEntityType[] = ['task','journal','note','notebook','mood','energy','environment','period','tag','anniversary','focus','settings']
+  const types: SyncEntityType[] = ['task','journal','note','notebook','mood','energy','environment','period','tag','anniversary','focus','habit','habitCheckIn','settings']
 
   if (!remote.bundle) {
     const normalRows = types.map(entityType => {
@@ -1199,6 +1209,8 @@ export async function clearZingUserDataWithSync(systemTags:any[]): Promise<void>
     {entityType:'tag',storeName:TAG_STORE,id:row=>String(row.id),keep:row=>systemTags.some(tag=>tag.id===row.id)},
     {entityType:'anniversary',storeName:ANNIVERSARY_STORE,id:row=>String(row.id)},
     {entityType:'focus',storeName:FOCUS_STORE,id:row=>String(row.id)},
+    {entityType:'habit',storeName:HABIT_STORE,id:row=>String(row.id)},
+    {entityType:'habitCheckIn',storeName:HABIT_CHECKIN_STORE,id:row=>String(row.id)},
   ]
   const stores=[...entityStores.map(item=>item.storeName),ATTACHMENT_STORE,SYNC_TOMBSTONE_STORE,SYNC_CHANGE_STORE]
   const deviceId=getOrCreateDeviceId(), now=new Date().toISOString()
@@ -1232,17 +1244,17 @@ export async function clearZingUserDataWithSync(systemTags:any[]): Promise<void>
 }
 
 export async function replaceZingData(payload: {
-  tasks:any[]; journals:any[]; notes?:any[]; notebooks?:any[]; moods:any[]; energies:any[]; environments:any[]; periods:any[]; tags:any[]; anniversaries:any[]; focusSessions:any[];
+  tasks:any[]; journals:any[]; notes?:any[]; notebooks?:any[]; moods:any[]; energies:any[]; environments:any[]; periods:any[]; tags:any[]; anniversaries:any[]; focusSessions:any[]; habits?:any[]; habitCheckIns?:any[];
   attachments:{key:string;blob:Blob}[]
 }): Promise<void> {
   const db=await openDatabase()
-  const stores=[TASK_STORE,JOURNAL_STORE,NOTE_STORE,NOTEBOOK_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,ATTACHMENT_STORE]
+  const stores=[TASK_STORE,JOURNAL_STORE,NOTE_STORE,NOTEBOOK_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,HABIT_STORE,HABIT_CHECKIN_STORE,ATTACHMENT_STORE]
   try {
     await new Promise<void>((resolve,reject)=>{
       const tx=db.transaction(stores,'readwrite')
       const replace=(name:string,rows:any[])=>{ const store=tx.objectStore(name); store.clear(); rows.forEach(row=>store.put(row)) }
       replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(NOTE_STORE,payload.notes ?? []); replace(NOTEBOOK_STORE,payload.notebooks ?? []); replace(MOOD_STORE,payload.moods); replace(ENERGY_STORE,payload.energies); replace(ENVIRONMENT_STORE,payload.environments); replace(PERIOD_STORE,payload.periods)
-      replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries); replace(FOCUS_STORE,payload.focusSessions)
+      replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries); replace(FOCUS_STORE,payload.focusSessions); replace(HABIT_STORE,payload.habits??[]); replace(HABIT_CHECKIN_STORE,payload.habitCheckIns??[])
       const attachments=tx.objectStore(ATTACHMENT_STORE); attachments.clear()
       payload.attachments.forEach(item=>attachments.put(item.blob,item.key))
       tx.oncomplete=()=>resolve()
