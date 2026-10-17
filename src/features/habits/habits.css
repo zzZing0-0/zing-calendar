@@ -68,3 +68,49 @@
 .habit-icon-pagination button{background:white;border:1px solid #dce5de;border-radius:7px;padding:5px 7px;color:#476551;cursor:pointer;font-size:11px}
 .habit-icon-pagination button:disabled{opacity:.4;cursor:default}
 @media(max-width:600px){.habit-icon-browser{width:100%;padding:10px}.habit-icon-browser .habit-icon-results{grid-template-rows:repeat(6,40px)}.habit-icon-browser .habit-icon-result{height:40px}}
+
+/* v2.11.17 — unified compact mobile habits and daily-details controls */
+@media (max-width: 600px) {
+ .habits-page{padding:16px 14px 96px;max-width:100%;box-sizing:border-box}
+ .habits-header{margin-bottom:18px;gap:10px;align-items:center}
+ .habits-header h2{font-size:26px;margin:2px 0 0}
+ .habits-header .primary-button{font-size:14px;padding:10px 12px;border-radius:12px;white-space:nowrap;min-height:42px}
+ .habits-filters{display:flex;flex-wrap:nowrap;justify-content:space-between;gap:8px;margin-bottom:20px;align-items:center}
+ .habits-filters label{min-width:0;flex:1;font-size:0;gap:0}
+ .habits-filters .habit-select{width:100%;min-width:0;font-size:14px;min-height:40px}
+ .habit-archive-manager-button{font-size:13px;white-space:nowrap;padding:9px 10px;min-height:40px}
+ .habits-groups{gap:24px}
+ .habits-group-heading{margin-bottom:10px;padding-left:2px}
+ .habit-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:13px 12px;border-radius:15px;min-height:66px}
+ .habit-card-main{gap:5px;min-width:0}
+ .habit-card-main strong{font-size:15px;line-height:1.35;overflow-wrap:anywhere}
+ .habit-card-main small{font-size:12px;line-height:1.5}
+ .habit-card-actions{align-self:center;justify-self:end;display:flex;flex-wrap:wrap;justify-content:flex-end;max-width:118px;gap:5px}
+ .habit-card-actions button{padding:8px 9px;font-size:12px;border-radius:10px;min-height:36px;white-space:nowrap;color:#3c7058}
+ .habit-card-actions .habit-extra-checkin{font-size:12px}
+ .habit-card-archived .habit-archive-badge{margin:0;font-size:12px;padding:5px 7px}
+ .habit-modal-backdrop{padding:16px;align-items:center;justify-items:center;overflow-y:auto}
+ .habit-modal{width:100%;box-sizing:border-box;max-height:min(85dvh,760px);padding:18px 17px 16px;border-radius:19px;overscroll-behavior:contain}
+ .habit-modal>header{align-items:center;gap:10px}
+ .habit-modal>header h3{margin:0;font-size:19px;line-height:1.4;overflow-wrap:anywhere}
+ .habit-modal>header button{width:36px;height:36px;flex:none;display:grid;place-items:center;color:#536b5b;font-size:25px}
+ .habit-modal>p{margin:8px 0 16px;color:#74857a;font-size:13px}
+ .habit-log-editor{gap:10px;margin-top:10px}
+ .habit-log-editor h4{margin:0 0 2px;font-size:15px}
+ .habit-log-editor label,.habit-form label{font-size:13px;gap:5px;color:#516557}
+ .habit-log-editor input,.habit-form input,.habit-form select{min-height:42px;font-size:16px;padding:9px 11px}
+ .habit-log-editor>button{background:#3c7058;color:white;border-color:#3c7058;min-height:42px;font-size:14px}
+ .habit-modal>h4{font-size:15px;margin:18px 0 8px}
+ .habit-log-list{gap:0}
+ .habit-log-list>div{padding:8px 0;font-size:13px;flex-wrap:wrap}
+ .habit-log-list .empty-state{padding:8px 0;margin:0;border:0;background:none;color:#99a59d;font-size:13px}
+ .habit-modal footer{border-top:1px solid #edf0ed;padding-top:12px;margin-top:16px;gap:6px;flex-wrap:nowrap}
+ .habit-modal footer button{padding:8px 9px;font-size:13px;min-height:38px;white-space:nowrap;color:#3c7058}
+ .habit-modal footer button.danger{color:#ad4545}
+ .habit-form{gap:12px;margin-top:14px}
+ .habit-icon-browser{padding:8px}
+ .habit-daily-section .habit-daily-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:9px 0;align-items:center;min-height:44px}
+ .habit-daily-section .habit-daily-name{min-width:0;overflow-wrap:anywhere;font-size:14px!important;gap:7px}
+ .habit-daily-section .habit-daily-row button{border-radius:10px;padding:7px 9px;font-size:12px!important;min-height:34px;max-width:155px;white-space:normal;line-height:1.3;color:#3c7058}
+ .habit-daily-section .habit-daily-archived{font-size:12px;white-space:normal;text-align:right}
+}
