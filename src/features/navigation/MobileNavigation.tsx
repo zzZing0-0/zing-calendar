@@ -1,6 +1,6 @@
 import type { MobileNavConfig, MobileNavChoice } from './navigationConfig'
 export const mobileNavLabel = (id: 'calendar' | 'settings' | MobileNavChoice) => ({ calendar:'日历', notes:'笔记', anniversaries:'纪念日', statistics:'统计', settings:'设置' })[id]
-function mobileNavIcon(id: 'calendar' | 'settings' | MobileNavChoice) {
+export function mobileNavIcon(id: 'calendar' | 'settings' | MobileNavChoice) {
   const paths = {
     calendar: 'M7 3v3M17 3v3M4.5 8.5h15M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z',
     notes: 'M5 4.5h11a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3V4.5Zm3 0V20M11 9h5M11 13h5',

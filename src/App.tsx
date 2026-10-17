@@ -1,7 +1,8 @@
 import { BUILTIN_MOBILE_NAV, normalizeMobileNav } from './features/navigation/navigationConfig'
 import type { MobileNavConfig } from './features/navigation/navigationConfig'
 import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
-import { MobileNavigation, DesktopNavigation } from './features/navigation/MobileNavigation'
+import { MobileNavigation } from './features/navigation/MobileNavigation'
+import { DesktopNavigationDrawer } from './features/navigation/DesktopNavigationDrawer'
 import { MobileNavigationSettings } from './features/navigation/MobileNavigationSettings'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,7 +12,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.10.8'
+const APP_VERSION = '2.10.14'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -2973,6 +2974,15 @@ function App() {
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }))
   }
 
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('zing:desktopSidebarCollapsed') === 'true' } catch { return false }
+  })
+  const toggleDesktopSidebar = () => setDesktopSidebarCollapsed(current => {
+    const next = !current
+    try { localStorage.setItem('zing:desktopSidebarCollapsed', String(next)) } catch { /* local storage unavailable */ }
+    return next
+  })
+
   const runGithubSync = async (automatic = false) => {
     if (automatic) return executeGithubSync(true)
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
@@ -3013,7 +3023,8 @@ function App() {
   }, [localWriteRevision, githubSyncBusy, githubSyncToken])
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${desktopSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+
       <header className={`topbar${mainView==='calendar'?' calendar-topbar':''}`}>
         <div className={`brand-block${mainView==='settings' ? ' settings-brand' : ''}${mobileSearchVisible ? " search-open" : ""}`}>
           <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}><span className="brand-mark-desktop">Z</span><span className="brand-mark-mobile" aria-hidden="true">🔍</span></button>
@@ -3021,6 +3032,16 @@ function App() {
             <p>{greeting}</p>
           </div>
         </div>
+
+        <button type="button" className="desktop-sidebar-toggle" onClick={toggleDesktopSidebar}
+          aria-label={desktopSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+          aria-expanded={!desktopSidebarCollapsed} title={desktopSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3.5" width="18" height="17" rx="3" />
+            <path d="M9 3.5v17" />
+            <path d={desktopSidebarCollapsed ? 'm14 10 2 2-2 2' : 'm16 10-2 2 2 2'} />
+          </svg>
+        </button>
 
         {mobileSearchVisible && <button className="mobile-search-backdrop" type="button" aria-label="关闭搜索" onClick={()=>{setMobileSearchVisible(false);setSearchOpen(false)}} />}
         <div className={`global-search-wrap${mobileSearchVisible ? ' mobile-open' : ''}`} ref={searchWrapRef}>
@@ -3044,7 +3065,7 @@ function App() {
             </div>
           )}
         </div>
-        <DesktopNavigation active={mainView} onNavigate={switchMainView} />
+        <DesktopNavigationDrawer active={mainView} onNavigate={switchMainView} collapsed={desktopSidebarCollapsed} />
       </header>
 
       {mainView === 'calendar' && <section className={`calendar-card${isMobileCalendar && dayDetailOpen ? ' day-detail-open' : ''}`} aria-label="月历">

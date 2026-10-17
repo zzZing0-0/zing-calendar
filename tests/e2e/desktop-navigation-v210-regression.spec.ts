@@ -6,13 +6,12 @@ const navigation = fs.readFileSync('src/features/navigation/MobileNavigation.tsx
 const css = fs.readFileSync('src/features/navigation/navigation.css', 'utf8')
 const settings = fs.readFileSync('src/features/navigation/MobileNavigationSettings.tsx', 'utf8')
 
-test('desktop navigation lives inside the existing header, never in the floating footer', () => {
-  const header = app.slice(app.indexOf('<header className={`topbar'), app.indexOf('</header>', app.indexOf('<header className={`topbar')))
-  expect(header).toContain('<DesktopNavigation active={mainView}')
-  expect(app.slice(app.indexOf('<MobileNavigation config={mobileNav}'), app.indexOf('<MobileNavigation config={mobileNav}') + 240)).not.toContain('<DesktopNavigation')
-  expect(css).toMatch(/\.topbar \{\s*position:sticky; top:0;/)
-  expect(css).toContain('.topbar .desktop-navigation {')
-  expect(navigation).toContain("['calendar', 'notes', 'anniversaries', 'statistics', 'settings']")
+test('desktop navigation is a persistent sidebar with search and brand', () => {
+  expect(app).toContain('<DesktopNavigationDrawer active={mainView} onNavigate={switchMainView} collapsed={desktopSidebarCollapsed} />')
+  expect(app).not.toContain('<DesktopNavigation active={mainView}')
+  expect(css).toContain('.desktop-navigation-sidebar')
+  expect(css).toContain('position:fixed; inset:0 auto 0 0')
+  expect(css).toContain('.topbar .global-search-wrap')
 })
 
 test('mobile settings are concise and statistics is a direct settings row', () => {
@@ -24,74 +23,84 @@ test('mobile settings are concise and statistics is a direct settings row', () =
   expect(app).not.toContain('其他功能')
 })
 
-test('desktop navigation stays in the header at wide viewport', async ({ page, isMobile }) => {
-  if (isMobile) return
+test('desktop sidebar is always visible and navigates without a drawer', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 })
   await page.goto('/')
-  const nav = page.locator('.topbar .desktop-navigation')
-  await expect(nav.getByRole('button')).toHaveCount(5)
-  await nav.getByRole('button', { name: '统计' }).click()
-  await expect(nav.getByRole('button', { name: '统计' })).toHaveClass(/active/)
-  await expect(nav).toBeVisible()
-  await page.evaluate(() => window.scrollTo(0, 500))
-  const box = await nav.boundingBox()
-  expect(box?.y).toBeGreaterThanOrEqual(0)
+  const sidebar = page.getByRole('navigation', { name: '电脑端导航' })
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar.getByRole('button')).toHaveCount(5)
+  await expect(page.getByRole('searchbox', { name: '全局搜索' })).toBeVisible().catch(async () => {
+    await expect(page.getByRole('textbox', { name: '全局搜索' })).toBeVisible()
+  })
+  await sidebar.getByRole('button', { name: '统计' }).click()
+  await expect(sidebar.getByRole('button', { name: '统计' })).toHaveAttribute('aria-current', 'page')
+  await expect(sidebar).toBeVisible()
+  const navBox = await sidebar.boundingBox()
+  expect(navBox?.x).toBeLessThan(250)
 })
 
-
-test('desktop navigation is text-only, compact, and ordered between brand and search', () => {
-  const desktop = navigation.slice(navigation.indexOf('export function DesktopNavigation'))
-  expect(desktop).not.toContain('mobileNavIcon(id)')
-  expect(desktop).toContain('{mobileNavLabel(id)}')
-  expect(css).toContain('.topbar .desktop-navigation button.active::after')
-  expect(css).toContain('.topbar .global-search-wrap {')
-  expect(css).toContain('order:2; flex:1 1 220px')
-  expect(css).toContain('.topbar .desktop-navigation {')
-  expect(css).toContain('order:1; display:flex; position:static')
-  expect(css).toContain('top:0; z-index:80')
-  expect(css).toContain('max-width:1080px')
+test('mobile navigation remains separate from desktop drawer', () => {
+  expect(navigation).toContain('export function MobileNavigation')
+  expect(app).toContain('<MobileNavigation config={mobileNav}')
+  expect(css).toContain('@media (max-width:700px)')
 })
 
-test('desktop header navigation uses text labels and keeps search accessible', async ({ page, isMobile }) => {
-  if (isMobile) return
-  await page.setViewportSize({ width: 1440, height: 900 })
+test('desktop sidebar collapses to SVG icons and restores its width', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 })
   await page.goto('/')
-  const nav = page.locator('.topbar .desktop-navigation')
-  await expect(nav.locator('svg')).toHaveCount(0)
-  await expect(nav.getByRole('button')).toHaveCount(5)
-  const navBox = await nav.boundingBox()
-  const searchBox = await page.getByRole('textbox', { name: '全局搜索' }).boundingBox()
+  const sidebar = page.getByRole('navigation', { name: '电脑端导航' })
+  await expect(sidebar.locator('svg')).toHaveCount(5)
+  const toggle = page.getByRole('button', { name: '折叠侧边栏' })
+  await toggle.click()
+  await expect(page.locator('.app-shell')).toHaveClass(/sidebar-collapsed/)
+  await expect(sidebar.getByRole('button', { name: '日历' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '展开侧边栏' })).toBeVisible()
+  await page.reload()
+  await expect(page.locator('.app-shell')).toHaveClass(/sidebar-collapsed/)
+  await page.getByRole('button', { name: '展开侧边栏' }).click()
+  await expect(page.locator('.app-shell')).not.toHaveClass(/sidebar-collapsed/)
+})
+
+test('desktop sidebar does not overlap calendar or settings content', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 800 })
+  await page.goto('/')
+  const sidebar = page.getByRole('navigation', { name: '电脑端导航' })
+  const navBox = await sidebar.boundingBox()
+  const calendarBox = await page.getByRole('region', { name: '月历' }).boundingBox()
   expect(navBox).not.toBeNull()
-  expect(searchBox).not.toBeNull()
-  expect(navBox!.x + navBox!.width).toBeLessThanOrEqual(searchBox!.x + 2)
-  await nav.getByRole('button', { name: '笔记' }).click()
-  await expect(nav.getByRole('button', { name: '笔记' })).toHaveClass(/active/)
+  expect(calendarBox).not.toBeNull()
+  expect(calendarBox!.x).toBeGreaterThan(navBox!.x + navBox!.width)
+  await sidebar.getByRole('button', { name: '设置' }).click()
+  const settingsBox = await page.locator('.settings-page').boundingBox()
+  expect(settingsBox).not.toBeNull()
+  expect(settingsBox!.x).toBeGreaterThan(navBox!.x + navBox!.width)
 })
 
 
-test('desktop branding remains visible in settings and header matches page canvas', async ({ page, isMobile }) => {
-  if (isMobile) return
-  await page.setViewportSize({ width: 1440, height: 900 })
+test('collapsed sidebar hides search entirely and expanded sidebar restores it', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 })
   await page.goto('/')
-  await page.locator('.topbar .desktop-navigation').getByRole('button', { name: '设置' }).click()
-  await expect(page.locator('.topbar .brand-mark-desktop')).toBeVisible()
-  const header = page.locator('.topbar')
-  const background = await header.evaluate(element => getComputedStyle(element).backgroundColor)
-  expect(background).toBe('rgb(245, 247, 244)')
+  const search = page.locator('.topbar .global-search-wrap')
+  await expect(search).toBeVisible()
+  await page.getByRole('button', { name: '折叠侧边栏' }).click()
+  await expect(search).toBeHidden()
+  await page.getByRole('button', { name: '展开侧边栏' }).click()
+  await expect(search).toBeVisible()
 })
 
-test('desktop sticky page controls reserve the global header height', async ({ page, isMobile }) => {
-  if (isMobile) return
-  for (const width of [1440, 900]) {
-    await page.setViewportSize({ width, height: 750 })
-    await page.goto('/')
-    const headerHeight = await page.locator('.topbar').evaluate(element => element.getBoundingClientRect().height)
-    const calendarOffset = await page.locator('.calendar-sticky-header').evaluate(element => parseFloat(getComputedStyle(element).top))
-    expect(calendarOffset).toBeGreaterThanOrEqual(headerHeight)
-    await page.locator('.topbar .desktop-navigation').getByRole('button', { name: '统计' }).click()
-    const statsOffset = await page.locator('.statistics-page .stats-range').evaluate(element => parseFloat(getComputedStyle(element).top))
-    expect(statsOffset).toBeGreaterThanOrEqual(headerHeight)
-    await page.locator('.topbar .desktop-navigation').getByRole('button', { name: '纪念日' }).click()
-    const anniversaryOffset = await page.locator('.anniversary-page .page-heading').evaluate(element => parseFloat(getComputedStyle(element).top))
-    expect(anniversaryOffset).toBeGreaterThanOrEqual(headerHeight)
+test('desktop calendar header has comfortable vertical padding and contains its controls', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await page.goto('/')
+  const toolbar = page.locator('.calendar-sticky-header .calendar-toolbar')
+  const bounds = await toolbar.boundingBox()
+  const month = await page.getByRole('button', { name: '快速选择年月' }).boundingBox()
+  const refresh = await page.getByRole('button', { name: '检查并刷新程序' }).boundingBox()
+  expect(bounds).not.toBeNull()
+  expect(month).not.toBeNull()
+  expect(refresh).not.toBeNull()
+  expect(bounds!.height).toBeGreaterThanOrEqual(100)
+  for (const item of [month!, refresh!]) {
+    expect(item.y).toBeGreaterThan(bounds!.y + 8)
+    expect(item.y + item.height).toBeLessThan(bounds!.y + bounds!.height - 8)
   }
 })

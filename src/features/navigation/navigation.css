@@ -71,3 +71,168 @@
 
 @media (min-width:701px) { .bottom-nav { display:none; } }
 @media (max-width:700px) { .desktop-navigation { display:none; } .topbar .settings-brand { display:none!important; } }
+
+/* v2.10.9 — Desktop navigation is an overlay; existing page controls own the header row. */
+@media (min-width:701px) {
+  .app-shell { position:relative; padding-top:18px; }
+  .topbar, .topbar.calendar-topbar {
+    position:sticky; top:0; height:0; min-height:0; margin:0; padding:0;
+    z-index:100; background:transparent; overflow:visible;
+  }
+  .topbar .brand-block { position:absolute; top:14px; left:16px; z-index:2; }
+  .topbar .brand-mark { visibility:hidden; pointer-events:none; }
+  .topbar .brand-copy { display:none; }
+  .topbar .global-search-wrap {
+    position:absolute; top:16px; right:14px; order:initial;
+    width:clamp(160px,22vw,270px); max-width:270px; min-width:0;
+    margin:0; flex:none; z-index:2;
+  }
+  .desktop-drawer-trigger {
+    position:absolute; left:16px; top:14px; z-index:3;
+    display:grid; place-items:center; width:42px; height:42px;
+    border:0; border-radius:13px; background:#222b27; color:#f7faf7;
+    font:22px Georgia,serif; cursor:pointer;
+  }
+  .desktop-drawer-trigger:hover { background:#405c4d; }
+  .desktop-drawer-backdrop { position:fixed; inset:0; z-index:500; border:0; background:rgba(20,31,24,.32); cursor:default; }
+  .desktop-navigation-drawer {
+    position:fixed; top:0; left:0; bottom:0; width:min(290px,85vw);
+    z-index:501; display:flex; flex-direction:column; gap:5px;
+    padding:30px 18px 24px; background:#fff;
+    box-shadow:10px 0 38px rgba(20,31,24,.16);
+    animation:zing-drawer-in .18s ease-out;
+  }
+  @keyframes zing-drawer-in { from { transform:translateX(-100%); } to { transform:translateX(0); } }
+  .desktop-drawer-heading { padding:9px 12px 22px; font:600 21px Georgia,serif; color:#344b3b; }
+  .desktop-navigation-drawer button {
+    border:0; border-radius:10px; padding:13px 15px; text-align:left;
+    background:transparent; color:#65766a; font-size:15px; cursor:pointer;
+  }
+  .desktop-navigation-drawer button:hover { background:#f1f5f2; }
+  .desktop-navigation-drawer button.active { background:#e9f1eb; color:#355941; font-weight:650; }
+  .desktop-navigation-drawer .drawer-settings { margin-top:auto; border-top:1px solid #e6ece8; border-radius:0; }
+  .calendar-sticky-header { top:0; }
+  .calendar-sticky-header .calendar-toolbar { padding-left:74px; padding-right:300px; min-height:74px; box-sizing:border-box; }
+  .anniversary-page .page-heading, .statistics-page .stats-range { top:0; }
+  .anniversary-page .page-heading { padding-left:74px; padding-right:300px; min-height:74px; box-sizing:border-box; }
+  .statistics-page .stats-range { margin-left:74px; margin-right:300px; min-height:74px; }
+  .settings-page .page-heading, .notes-page .page-heading { padding-left:74px; padding-right:300px; min-height:74px; box-sizing:border-box; }
+}
+@media (min-width:701px) and (max-width:1190px) {
+  .calendar-sticky-header .calendar-toolbar { padding-right:18px; padding-top:70px; }
+  .anniversary-page .page-heading { padding-right:18px; padding-top:70px; }
+  .statistics-page .stats-range { margin-top:70px; margin-right:0; }
+}
+@media (max-width:700px) { .desktop-drawer-trigger, .desktop-navigation-drawer, .desktop-drawer-backdrop { display:none; } }
+
+/* v2.10.11 — Desktop-only persistent navigation rail; page headers own their controls. */
+@media (min-width:701px) {
+  .app-shell { width:calc(100% - 296px); max-width:none; margin:0 24px 0 272px; padding:24px 0 36px; }
+  .topbar, .topbar.calendar-topbar {
+    position:fixed; inset:0 auto 0 0; width:248px; height:100dvh; min-height:0;
+    display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start;
+    gap:0; box-sizing:border-box; margin:0; padding:26px 14px 20px;
+    background:#f7f9f7; border-right:1px solid #e0e8e2;
+    z-index:110; overflow:visible; backdrop-filter:none;
+  }
+  .topbar .brand-block, .topbar .settings-brand {
+    position:static; display:flex!important; order:0; align-items:center;
+    gap:12px; padding:0 8px; margin:0 0 26px; min-height:46px;
+  }
+  .topbar .brand-mark { visibility:visible; pointer-events:none; width:42px; height:42px; flex-shrink:0; }
+  .topbar .brand-copy { display:block; min-width:0; }
+  .topbar .brand-copy p { margin:0; white-space:nowrap; }
+  .topbar .global-search-wrap {
+    position:relative; inset:auto; order:1; width:100%; max-width:none;
+    min-width:0; flex:none; margin:0 0 24px; z-index:3;
+  }
+  .topbar .global-search-wrap input { box-sizing:border-box; width:100%; font-size:13px; }
+  .topbar .search-panel { left:0; right:auto; width:min(420px,calc(100vw - 270px)); max-width:none; }
+  .desktop-navigation-sidebar { display:flex; flex-direction:column; flex:1; gap:5px; min-height:0; order:2; }
+  .desktop-navigation-sidebar button {
+    border:0; border-radius:10px; padding:12px 16px; text-align:left;
+    background:transparent; color:#68776e; font-size:15px; cursor:pointer;
+  }
+  .desktop-navigation-sidebar button:hover { background:#edf2ee; color:#3b5946; }
+  .desktop-navigation-sidebar button.active { background:#e4eee6; color:#365b43; font-weight:650; }
+  .desktop-navigation-sidebar .sidebar-settings { margin-top:auto; }
+  .desktop-drawer-trigger, .desktop-navigation-drawer, .desktop-drawer-backdrop { display:none!important; }
+  .calendar-sticky-header, .anniversary-page .page-heading, .statistics-page .stats-range { top:0; }
+  .calendar-sticky-header .calendar-toolbar, .anniversary-page .page-heading,
+  .settings-page .page-heading, .notes-page .page-heading {
+    padding-left:initial; padding-right:initial; padding-top:initial; min-height:initial;
+  }
+  .statistics-page .stats-range { margin-left:0; margin-right:0; margin-top:0; min-height:initial; }
+  .notes-page { max-width:none; }
+}
+@media (min-width:701px) and (max-width:1190px) {
+  .calendar-sticky-header .calendar-toolbar, .anniversary-page .page-heading { padding-right:initial; padding-top:initial; }
+  .statistics-page .stats-range { margin-top:0; margin-right:0; }
+}
+@media (min-width:701px) and (max-width:950px) {
+  .app-shell { width:calc(100% - 238px); margin-left:226px; margin-right:12px; }
+  .topbar, .topbar.calendar-topbar { width:210px; padding:22px 10px 16px; }
+  .topbar .search-panel { width:min(380px,calc(100vw - 230px)); }
+}
+@media (max-width:700px) { .desktop-navigation-sidebar { display:none; } }
+
+/* v2.10.12 — compact persistent sidebar, shared SVG icons and safe page headers. */
+@media (min-width:701px) {
+  .app-shell { min-width:0; width:auto; max-width:none; margin:0 20px 0 268px; }
+  .app-shell.sidebar-collapsed { margin-left:88px; }
+  .topbar, .topbar.calendar-topbar { width:248px; overflow:hidden; }
+  .desktop-sidebar-toggle {
+    display:grid; place-items:center; flex:none; position:absolute; top:32px; right:12px;
+    width:34px; height:34px; padding:6px; border:0; border-radius:9px;
+    background:transparent; color:#64766b; cursor:pointer; z-index:4;
+  }
+  .desktop-sidebar-toggle svg { width:23px; height:23px; }
+  .desktop-sidebar-toggle:hover { background:#e7eee9; color:#355b43; }
+  .topbar .brand-block, .topbar .settings-brand { padding-right:36px; }
+  .desktop-navigation-sidebar button { display:flex; align-items:center; gap:14px; min-height:44px; padding:10px 13px; }
+  .desktop-navigation-sidebar .bottom-nav-icon { width:20px; height:20px; flex:0 0 20px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
+  .desktop-navigation-sidebar .sidebar-nav-label { white-space:nowrap; }
+  .app-shell.sidebar-collapsed .topbar { width:68px; padding-left:9px; padding-right:9px; }
+  .sidebar-collapsed .topbar .brand-block, .sidebar-collapsed .topbar .settings-brand { display:none!important; }
+  .sidebar-collapsed .desktop-sidebar-toggle { position:static; order:0; width:48px; height:44px; margin:0 auto 20px; }
+  /* Collapsed navigation is icon-only: search is available when expanded. */
+  .sidebar-collapsed .topbar .global-search-wrap { display:none!important; }
+  .sidebar-collapsed .desktop-navigation-sidebar button { justify-content:center; padding:10px; }
+  .sidebar-collapsed .sidebar-nav-label { display:none; }
+  .app-shell .calendar-card { min-width:0; max-width:100%; }
+  .app-shell .calendar-toolbar { min-width:0; }
+  .settings-page .page-heading { box-shadow:none; background:transparent; border:0; padding:4px 0 12px; border-radius:0; }
+}
+@media (min-width:701px) and (max-width:1150px) {
+  .app-shell { margin-left:226px; margin-right:12px; }
+  .topbar, .topbar.calendar-topbar { width:210px; }
+  .app-shell.sidebar-collapsed { margin-left:82px; }
+  .calendar-sticky-header .calendar-toolbar { flex-wrap:wrap; gap:10px; }
+}
+@media (max-width:700px) { .desktop-sidebar-toggle { display:none!important; } }
+
+/* v2.10.13 — desktop calendar header gets the same breathing room as other page cards. */
+@media (min-width:701px) {
+  .app-shell .calendar-sticky-header { border-radius:22px 22px 0 0; }
+  .app-shell .calendar-sticky-header .calendar-toolbar {
+    box-sizing:border-box;
+    min-height:104px;
+    padding:22px 26px;
+    column-gap:18px;
+    row-gap:14px;
+    flex-wrap:wrap;
+    align-content:center;
+    background:#fff;
+  }
+  .app-shell .calendar-sticky-header .weekday-row { background:#fafbfa; }
+  .sidebar-collapsed .desktop-sidebar-toggle {
+    width:42px;
+    height:42px;
+    margin-bottom:16px;
+    border:0;
+    box-shadow:none;
+  }
+}
+@media (min-width:701px) and (max-width:1150px) {
+  .app-shell .calendar-sticky-header .calendar-toolbar { padding:20px 18px; }
+}

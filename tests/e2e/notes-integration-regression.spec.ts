@@ -123,7 +123,7 @@ test('notes desktop regression › editor adapter reports scroll progress and No
 test('notes markdown browser regression › clean GFM table renders as a real table', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/')
-  await page.getByRole('navigation', { name: '主要功能' }).getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('navigation', { name: '电脑端导航' }).getByRole('button', { name: '笔记' }).click()
   await page.getByRole('button', { name: '＋ 新建' }).click()
   const editor = page.locator('.note-editor .zing-md-editor textarea')
   await editor.fill('| Header | Header |\n| --- | --- |\n| Cell | Cell |\n| Cell | Cell |')
@@ -136,7 +136,7 @@ test('notes markdown browser regression › clean GFM table renders as a real ta
 test('notes markdown browser regression › desktop checklist toggle keeps the real UIW scroll container in place', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/')
-  await page.getByRole('navigation', { name: '主要功能' }).getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('navigation', { name: '电脑端导航' }).getByRole('button', { name: '笔记' }).click()
   await page.getByRole('button', { name: '＋ 新建' }).click()
   const textarea = page.locator('.note-editor .zing-md-editor textarea')
   const lines = Array.from({length: 80}, (_, i) => i === 45 ? '- [ ] target task' : `line ${i + 1}`).join('\n')
@@ -265,7 +265,7 @@ test('notes mobile touch regression › pointer-down on a toolbar button keeps t
 test('notes desktop browser regression › the mounted UIW editor drives preview scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 850 })
   await page.goto('/')
-  await page.getByRole('navigation', { name: '主要功能' }).getByRole('button', { name: '笔记' }).click()
+  await page.getByRole('navigation', { name: '电脑端导航' }).getByRole('button', { name: '笔记' }).click()
   await page.getByRole('button', { name: '＋ 新建' }).click()
   const textarea = page.locator('.note-editor .zing-md-editor textarea')
   await textarea.fill(Array.from({length: 180}, (_, i) => `## Section ${i + 1}\ncontent ${i + 1}`).join('\n\n'))

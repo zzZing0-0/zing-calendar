@@ -20,7 +20,7 @@ test('mobile navigation swaps occupied entries and extends four to five', () => 
 
 test('navigation is modular, only default template syncs, and desktop keeps all existing entries', () => {
   expect(app).toContain('<MobileNavigation config={mobileNav}')
-  expect(app).toContain('<DesktopNavigation active={mainView}')
+  expect(app).toContain('<DesktopNavigationDrawer active={mainView}')
   expect(app).toContain('<MobileNavigationSettings')
   expect(app).toContain('defaultMobileNavigation: syncedDefaultMobileNav')
   expect(app).not.toContain('defaultMobileNavigation: mobileNav,')
