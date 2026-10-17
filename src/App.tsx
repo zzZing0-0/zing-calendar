@@ -1,7 +1,7 @@
-import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav } from './features/navigation/navigationConfig'
+import { BUILTIN_MOBILE_NAV, normalizeMobileNav } from './features/navigation/navigationConfig'
 import type { MobileNavConfig } from './features/navigation/navigationConfig'
 import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
-import { MobileNavigation, DesktopNavigation, MobileNavigationExtras } from './features/navigation/MobileNavigation'
+import { MobileNavigation, DesktopNavigation } from './features/navigation/MobileNavigation'
 import { MobileNavigationSettings } from './features/navigation/MobileNavigationSettings'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,7 +11,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.10.3'
+const APP_VERSION = '2.10.6'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3044,6 +3044,7 @@ function App() {
             </div>
           )}
         </div>
+        <DesktopNavigation active={mainView} onNavigate={switchMainView} />
       </header>
 
       {mainView === 'calendar' && <section className={`calendar-card${isMobileCalendar && dayDetailOpen ? ' day-detail-open' : ''}`} aria-label="月历">
@@ -3360,8 +3361,8 @@ function App() {
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
           <div className="settings-group mobile-nav-settings-group">
             <div className="settings-group-title"><h3>导航</h3></div>
-            <button className="settings-link-row" type="button" onClick={() => { setMobileNavToast(''); setMobileNavSettingsOpen(true) }}><span><strong>导航栏设置</strong><small>选择底部导航的数量、内容与顺序。</small></span><b>›</b></button>
-            <MobileNavigationExtras missing={missingMobileNav(mobileNav)} onNavigate={switchMainView} />
+            <button className="settings-link-row" type="button" onClick={() => { setMobileNavToast(''); setMobileNavSettingsOpen(true) }}><span><strong>导航栏设置</strong></span><b>›</b></button>
+            <button className="settings-link-row" type="button" aria-label="统计" onClick={() => switchMainView('statistics')}><span><strong>统计</strong></span><b>›</b></button>
           </div>
 
 
@@ -3720,7 +3721,6 @@ function App() {
       {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !noteFocusHistoryId && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && (
       <>
         <MobileNavigation config={mobileNav} active={mainView} onNavigate={switchMainView} />
-        <DesktopNavigation active={mainView} onNavigate={switchMainView} />
       </>
       )}
 

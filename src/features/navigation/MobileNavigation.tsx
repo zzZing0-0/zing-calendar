@@ -15,22 +15,14 @@ export type NavigationPage = 'calendar' | 'notes' | 'anniversaries' | 'statistic
 export function MobileNavigation({ config, active, onNavigate }: { config: MobileNavConfig; active: NavigationPage; onNavigate: (page: NavigationPage) => void }) {
   const pages: NavigationPage[] = ['calendar', ...config.middleItems, 'settings']
   return <nav className="bottom-nav" aria-label="主要功能">{pages.map(id =>
-    <button key={id} type="button" className={active === id ? 'active' : ''} onClick={() => onNavigate(id)}>
+    <button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>
       {mobileNavIcon(id)}{mobileNavLabel(id)}
     </button>
   )}</nav>
 }
-export function MobileNavigationExtras({ missing, onNavigate }: { missing: MobileNavChoice[]; onNavigate: (page: NavigationPage) => void }) {
-  if (!missing.length) return null
-  return <><div className="settings-group-title"><h3>其他功能</h3></div>
-    {missing.map(id => <button key={id} className="settings-link-row" type="button" aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}><span><strong>{mobileNavLabel(id)}</strong></span><b>›</b></button>)}
-  </>
-}
-
-/** Desktop retains the established five-entry navigation until the separate desktop redesign. */
 export function DesktopNavigation({ active, onNavigate }: { active: NavigationPage; onNavigate: (page: NavigationPage) => void }) {
   const pages: NavigationPage[] = ['calendar', 'notes', 'anniversaries', 'statistics', 'settings']
   return <nav className="desktop-navigation" aria-label="主要功能">{pages.map(id =>
-    <button key={id} type="button" className={active === id ? 'active' : ''} onClick={() => onNavigate(id)}>{mobileNavIcon(id)}{mobileNavLabel(id)}</button>
+    <button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>{mobileNavIcon(id)}{mobileNavLabel(id)}</button>
   )}</nav>
 }
