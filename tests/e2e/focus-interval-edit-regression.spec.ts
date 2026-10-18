@@ -16,9 +16,10 @@ test('focus interval edit regression › historical focus edits start and end ti
 })
 
 test('focus interval edit regression › save validates a real positive interval and derives durationSeconds from it', () => {
-  expect(app).toContain("if(end.getTime()<=start.getTime())")
-  expect(app).toContain('durationSeconds=Math.round((end.getTime()-start.getTime())/1000)')
-  expect(app).toContain('startedAt:start.toISOString(),endedAt:end.toISOString(),durationSeconds')
+  const actions = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/focusSessionActions.ts'), 'utf8')
+  expect(app).toContain('editFinishedFocusSession(session, {')
+  expect(actions).toContain('if (durationMs <= 0)')
+  expect(actions).toContain('durationSeconds: Math.round(durationMs / 1000)')
 })
 
 test('focus interval edit regression › finished countdown sessions use their actual edited interval while active countdown remains capped by its plan', () => {

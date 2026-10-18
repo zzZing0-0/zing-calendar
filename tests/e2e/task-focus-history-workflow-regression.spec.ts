@@ -7,7 +7,7 @@ const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
 test('task focus history regression › compact task viewer owns raw task focus history CRUD', () => {
   expect(app).toContain('taskFocusHistoryOpen')
   expect(app).toContain('task-inline-focus-history')
-  expect(app).toContain("session.context?.kind==='task'&&session.context.taskId===viewingTask.id")
+  expect(app).toContain('focusHistoryForTask(viewingTask, focusSessions, timerNow)')
   expect(app).toContain('beginEditFocusSession(session)')
   expect(app).toContain("trashFocusSession(item,now)")
   expect(app).toContain('确定删除这条任务专注记录吗？')
@@ -20,6 +20,7 @@ test('task focus history regression › task history preserves shared date forma
 })
 
 test('task focus history regression › recurring occurrences still expose no task focus history', () => {
-  expect(app).toContain("viewingTask && !viewingTask.seriesId ? focusSessions.filter")
+  const selectors = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/focusHistorySelectors.ts'), 'utf8')
+  expect(selectors).toContain('task && !task.seriesId ? task.id : null')
   expect(app).toContain('taskFocusHistorySeconds > 0 && !viewingTask.seriesId')
 })

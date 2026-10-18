@@ -18,7 +18,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.13.1'
+const APP_VERSION = '2.14.5'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -61,8 +61,10 @@ import { buildStatistics } from './domain/statistics'
 import { buildSearchResults, matchingTagSuggestions, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
 import { cascadeRestoreTaskFocus, cascadeTrashTaskFocus, permanentlyDeleteTaskFocus, purgeTrashWithTaskFocus } from './domain/taskFocusLifecycle'
-import { activeFocusSession as findActiveFocusSession, activeFocusSessions, countdownMinutes, finishedFocusSession, focusHistoryForDate, focusSessionDurationSeconds, focusTiming, formatFocusClock, noteFocusSeconds, taskFocusSeconds, permanentlyDeleteFocusSession, restoreFocusSession, trashFocusSession } from './domain/focus'
+import { activeFocusSession as findActiveFocusSession, activeFocusSessions, countdownMinutes, focusHistoryForDate, focusSessionDurationSeconds, focusTiming, formatFocusClock, noteFocusSeconds, permanentlyDeleteFocusSession, restoreFocusSession, trashFocusSession } from './domain/focus'
 import { createDirectFocusSession, createNoteFocusSession, createTaskFocusSession, lastSelectableFocusTagId } from './domain/focusRuntime'
+import { focusHistoryForNote, focusHistoryForTask, focusIsoToLocalInput, focusLocalInputToDate } from './domain/focusHistorySelectors'
+import { appendFocusSession, endFocusSession, editFinishedFocusSession } from './domain/focusSessionActions'
 import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
 import { useAppPreferences } from './hooks/useAppPreferences'
 import { useFocusWakeLock } from './hooks/useFocusWakeLock'
@@ -1424,22 +1426,16 @@ function App() {
     return focusHistoryForDate(activeTasks, notes, focusSessions, focusHistoryDate, timerNow)
   },[focusHistoryDate,activeTasks,notes,focusSessions,timerNow])
 
-  const noteFocusHistoryNote = useMemo(() => noteFocusHistoryId ? notes.find(note=>note.id===noteFocusHistoryId&&!note.trashedAt)??null : null, [noteFocusHistoryId,notes])
-  const noteFocusHistorySessions = useMemo(() => noteFocusHistoryId ? focusSessions.filter(session=>!session.trashedAt&&session.context?.kind==='note'&&session.context.noteId===noteFocusHistoryId).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)) : [], [noteFocusHistoryId,focusSessions])
-  const noteFocusHistorySeconds = useMemo(() => noteFocusHistoryId ? noteFocusSeconds(noteFocusHistoryId,focusSessions,timerNow) : 0, [noteFocusHistoryId,focusSessions,timerNow])
-  const taskFocusHistorySessions = useMemo(() => viewingTask && !viewingTask.seriesId ? focusSessions.filter(session=>!session.trashedAt&&session.context?.kind==='task'&&session.context.taskId===viewingTask.id).sort((a,b)=>b.startedAt.localeCompare(a.startedAt)) : [], [viewingTask,focusSessions])
-  const taskFocusHistorySeconds = useMemo(() => viewingTask && !viewingTask.seriesId ? taskFocusSeconds(viewingTask.id,focusSessions,timerNow) : 0, [viewingTask,focusSessions,timerNow])
+  const noteFocusHistory = useMemo(() => focusHistoryForNote(noteFocusHistoryId, notes, focusSessions, timerNow), [noteFocusHistoryId, notes, focusSessions, timerNow])
+  const noteFocusHistoryNote = noteFocusHistory.note
+  const noteFocusHistorySessions = noteFocusHistory.sessions
+  const noteFocusHistorySeconds = noteFocusHistory.seconds
+  const taskFocusHistory = useMemo(() => focusHistoryForTask(viewingTask, focusSessions, timerNow), [viewingTask, focusSessions, timerNow])
+  const taskFocusHistorySessions = taskFocusHistory.sessions
+  const taskFocusHistorySeconds = taskFocusHistory.seconds
 
-  const toLocalDateTimeInput = (iso:string) => {
-    const date=new Date(iso)
-    if(!Number.isFinite(date.getTime())) return ''
-    const pad=(value:number)=>String(value).padStart(2,'0')
-    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  }
-  const fromLocalDateTimeInput = (value:string) => {
-    const date=new Date(value)
-    return Number.isFinite(date.getTime()) ? date : null
-  }
+  const toLocalDateTimeInput = focusIsoToLocalInput
+  const fromLocalDateTimeInput = focusLocalInputToDate
   const beginEditFocusSession = (session:FocusSession) => {
     if(!session.endedAt) return
     setFocusEditId(session.id)
@@ -1454,14 +1450,18 @@ function App() {
     return start!==undefined&&end!==undefined&&end>start ? Math.round((end-start)/1000) : 0
   })()
   const saveFocusSessionEdit = () => {
-    if(!focusEditId) return
-    const start=fromLocalDateTimeInput(focusEditStartedAt), end=fromLocalDateTimeInput(focusEditEndedAt)
-    if(!start||!end){setFocusEditError('请选择完整的开始和结束日期时间');return}
-    if(end.getTime()<=start.getTime()){setFocusEditError('结束时间必须晚于开始时间');return}
-    if(end.getTime()-start.getTime()>maxFocusHours*3600000){setFocusEditError(`专注时长不能超过 ${maxFocusHours} 小时`);return}
-    const now=new Date().toISOString(), durationSeconds=Math.round((end.getTime()-start.getTime())/1000)
-    setFocusSessions(current=>current.map(session=>session.id!==focusEditId?session:{...session,tagIds:singleOrdinaryTagIds(focusEditTagIds.length?focusEditTagIds:session.tagIds),startedAt:start.toISOString(),endedAt:end.toISOString(),durationSeconds,updatedAt:now}))
-    setFocusEditId(null);setFocusEditError('')
+    if (!focusEditId) return
+    const session = focusSessions.find(item => item.id === focusEditId)
+    if (!session) { setFocusEditError('专注记录不存在'); return }
+    const result = editFinishedFocusSession(session, {
+      startedAt: focusEditStartedAt, endedAt: focusEditEndedAt,
+      tagIds: singleOrdinaryTagIds(focusEditTagIds.length ? focusEditTagIds : session.tagIds),
+      maxFocusHours, updatedAt: new Date().toISOString(),
+    })
+    if (result.error) { setFocusEditError(result.error); return }
+    if (!result.session) return
+    setFocusSessions(current => current.map(item => item.id === focusEditId ? result.session : item))
+    setFocusEditId(null); setFocusEditError('')
   }
   const focusHistoryEditFields = <>
     <div className="focus-history-edit-times"><label><span>开始</span><input type="datetime-local" value={focusEditStartedAt} onChange={e=>{setFocusEditStartedAt(e.target.value);setFocusEditError('')}} /></label><label><span>结束</span><input type="datetime-local" value={focusEditEndedAt} onChange={e=>{setFocusEditEndedAt(e.target.value);setFocusEditError('')}} /></label></div>
@@ -1760,7 +1760,7 @@ function App() {
     if (activeTimerTask || activeFocusSession) return
     const plannedMinutes=countdownMinutes(focusMinutes,15)
     const now=new Date().toISOString()
-    setFocusSessions(current=>[...current,createDirectFocusSession({id:crypto.randomUUID(),tagIds:focusTagIds,mode:focusMode,plannedMinutes,startedAt:now})])
+    setFocusSessions(current=>appendFocusSession(current,createDirectFocusSession({id:crypto.randomUUID(),tagIds:focusTagIds,mode:focusMode,plannedMinutes,startedAt:now})))
     setTimerNow(Date.now())
   }
   const stopDirectFocus = (automatic=false) => {
@@ -1772,7 +1772,7 @@ function App() {
     const timing=focusTiming(activeFocusSession,nowMs,maxFocusSeconds)
     const dueAtMs=timing.dueAtMs??nowMs
     const endMs=automatic ? dueAtMs : Math.min(nowMs,dueAtMs)
-    setFocusSessions(current=>current.map(session=>session.id===activeFocusSession.id?finishedFocusSession(session,endMs):session))
+    setFocusSessions(current=>endFocusSession(current,activeFocusSession.id,endMs))
   }
 
 
@@ -1789,7 +1789,7 @@ function App() {
     const eligible = focusSelectableTags(tags)
     const selectedTagId = eligible.some(tag => tag.id === tagId) ? tagId : DEFAULT_TAG_ID
     const startedAt = new Date().toISOString()
-    setFocusSessions(current => [...current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[selectedTagId], startedAt })])
+    setFocusSessions(current => appendFocusSession(current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[selectedTagId], startedAt })))
     setPendingNoteFocusId(null)
     setFocusOpen(false)
     setMainView('notes')
@@ -1809,7 +1809,7 @@ function App() {
     if (!session || session.context?.kind !== 'note' || session.context.noteId !== note.id) return
     const timing = focusTiming(session, Date.now(), maxFocusSeconds)
     const endMs = Math.min(forcedEndMs ?? Date.now(), timing.dueAtMs ?? Date.now())
-    setFocusSessions(current => current.map(item => item.id === session.id ? finishedFocusSession(item,endMs) : item))
+    setFocusSessions(current => endFocusSession(current,session.id,endMs))
     setFocusOpen(false)
     setMainView('notes')
     setRequestedNoteId(note.id)
@@ -1894,7 +1894,7 @@ function App() {
       else focusTagIds=[DEFAULT_TAG_ID]
     }
     const startedAt=new Date().toISOString()
-    setFocusSessions(current=>[...current,createTaskFocusSession({id:crypto.randomUUID(),taskId:task.id,tagIds:focusTagIds,startedAt})])
+    setFocusSessions(current=>appendFocusSession(current,createTaskFocusSession({id:crypto.randomUUID(),taskId:task.id,tagIds:focusTagIds,startedAt})))
     setTimerNow(Date.now())
   }
 
@@ -1903,7 +1903,7 @@ function App() {
     if (!session || session.context?.kind!=='task' || session.context.taskId!==task.id) return
     const timing=focusTiming(session,Date.now(),maxFocusSeconds)
     const endMs=Math.min(forcedEndMs??Date.now(),timing.dueAtMs??Date.now())
-    setFocusSessions(current=>current.map(item=>item.id===session.id?finishedFocusSession(item,endMs):item))
+    setFocusSessions(current=>endFocusSession(current,session.id,endMs))
     if (complete) setTaskStatus(task,'completed')
   }
 
