@@ -11,11 +11,13 @@ test('day detail keeps task fixed, while mood calendar and other sections are in
  for(const key of ['mood','energy','calendar','journal','habit','period']) expect(app).toContain(`daySectionStyle("${key}")`)
  expect(app).toContain('setLayoutEditor(\'day\')')
 })
-test('settings sorts only top-level groups with fixed layout entry',()=>{
+test('settings sorts all top-level groups with mobile search fixed first',()=>{
  expect(domain).toContain('DEFAULT_SETTINGS_GROUP_ORDER')
- expect(app).toContain('className="settings-group layout-settings-group"')
- expect(css).toContain('.settings-page > .layout-settings-group {order:2}')
- for(const key of ['navigation','tasks','focus','random','tags','weather','encouragement','wordcloud','sync','data','links'])expect(app).toContain(`settingsGroupStyle('${key}')`)
+ expect(app).toContain('className="settings-group layout-settings-group" style={settingsGroupStyle(\'layout\')}')
+ expect(css).toContain('.settings-page > .settings-mobile-search-entry {order:1}')
+ expect(css).not.toContain('.settings-page > .layout-settings-group {order:2}')
+ expect(domain).toContain("['navigation','layout','tasks'")
+ for(const key of ['navigation','layout','tasks','focus','random','tags','weather','encouragement','wordcloud','sync','data','links'])expect(app).toContain(`settingsGroupStyle('${key}')`)
 })
 test('settings order survives local persistence, cloud sync and ZIP backup',()=>{
  for(const key of ['daySectionOrder','settingsGroupOrder']){

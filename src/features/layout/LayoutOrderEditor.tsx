@@ -12,7 +12,7 @@ export function LayoutOrderEditor({kind,order,onChange,onClose}:Props){
   <section className="task-editor module-priority-dialog" role="dialog" aria-modal="true" aria-label={title}>
    <div className="editor-header"><div><span className="eyebrow">LAYOUT</span><h2>{title}</h2></div><button className="close-button" type="button" onClick={onClose}>×</button></div>
    <div className="editor-body">
-    <p className="module-priority-hint">拖动排序，或使用上下按钮。{kind==='day'?'任务固定第一，情绪月历可独立排序。':'仅调整设置页的一级区块，「排序与布局」入口固定。'}</p>
+    <p className="module-priority-hint">拖动排序，或使用上下按钮。{kind==='day'?'任务固定第一，情绪月历可独立排序。':'搜索固定在最前面，其余一级功能区块可自由排序。'}</p>
     {kind==='day'&&<div className="module-priority-item layout-fixed-row"><span className="module-priority-handle">☰</span><strong>任务</strong><small>固定第一</small></div>}
     <div className="module-priority-list">{order.map((key,index)=><div key={key} className="module-priority-item" draggable onDragStart={event=>{dragRef.current=key;event.dataTransfer.effectAllowed='move'}} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();if(dragRef.current)onChange(moveLayoutItem(order,dragRef.current,key));dragRef.current=null}} onDragEnd={()=>{dragRef.current=null}}>
      <span className="module-priority-handle" aria-hidden="true">☰</span><strong>{labels[key]??key}</strong>

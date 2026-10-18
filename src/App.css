@@ -5414,11 +5414,11 @@ button {
   .notes-page .notes-heading .notes-actions {grid-column:2;grid-row:2;align-self:center;display:flex;align-items:center}
 }
 
-/* v2.12.0: user-configurable section ordering; fixed headers always precede content. */
+/* v2.12.2: only heading and mobile search are fixed; all settings groups are sortable. */
 .settings-page {display:flex;flex-direction:column;gap:0}
 .settings-page > .page-heading {order:0}
 .settings-page > .settings-mobile-search-entry {order:1}
-.settings-page > .layout-settings-group {order:2}
+
 .day-drawer {display:flex;flex-direction:column}
 .day-drawer > .drawer-header {order:0;flex-shrink:0}
 .day-drawer > .detail-section {flex-shrink:0}

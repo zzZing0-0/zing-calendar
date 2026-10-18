@@ -18,7 +18,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.12.1'
+const APP_VERSION = '2.12.2'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3436,7 +3436,7 @@ function App() {
         <section className="settings-page">
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
           <button className="settings-mobile-search-entry" type="button" aria-label="打开全局搜索" onClick={() => { setMobileSearchVisible(true); setSearchOpen(true); window.setTimeout(() => document.querySelector<HTMLInputElement>('.global-search-wrap input')?.focus(), 0) }}><span aria-hidden="true">⌕</span><span>搜索任务、笔记、习惯等内容</span><span aria-hidden="true">›</span></button>
-          <div className="settings-group layout-settings-group">
+          <div className="settings-group layout-settings-group" style={settingsGroupStyle('layout')}>
             <div className="settings-group-title"><h3>排序与布局</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>{setMobileNavToast('');setMobileNavSettingsOpen(true)}}><span><strong>底部导航</strong><small>选择与排列底部入口</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setModulePriorityOpen(true)}><span><strong>模块优先级</strong><small>跨模块分类和同步预览顺序</small></span><b>›</b></button>
