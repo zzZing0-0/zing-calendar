@@ -18,7 +18,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.14.11'
+const APP_VERSION = '2.14.12'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -4517,7 +4517,6 @@ function App() {
                     </>
                   ) : (
                     <>
-                      <span className="task-timer-label">任务计时</span>
                       <button className="task-timer-start" type="button" disabled={Boolean(activeFocusSession)} onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</button>{activeFocusSession && <small>已有其他专注正在进行，请先结束后再开始任务计时。</small>}
                     </>
                   )}
