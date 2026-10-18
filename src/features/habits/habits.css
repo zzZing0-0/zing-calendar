@@ -217,3 +217,10 @@
 .habit-card-tag{display:inline-flex;align-items:center;gap:6px;max-width:max-content;border-radius:99px;background:#f6f8f6;color:#63756a;padding:3px 9px;font-size:12px}
 .habit-card-tag i{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
 @media(max-width:700px){.habits-header,.notes-heading{min-height:76px;align-items:center!important}.habits-header h2,.notes-heading h2{margin:3px 0 0;font-size:26px}}
+
+/* v2.11.29 — Keep the colored tag inline with the original progress summary. */
+.habits-page .habits-header{min-height:76px;align-items:center;justify-content:space-between;margin-bottom:18px}
+.habits-page .habits-header h2{margin:3px 0 0}
+.habits-page .habits-header .primary-button{height:44px;min-height:44px;line-height:1.2;flex-shrink:0}
+.habit-card-main small .habit-card-tag{display:inline-flex;vertical-align:baseline;align-items:center;gap:5px;padding:0;border-radius:0;background:transparent;color:inherit;font-size:inherit;max-width:none;white-space:nowrap}
+.habit-card-main small .habit-card-tag i{width:7px;height:7px}

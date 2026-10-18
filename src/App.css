@@ -5392,3 +5392,15 @@ button {
   .settings-mobile-search-entry span:nth-child(2){flex:1}
   .settings-mobile-search-entry span:last-child{font-size:24px}
 }
+
+/* v2.11.29 — Settings shortcuts are compact rows, not bottom navigation buttons. */
+.settings-page .settings-destination-link{min-height:58px;align-items:center}
+.settings-page .settings-destination-link > .settings-nav-link-label{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:12px!important;min-width:0}
+.settings-page .settings-destination-link .bottom-nav-icon{width:21px;height:21px;flex:0 0 21px}
+.settings-page .settings-destination-link strong{display:inline!important;margin:0!important;line-height:1.35}
+/* A common header geometry for the Notes and Habits screens. */
+.notes-page .notes-heading{min-height:76px;display:flex;align-items:center!important;justify-content:space-between;gap:14px}
+.notes-page .notes-heading > div:first-child{min-width:0}
+.notes-page .notes-actions{align-items:center;flex-shrink:0}
+.notes-page .notes-actions button{height:44px;min-height:44px;line-height:1.2}
+@media(max-width:700px){.notes-page .notes-heading{align-items:center!important}.notes-page .notes-heading h2{margin:3px 0 0}}
