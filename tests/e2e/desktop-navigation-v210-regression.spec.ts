@@ -15,11 +15,12 @@ test('desktop navigation is a persistent sidebar with search and brand', () => {
 })
 
 test('mobile settings are concise and statistics is a direct settings row', () => {
-  expect(settings).toContain('<strong>数量</strong>')
+  expect(settings).toContain('<strong>底部显示</strong>')
   expect(settings).not.toContain('导航数量')
   expect(settings).not.toContain('· 固定')
   expect(app).not.toContain('MobileNavigationExtras')
-  expect(app).toContain("onClick={() => switchMainView('statistics')}")
+  expect(app).toContain('onClick={() => switchMainView(page)}')
+  expect(app).toContain('missingMobileNav(mobileNav).map')
   expect(app).not.toContain('其他功能')
 })
 

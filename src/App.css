@@ -5431,3 +5431,9 @@ button {
 .layout-sort-list .layout-drag-handle{touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;min-width:34px;min-height:34px;border:0;background:transparent;padding:0;color:#829189}
 .layout-sort-list .layout-drag-handle:active{cursor:grabbing}
 .layout-sort-list .layout-dragging{background:#edf4ef;border-color:#87a99a}
+
+/* v2.13.0 — tag autocomplete stays distinct from matched content */
+.search-tag-suggestions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px}
+.search-tag-suggestions button{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border-color,#ddd);border-radius:14px;padding:5px 9px;background:transparent;color:inherit;cursor:pointer}
+.search-tag-suggestions button.active{border-color:currentColor}
+.search-tag-suggestions .tag-color-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}

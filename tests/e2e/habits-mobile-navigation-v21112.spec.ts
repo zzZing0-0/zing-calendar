@@ -38,7 +38,7 @@ test('saved user navigation takes priority over code default', () => {
 // Regression: Settings shortcuts use the same label helper as the mobile navigation.
 test('settings shortcut labels are imported from the shared navigation component', () => {
   const app = fs.readFileSync('src/App.tsx', 'utf8')
-  expect(app).toContain("import { mobileNavLabel } from './features/navigation/MobileNavigation'")
+  expect(app).toContain("import { mobileNavLabel, mobileNavIcon } from './features/navigation/MobileNavigation'")
 })
 
 test('replacing the habits slot exposes habits as a missing destination', () => {

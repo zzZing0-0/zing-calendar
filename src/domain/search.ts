@@ -13,7 +13,6 @@ export type SearchResult =
   | { kind: 'note'; id: string; title: string; date: string; snippet: string; item: Note }
   | { kind: 'anniversary'; id: string; title: string; date: string; snippet: string; item: Anniversary; nextOccurrence?: Date }
   | { kind: 'habit'; id: string; title: string; date: string; snippet: string; item: Habit }
-  | { kind: 'tag'; id: string; title: string; date: string; snippet: string; item: Tag }
 
 export function normalizeSearchQuery(query: string) {
   return query.trim().toLocaleLowerCase()
@@ -21,11 +20,17 @@ export function normalizeSearchQuery(query: string) {
 
 export function parseTagSearch(normalizedSearch: string) {
   const tagSearchMode = normalizedSearch.startsWith('#')
-  return {
-    tagSearchMode,
-    tagSearchTerm: tagSearchMode ? normalizedSearch.slice(1).trim() : '',
-  }
+  const raw = tagSearchMode ? normalizedSearch.slice(1).trim() : ''
+  const [tagSearchTerm = '', ...keywords] = raw.split(/\s+/)
+  return { tagSearchMode, tagSearchTerm, keyword: keywords.join(' ').trim() }
 }
+
+export function matchingTagSuggestions(query: string, tags: Tag[]): Tag[] {
+  const { tagSearchMode, tagSearchTerm } = parseTagSearch(normalizeSearchQuery(query))
+  if (!tagSearchMode) return []
+  return tags.filter(tag => tag.name.toLocaleLowerCase().includes(tagSearchTerm)).slice(0, 12)
+}
+
 
 export function searchSnippet(text: string, normalizedSearch: string) {
   const clean = text.replace(/[#>*_`~\[\]()!-]+/g, ' ').replace(/\s+/g, ' ').trim()
@@ -46,7 +51,6 @@ export function buildSearchResults({
   activeNotes = [],
   activeHabits = [],
   managedTags,
-  tagUsage,
   today,
 }: {
   normalizedSearch: string
@@ -61,29 +65,21 @@ export function buildSearchResults({
   today: Date
 }): SearchResult[] {
   if (!normalizedSearch) return []
-  const { tagSearchMode, tagSearchTerm } = parseTagSearch(normalizedSearch)
-  if (tagSearchMode) {
-    return managedTags
-      .filter(tag => !tagSearchTerm || tag.name.toLocaleLowerCase().includes(tagSearchTerm))
-      .map(tag => {
-        const usage = tagUsage.get(tag.id) ?? { tasks: 0, journals: 0, days: 0 }
-        return {
-          kind: 'tag' as const,
-          id: tag.id,
-          title: `#${tag.name}`,
-          date: '',
-          snippet: `任务 ${usage.tasks} · 记录 ${usage.journals} · ${usage.days}天`,
-          item: tag,
-        }
-      })
-  }
+  const { tagSearchMode, tagSearchTerm, keyword } = parseTagSearch(normalizedSearch)
+  // A partial #tag is a suggestion, not a full-text search across unrelated tags.
+  const selectedTag = tagSearchMode ? managedTags.find(tag => tag.name.toLocaleLowerCase() === tagSearchTerm) : undefined
+  if (tagSearchMode && !selectedTag) return []
+  const matches = (text: string, ids: string[] = []) =>
+    (!selectedTag || ids.includes(selectedTag.id)) &&
+    (!tagSearchMode ? text.toLocaleLowerCase().includes(normalizedSearch) : !keyword || text.toLocaleLowerCase().includes(keyword))
+  const snippetTerm = tagSearchMode ? keyword : normalizedSearch
 
   const results: SearchResult[] = []
   if (searchFilter === 'all' || searchFilter === 'task') {
     activeTasks.forEach(task => {
       const hay = `${task.title} ${task.notes ?? ''}`.toLocaleLowerCase()
-      if (hay.includes(normalizedSearch)) {
-        results.push({ kind: 'task', id: task.id, title: task.title, date: task.date ?? '', snippet: searchSnippet(task.notes ?? '', normalizedSearch), item: task })
+      if (matches(hay, task.tagIds ?? [])) {
+        results.push({ kind: 'task', id: task.id, title: task.title, date: task.date ?? '', snippet: searchSnippet(task.notes ?? '', snippetTerm), item: task })
       }
     })
   }
@@ -92,26 +88,26 @@ export function buildSearchResults({
       const messages = (entry.messages ?? []).map(message => message.content).join(' \n')
       const searchableText = `${entry.content} ${messages}`.trim()
       const hay = `${entry.title} ${searchableText}`.toLocaleLowerCase()
-      if (hay.includes(normalizedSearch)) {
-        results.push({ kind: 'journal', id: entry.id, title: entry.title, date: entry.date, snippet: searchSnippet(searchableText, normalizedSearch), item: entry })
+      if (matches(hay, entry.tagIds ?? [])) {
+        results.push({ kind: 'journal', id: entry.id, title: entry.title, date: entry.date, snippet: searchSnippet(searchableText, snippetTerm), item: entry })
       }
     })
   }
   if (searchFilter === 'all' || searchFilter === 'note') {
     activeNotes.forEach(note => {
       const hay = `${note.title} ${note.content}`.toLocaleLowerCase()
-      if (hay.includes(normalizedSearch)) results.push({ kind:'note', id:note.id, title:note.title, date:note.updatedAt, snippet:searchSnippet(note.content,normalizedSearch), item:note })
+      if (matches(hay, note.tagIds ?? [])) results.push({ kind:'note', id:note.id, title:note.title, date:note.updatedAt, snippet:searchSnippet(note.content,snippetTerm), item:note })
     })
   }
   if (searchFilter === 'all' || searchFilter === 'habit') {
     activeHabits.forEach(habit => {
-      if (habit.name.toLocaleLowerCase().includes(normalizedSearch)) results.push({kind:'habit',id:habit.id,title:habit.name,date:habit.updatedAt.slice(0,10),snippet:'习惯',item:habit})
+      if (matches(habit.name, habit.tagId ? [habit.tagId] : [])) results.push({kind:'habit',id:habit.id,title:habit.name,date:habit.updatedAt.slice(0,10),snippet:'习惯',item:habit})
     })
   }
   if (searchFilter === 'all' || searchFilter === 'anniversary') {
     activeAnniversaries.forEach(anniversary => {
       const hay = `${anniversary.title} ${anniversary.notes ?? ''}`.toLocaleLowerCase()
-      if (!hay.includes(normalizedSearch)) return
+      if (tagSearchMode || !matches(hay)) return
       const candidateYear = Math.max(today.getFullYear(), anniversary.year ?? today.getFullYear())
       let occurrence = anniversaryOccurrence(anniversary, candidateYear)
       if (!occurrence || occurrence < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
@@ -127,7 +123,7 @@ export function buildSearchResults({
         id: anniversary.id,
         title: anniversary.title,
         date: sortDate,
-        snippet: searchSnippet(anniversary.notes ?? '', normalizedSearch),
+        snippet: searchSnippet(anniversary.notes ?? '', snippetTerm),
         item: anniversary,
         nextOccurrence: occurrence ?? undefined,
       })

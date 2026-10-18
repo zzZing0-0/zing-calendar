@@ -9,7 +9,7 @@ test('archived habits have a distinct section after completed habits', () => {
 })
 test('archived habit records are read-only in both detail and daily views', () => {
   expect(page).toContain('{!habit.archivedAt&&<div className="habit-log-editor">')
-  expect(page).toContain('{!habit.archivedAt&&<button type="button" onClick={()=>removeLog(row.id)}')
+  expect(page).toContain('function removeLog(id:string){if(habit?.archivedAt)return;')
   expect(page).toContain('function saveLog(){if(!habit||habit.archivedAt||')
   expect(app).toContain('if(habit.archivedAt)return;const now')
   expect(app).toContain('habit.archivedAt?<span className="habit-daily-archived"')

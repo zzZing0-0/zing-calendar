@@ -30,7 +30,7 @@ test('mobile editor supports sorting and Settings shortcuts follow hidden order'
   if (!isMobile) return
   await page.goto('/')
   await page.getByRole('navigation', { name: '主要功能' }).getByRole('button', { name: '设置' }).click()
-  await page.getByRole('button', { name: /导航栏设置/ }).click()
+  await page.getByRole('button', { name: '底部导航' }).click()
   const dialog = page.getByRole('dialog', { name: '导航栏设置' })
   await expect(dialog.getByText('底部显示')).toBeVisible()
   await expect(dialog.getByText('不显示', { exact: true })).toBeVisible()

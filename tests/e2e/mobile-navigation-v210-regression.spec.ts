@@ -35,7 +35,7 @@ test('mobile navigation settings save default and shortcuts follow hidden destin
   await expect(group.getByRole('button', { name: '统计', exact: true })).toBeVisible()
   await expect(group.getByRole('button', { name: '纪念日', exact: true })).toBeVisible()
   await expect(group.getByText('其他功能')).toHaveCount(0)
-  await page.getByRole('button', { name: /导航栏设置/ }).click()
+  await page.getByRole('button', { name: '底部导航' }).click()
   const dialog = page.getByRole('dialog', { name: '导航栏设置' })
   // Drag handles replaced the legacy move buttons. Verify the 4–5 item invariant
   // through real pointer interactions, rather than asserting removed button labels.

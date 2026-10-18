@@ -39,8 +39,8 @@ const base = {
 test.describe('search domain regression', () => {
   test('query normalization trims and keeps case-insensitive matching semantics', () => {
     expect(normalizeSearchQuery('  PaPeR  ')).toBe('paper')
-    expect(parseTagSearch('#  Eng ')).toEqual({ tagSearchMode: true, tagSearchTerm: 'Eng' })
-    expect(parseTagSearch('eng')).toEqual({ tagSearchMode: false, tagSearchTerm: '' })
+    expect(parseTagSearch('#  Eng ')).toEqual({ tagSearchMode: true, tagSearchTerm: 'Eng', keyword: '' })
+    expect(parseTagSearch('eng')).toEqual({ tagSearchMode: false, tagSearchTerm: '', keyword: '' })
   })
 
   test('snippets strip lightweight markdown and keep context around the match', () => {
@@ -81,17 +81,17 @@ test.describe('search domain regression', () => {
     expect(result?.snippet).toContain('resolved')
   })
 
-  test('tag mode ignores entity filter and reports stable usage summary', () => {
+  test('tag search returns associated content rather than tag records', () => {
     const english = tag()
-    const results = buildSearchResults({
-      ...base,
-      normalizedSearch: '#eng',
-      searchFilter: 'task',
-      managedTags: [english, tag({ id: 'tag:work', name: 'Work' })],
-      tagUsage: new Map([[english.id, { tasks: 3, journals: 2, days: 4 }]]),
-    })
-    expect(results).toHaveLength(1)
-    expect(results[0]).toMatchObject({ kind: 'tag', title: '#English', snippet: '任务 3 · 记录 2 · 4天' })
+    const results = buildSearchResults({ ...base, normalizedSearch: '#english', searchFilter: 'all',
+      managedTags: [english], activeTasks: [task({ tagIds: [english.id] }), task({ id: 'other', tagIds: [] })],
+      activeJournalEntries: [journal({ tagIds: [english.id] })] })
+    expect(results.map(row => row.kind)).toEqual(['task', 'journal'])
+    expect(results.every(row => row.kind !== 'tag')).toBe(true)
+    expect(buildSearchResults({ ...base, normalizedSearch: '#english scanner', searchFilter: 'all',
+      managedTags: [english], activeTasks: [task({ tagIds: [english.id], notes: 'scanner' })] })).toHaveLength(1)
+    expect(buildSearchResults({ ...base, normalizedSearch: '#eng', searchFilter: 'all',
+      managedTags: [english], activeTasks: [task({ tagIds: [english.id] })] })).toHaveLength(0)
   })
 
   test('anniversary search keeps the next occurrence on or after today', () => {

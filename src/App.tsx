@@ -18,7 +18,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.12.3'
+const APP_VERSION = '2.13.1'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -58,7 +58,7 @@ import {
 import { EMOTION_GROUP_LABEL, createEmotionOption, deleteEmotionOption, emotionGroupOrder, emotionNameTaken, sortEmotionOptionsBuiltinsFirst, normalizeEmotionOptions, sanitizeEmotionIds, toggleEmotionId, updateEmotionOption } from './domain/emotions'
 import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVisualForDate, patchPeriodDayLog, periodForDate as findPeriodForDate } from './domain/menstrual'
 import { buildStatistics } from './domain/statistics'
-import { buildSearchResults, normalizeSearchQuery, parseTagSearch } from './domain/search'
+import { buildSearchResults, matchingTagSuggestions, normalizeSearchQuery, parseTagSearch } from './domain/search'
 import type { SearchFilter, SearchResult } from './domain/search'
 import { cascadeRestoreTaskFocus, cascadeTrashTaskFocus, permanentlyDeleteTaskFocus, purgeTrashWithTaskFocus } from './domain/taskFocusLifecycle'
 import { activeFocusSession as findActiveFocusSession, activeFocusSessions, countdownMinutes, finishedFocusSession, focusHistoryForDate, focusSessionDurationSeconds, focusTiming, formatFocusClock, noteFocusSeconds, taskFocusSeconds, permanentlyDeleteFocusSession, restoreFocusSession, trashFocusSession } from './domain/focus'
@@ -2471,7 +2471,9 @@ function App() {
     return nodes
   }
 
-  const { tagSearchMode } = parseTagSearch(normalizedSearch)
+  const { tagSearchMode, tagSearchTerm, keyword: tagKeyword } = parseTagSearch(normalizedSearch)
+  const tagSuggestions = useMemo(() => matchingTagSuggestions(searchQuery, managedTags), [searchQuery, managedTags])
+  const selectedSearchTag = tagSearchMode ? managedTags.find(tag => tag.name.toLocaleLowerCase() === tagSearchTerm) : undefined
 
   const searchResults = useMemo<SearchResult[]>(() => buildSearchResults({
     normalizedSearch,
@@ -2487,7 +2489,6 @@ function App() {
   }), [normalizedSearch, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, notes, habits, managedTags, tagUsage])
 
   const searchDateLabel = (result: SearchResult) => {
-    if (result.kind === 'tag') return ''
     if (result.kind === 'anniversary') {
       const anniversary = result.item
       const ownDate = anniversary.calendar === 'lunar'
@@ -2510,7 +2511,6 @@ function App() {
   }
 
   const searchMarker = (result: SearchResult) => {
-    if (result.kind === 'tag') return <span className="search-tag-marker" style={{background:result.item.color}} />
     if (result.kind === 'task') return <span className={`search-task-marker priority-${result.item.priority} status-${result.item.status}`}>{result.item.status === 'completed' ? '✓' : result.item.status === 'abandoned' ? '×' : ''}</span>
     if (result.kind === 'journal') return <span className={`search-journal-marker impact-${result.item.impact}`} />
     if (result.kind === 'habit') return <span className="search-anniversary-marker">◉</span>
@@ -2545,7 +2545,6 @@ function App() {
   }
 
   const openSearchResult = (result: SearchResult) => {
-    if (result.kind === 'tag') return
     setSearchOpen(false)
     setMobileSearchVisible(false)
     if (result.kind === 'task' || result.kind === 'journal') {
@@ -3100,19 +3099,25 @@ function App() {
         {mobileSearchVisible && <button className="mobile-search-backdrop" type="button" aria-label="关闭搜索" onClick={()=>{setMobileSearchVisible(false);setSearchOpen(false)}} />}
         <div className={`global-search-wrap${mobileSearchVisible ? ' mobile-open' : ''}`} ref={searchWrapRef}>
           <span className="global-search-icon">⌕</span>
-          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索任务、记录、笔记、纪念日；#标签…" aria-label="全局搜索" />
+          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索内容，或输入 #标签 筛选" aria-label="全局搜索" />
           {searchQuery && <button type="button" className="search-clear" onClick={() => setSearchQuery('')} aria-label="清空搜索">×</button>}
           {searchOpen && normalizedSearch && (
             <div className="search-panel">
-              {tagSearchMode ? <div className="search-tag-mode"># 标签搜索</div> : <div className="search-filters">
+              <div className="search-filters">
                 {orderedCategories([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['habit','习惯']] as const,moduleOrder).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
+              </div>
+              {tagSearchMode && <div className="search-tag-suggestions" aria-label="标签建议">
+                {tagSuggestions.map(tag => <button key={tag.id} type="button" className={selectedSearchTag?.id===tag.id?'active':''}
+                  onClick={() => { setSearchQuery(`#${tag.name}${tagKeyword ? ` ${tagKeyword}` : ''}`); setSearchOpen(true) }}>
+                  <span className="tag-color-dot" style={{backgroundColor:tag.color}} />#{tag.name}
+                </button>)}
               </div>}
               <div className="search-results">
-                {searchResults.length === 0 ? <p className="search-empty">没有找到结果。</p> : searchResults.map(result => (
-                  <button key={`${result.kind}-${result.id}`} type="button" className={`search-result${result.kind==='tag'?' tag-search-result':''}`} onClick={() => openSearchResult(result)} disabled={result.kind==='tag'}>
+                {searchResults.length === 0 ? <p className="search-empty">{tagSearchMode && !selectedSearchTag ? '请选择完整标签以查看关联内容。' : '没有找到结果。'}</p> : searchResults.map(result => (
+                  <button key={`${result.kind}-${result.id}`} type="button" className="search-result" onClick={() => openSearchResult(result)}>
                     <span className={`search-kind kind-${result.kind}`}>{searchMarker(result)}</span>
-                    <span className="search-result-main"><strong>{result.kind==='tag' ? result.title : highlightSearch(result.title)}</strong>{result.snippet && <small>{result.kind==='tag' ? result.snippet : highlightSearch(result.snippet)}</small>}</span>
-                    {result.kind!=='tag' && <time>{searchDateLabel(result)}</time>}
+                    <span className="search-result-main"><strong>{tagSearchMode ? result.title : highlightSearch(result.title)}</strong>{result.snippet && <small>{tagSearchMode ? result.snippet : highlightSearch(result.snippet)}</small>}</span>
+                    <time>{searchDateLabel(result)}</time>
                   </button>
                 ))}
               </div>

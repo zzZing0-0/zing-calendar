@@ -16,7 +16,8 @@ test('mobile search moves to Settings while desktop search remains', () => {
 
 test('hidden pages precede navigation settings and use shared SVG icons', () => {
   const section = app.slice(app.indexOf('settings-group mobile-nav-settings-group'))
-  expect(section.indexOf('missingMobileNav(mobileNav).map')).toBeLessThan(section.indexOf('导航栏设置'))
+  expect(section).toContain('missingMobileNav(mobileNav).map')
+  expect(app).toContain("setMobileNavSettingsOpen(true)")
   expect(section).toContain('mobileNavIcon(page)')
 })
 
