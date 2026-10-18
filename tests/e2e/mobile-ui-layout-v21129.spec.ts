@@ -21,17 +21,20 @@ test('settings destination shortcuts keep SVG and label on the same compact row'
   expect(positions.iconRight).toBeLessThan(positions.labelLeft)
 })
 
-test('habit tag is inside the progress line, not a separate block', async ({ page }) => {
-  expect(habits).toMatch(/className="habit-card-tag"[\s\S]*?<\/span><\/>}<\/small><\/button>/)
+test('habit tag precedes progress in the same compact metadata row', async ({ page }) => {
+  const card = habits.slice(habits.indexOf('className="habit-card-metadata"'))
+  expect(card.indexOf('className="habit-card-tag"')).toBeGreaterThan(0)
+  expect(card.indexOf('className="habit-card-tag"')).toBeLessThan(card.indexOf('className="habit-card-progress"'))
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.setContent(`<style>${habitsCss}</style><main class="habits-page"><article class="habit-card"><button class="habit-card-main"><strong>听力练习</strong><small>每日 0/1 次 · 每次 30 分钟 · <span class="habit-card-tag"><i></i>听力</span></small></button><div class="habit-card-actions"><button>打卡</button></div></article></main>`)
-  const positions = await page.evaluate(() => {
-    const summary = document.querySelector('.habit-card-main small')!.getBoundingClientRect()
-    const tag = document.querySelector('.habit-card-tag')!.getBoundingClientRect()
-    return { summaryHeight: summary.height, tagY: tag.y + tag.height / 2, summaryY: summary.y + summary.height / 2 }
+  await page.setContent(`<meta name="viewport" content="width=device-width,initial-scale=1"><style>${habitsCss}</style><main class="habits-page"><article class="habit-card"><button class="habit-card-main"><strong>听力练习</strong><small class="habit-card-metadata"><span class="habit-card-tag"><i></i>听力</span><span class="habit-card-progress">每日 0/1 次 · 每次 30 分钟</span></small></button><div class="habit-card-actions"><button>打卡</button></div></article></main>`)
+  const m = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect()
+    const tag = rect('.habit-card-tag'), progress = rect('.habit-card-progress'), summary = rect('.habit-card-metadata')
+    return { leftToRight: tag.right < progress.left, sameLine: Math.abs((tag.top + tag.bottom) / 2 - (progress.top + progress.bottom) / 2), compact: summary.height }
   })
-  expect(Math.abs(positions.tagY - positions.summaryY)).toBeLessThan(6)
-  expect(positions.summaryHeight).toBeLessThan(32)
+  expect(m.leftToRight).toBe(true)
+  expect(m.sameLine).toBeLessThan(2)
+  expect(m.compact).toBeLessThan(24)
 })
 
 test('notes and habits share the same action button height', async ({ page }) => {

@@ -235,3 +235,19 @@
 }
 .habit-card-main small .habit-card-tag {margin-left:10px;vertical-align:middle;line-height:inherit}
 .habit-card-main small .habit-card-tag i {width:7px;height:7px}
+
+/* v2.11.32 — Tag first; shared flex alignment for tag, dot and progress. */
+.habit-card-main .habit-card-metadata {display:flex;align-items:center;gap:10px;flex-wrap:wrap;line-height:1.5;}
+.habit-card-main .habit-card-metadata .habit-card-tag {display:inline-flex;align-items:center;gap:5px;line-height:inherit;margin:0;padding:0;white-space:nowrap;flex:none;vertical-align:initial;}
+.habit-card-main .habit-card-metadata .habit-card-tag i {display:block;width:7px;height:7px;flex:none;border-radius:50%;}
+.habit-card-main .habit-card-metadata .habit-card-progress {display:inline-block;line-height:inherit;min-width:0;}
+
+/* v2.11.33 — One metadata row even beside check-in actions on narrow screens. */
+.habit-card-main .habit-card-metadata {
+  display:flex; align-items:center; flex-wrap:nowrap; gap:10px;
+  min-width:0; width:100%; overflow:hidden;
+}
+.habit-card-main .habit-card-metadata .habit-card-tag {flex:0 0 auto; white-space:nowrap;}
+.habit-card-main .habit-card-metadata .habit-card-progress {
+  flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}

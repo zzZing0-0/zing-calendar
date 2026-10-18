@@ -21,18 +21,3 @@ test('notes and habits actions align to Chinese heading, not eyebrow or full hea
   expect(positions.habitButton.height).toBe(44)
 })
 
-test('habit metadata tag has no separator dot and stays inline with progress', async ({page}) => {
-  expect(habitSource).not.toContain('&&<> · <span className="habit-card-tag">')
-  expect(habitSource).toContain('&&<><span className="habit-card-tag">')
-  await page.setViewportSize({width:390,height:844})
-  await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${habitCss}</style><main class="habits-page"><article class="habit-card"><button class="habit-card-main"><strong>听力练习</strong><small><span id="progress">每日 0/1 次 · 每次 30 分钟</span><span class="habit-card-tag"><i style="background:#a2ca58"></i>听力</span></small></button><div class="habit-card-actions"><button>＋ 打卡</button></div></article></main>`)
-  expect(await page.evaluate(() => window.innerWidth)).toBe(390)
-  const p = await page.evaluate(() => {
-    const a=document.querySelector('#progress')!.getBoundingClientRect(), b=document.querySelector('.habit-card-tag')!.getBoundingClientRect(), dot=document.querySelector('.habit-card-tag i')!.getBoundingClientRect()
-    return {gap:b.left-a.right,deltaY:Math.abs((a.top+a.bottom)/2-(b.top+b.bottom)/2),dotDelta:Math.abs((dot.top+dot.bottom)/2-(b.top+b.bottom)/2)}
-  })
-  expect(p.gap).toBeGreaterThanOrEqual(8)
-  expect(p.gap).toBeLessThanOrEqual(15)
-  expect(p.deltaY).toBeLessThan(4)
-  expect(p.dotDelta).toBeLessThan(3)
-})
