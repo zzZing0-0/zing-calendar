@@ -1,6 +1,7 @@
 // Short-lived S3-compatible presigned URLs for the private Backblaze B2 bucket.
 // Binary bytes travel browser <-> B2 directly; long-lived B2 credentials stay on Vercel.
 import crypto from 'node:crypto'
+import { authorizeB2 } from '../server/b2-authorization.js'
 import { PRIVATE_NO_STORE, browserRequestLooksCrossSite, safeB2Key } from '../server/api-security.js'
 
 const required = (name: string): string => {
@@ -41,14 +42,15 @@ function presign({ method, key, expires = 300 }: { method: 'GET' | 'HEAD' | 'PUT
     'X-Amz-Credential': `${accessKey}/${scope}`,
     'X-Amz-Date': amzDate,
     'X-Amz-Expires': String(expires),
-    'X-Amz-SignedHeaders': 'host',
+    'X-Amz-SignedHeaders': method === 'PUT' ? 'host;if-none-match' : 'host',
   }
   const canonicalQuery = Object.entries(query)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${awsEncode(k)}=${awsEncode(v)}`)
     .join('&')
-  const canonicalHeaders = `host:${host}\n`
-  const canonicalRequest = `${method}\n${canonicalUri}\n${canonicalQuery}\n${canonicalHeaders}\nhost\nUNSIGNED-PAYLOAD`
+  const signedHeaders = query['X-Amz-SignedHeaders']
+  const canonicalHeaders = `host:${host}\n${method === 'PUT' ? 'if-none-match:*\n' : ''}`
+  const canonicalRequest = `${method}\n${canonicalUri}\n${canonicalQuery}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${sha256(canonicalRequest)}`
   const kDate = hmac(Buffer.from(`AWS4${secretKey}`, 'utf8'), dateStamp)
   const kRegion = hmac(kDate, signingRegion)
@@ -69,6 +71,11 @@ export async function GET(request: Request): Promise<Response> {
     if (!key || (method !== 'GET' && method !== 'HEAD' && method !== 'PUT')) {
       return Response.json({ error: 'Invalid attachment signing request' }, { status: 400, headers: PRIVATE_NO_STORE })
     }
+    const denied = await authorizeB2(request)
+    if (denied) return denied
+    // Do not assume provider support for conditional writes. Enable only after
+    // validating create-only PUT semantics in an isolated non-user bucket.
+    if (method === 'PUT' && process.env.ZING_B2_CONDITIONAL_PUT_VERIFIED !== 'true') return Response.json({ error: 'Create-only attachment uploads are not verified' }, { status: 503, headers: PRIVATE_NO_STORE })
     return Response.json(
       { url: presign({ method, key }) },
       { status: 200, headers: PRIVATE_NO_STORE },

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zing-calendar-app-v1.7.0'
+const CACHE_NAME = 'zing-calendar-app-v__ZING_RELEASE_VERSION__'
 const APP_SHELL = '/'
 // v1.8.3: navigations are network-first to avoid stale HTML referencing retired hashed assets.
 
@@ -86,7 +86,13 @@ self.addEventListener('fetch', event => {
   }
 
   event.respondWith((async () => {
-    const cached = await caches.match(request)
+    const cache = await caches.open(CACHE_NAME)
+    // Immutable Vite assets are identical for every same-origin caller. Their
+    // prefetched GET may lack Origin while a crossorigin module/style includes
+    // it; a server's Vary: Origin must not make the offline shell lose its code.
+    // Keep normal Vary matching for all other resources (and never cache APIs).
+    const immutableAsset = /^\/assets\/[^/]+-[A-Za-z0-9_-]+\.(?:js|css)$/.test(url.pathname)
+    const cached = await cache.match(request, { ignoreVary: immutableAsset })
     if (cached) return cached
 
     try {

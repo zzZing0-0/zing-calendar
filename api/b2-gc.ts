@@ -1,4 +1,6 @@
 import crypto from 'node:crypto'
+import { authorizeB2 } from '../server/b2-authorization.js'
+import { readB2LedgerReferences } from '../server/b2-ledger.js'
 import { PRIVATE_NO_STORE, browserRequestLooksCrossSite, requestBodyTooLarge, safeB2Key } from '../server/api-security.js'
 
 const MAX_REFERENCES = 10000
@@ -28,17 +30,28 @@ function signedRequest(method:'GET'|'DELETE', key='', query:Record<string,string
 const xmlDecode=(value:string)=>value.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&')
 async function listAttachmentKeys():Promise<string[]> {
   const keys:string[]=[]; let token=''
+  const seenTokens = new Set<string>()
   do {
     const query:Record<string,string>={'list-type':'2','max-keys':'1000'}; if(token) query['continuation-token']=token
-    const signed=signedRequest('GET','',query), response=await fetch(signed.url,{headers:signed.headers,cache:'no-store'})
+    const signed=signedRequest('GET','',query), response=await fetch(signed.url,{headers:signed.headers,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10_000)})
     if(!response.ok) throw new Error(`B2 list failed (${response.status})`)
     const xml=await response.text()
+    if (!/<ListBucketResult(?:\s[^>]*)?>/.test(xml) || !xml.includes('</ListBucketResult>')) throw new Error('Invalid B2 listing')
     for(const match of xml.matchAll(/<Key>([\s\S]*?)<\/Key>/g)){ const key=xmlDecode(match[1]); if(safeB2Key(key)) keys.push(key) }
     token=xmlDecode(xml.match(/<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/)?.[1]??'')
+    if (/<IsTruncated>\s*true\s*<\/IsTruncated>/.test(xml) && !token) throw new Error('Incomplete B2 listing')
+    if (token && seenTokens.has(token)) throw new Error('Repeated B2 listing page')
+    if (token) seenTokens.add(token)
   } while(token)
   return keys
 }
-async function deleteKey(key:string){ const signed=signedRequest('DELETE',key); const response=await fetch(signed.url,{method:'DELETE',headers:signed.headers}); if(!response.ok && response.status!==404) throw new Error(`B2 delete failed (${response.status})`) }
+
+async function deleteKey(key: string): Promise<'deleted'|'missing'> {
+  const signed = signedRequest('DELETE', key)
+  const response = await fetch(signed.url, { method: 'DELETE', headers: signed.headers, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10_000) })
+  if (!response.ok && response.status !== 404) throw new Error('B2 delete failed')
+  return response.status === 404 ? 'missing' : 'deleted'
+}
 
 export async function POST(request:Request):Promise<Response>{
   try{
@@ -46,17 +59,35 @@ export async function POST(request:Request):Promise<Response>{
     if(requestBodyTooLarge(request,1024*1024)) return Response.json({error:'Request too large'},{status:413,headers:PRIVATE_NO_STORE})
     if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/json')) return Response.json({error:'JSON required'},{status:415,headers:PRIVATE_NO_STORE})
     const body:any=await request.json().catch(()=>null), raw=body?.referencedKeys, action=body?.action??'preview'
+    if (body && Object.keys(body).some(key => !['action','referencedKeys','orphanKeys'].includes(key))) return Response.json({error:'Invalid GC scope or parameters'},{status:400,headers:PRIVATE_NO_STORE})
     if(!Array.isArray(raw)||raw.length>MAX_REFERENCES) return Response.json({error:'Invalid reference set'},{status:400,headers:PRIVATE_NO_STORE})
     if(action!=='preview'&&action!=='delete') return Response.json({error:'Invalid GC action'},{status:400,headers:PRIVATE_NO_STORE})
     const referenced=new Set<string>()
     for(const value of raw){ if(typeof value!=='string'||!safeB2Key(value)) return Response.json({error:'Invalid attachment key'},{status:400,headers:PRIVATE_NO_STORE}); referenced.add(value) }
-    const remote=await listAttachmentKeys(), orphans=remote.filter(key=>!referenced.has(key))
-    if(action==='preview') return Response.json({scanned:remote.length,orphans},{headers:PRIVATE_NO_STORE})
-    const requested=body?.orphanKeys
-    if(!Array.isArray(requested)||requested.length>MAX_REFERENCES) return Response.json({error:'Invalid orphan set'},{status:400,headers:PRIVATE_NO_STORE})
-    const orphanSet=new Set(orphans), deleteKeys:string[]=[]
-    for(const value of requested){ if(typeof value!=='string'||!safeB2Key(value)) return Response.json({error:'Invalid attachment key'},{status:400,headers:PRIVATE_NO_STORE}); if(orphanSet.has(value)) deleteKeys.push(value) }
-    for(const key of deleteKeys) await deleteKey(key)
-    return Response.json({scanned:remote.length,deleted:deleteKeys.length,skipped:requested.length-deleteKeys.length},{headers:PRIVATE_NO_STORE})
-  }catch(error){ console.error('B2 garbage collection error',error); return Response.json({error:'B2 orphan cleanup failed'},{status:500,headers:PRIVATE_NO_STORE}) }
+    const denied = await authorizeB2(request)
+    if (denied) return denied
+    const requested = body?.orphanKeys
+    if (action === 'delete' && (!Array.isArray(requested) || requested.length > MAX_REFERENCES || requested.some(key => typeof key !== 'string' || !safeB2Key(key)) || new Set(requested).size !== requested.length)) return Response.json({error:'Invalid orphan set'},{status:400,headers:PRIVATE_NO_STORE})
+    const cloudReferences = await readB2LedgerReferences(request)
+    const remote=await listAttachmentKeys(), remoteSet=new Set(remote)
+    const orphans=remote.filter(key=>!referenced.has(key) && !cloudReferences.has(key))
+    if (action === 'preview') return Response.json({scanned:remote.length,orphans},{headers:PRIVATE_NO_STORE})
+    const deletedKeys: string[] = [], missingKeys: string[] = [], skippedKeys: string[] = []
+    const failures: {key:string;error:string}[] = []
+    for (const key of requested as string[]) {
+      // Only recognized keys actually listed in the server-configured bucket
+      // are in scope. A client cannot select an endpoint, bucket or foreign path.
+      if (!remoteSet.has(key)) { missingKeys.push(key); continue }
+      if (referenced.has(key)) { skippedKeys.push(key); continue }
+      let latest: Set<string>
+      try { latest = await readB2LedgerReferences(request) }
+      catch { failures.push({key,error:'无法重新验证云端引用，未执行删除'}); continue }
+      if (latest.has(key)) { skippedKeys.push(key); continue }
+      try { if (await deleteKey(key) === 'missing') missingKeys.push(key); else deletedKeys.push(key) }
+      catch { failures.push({key,error:'删除未确认成功，请重新扫描或重试'}); }
+    }
+    const resolved = new Set([...deletedKeys, ...missingKeys])
+    const remainingKeys = requested.filter((key: string) => !resolved.has(key))
+    return Response.json({scanned:remote.length,deleted:deletedKeys.length,skipped:skippedKeys.length,deletedKeys,missingKeys,skippedKeys,failures,remainingKeys},{headers:PRIVATE_NO_STORE})
+  }catch{ return Response.json({error:'B2 清理未完成：无法验证授权、云端引用或存储范围，请重试'},{status:503,headers:PRIVATE_NO_STORE}) }
 }

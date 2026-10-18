@@ -1,9 +1,12 @@
+import { writeLocalCache } from './features/application/settingsCache'
+import { useEntityPersistence } from './features/sync/useEntityPersistence'
 import type { CSSProperties } from 'react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { Field } from './components/ui/Field'
 import type { SyncEntityType } from './db/calendar'
-import { cleanupOrphanAttachmentBlobs, clearZingUserDataWithSync, getAttachmentBlob, getStorageStats, loadAnniversaries, loadDailyEnergy, loadDailyEnvironment, loadDailyMoods, loadFocusSessions, loadGitHubDeviceCredential, loadHabitCheckIns, loadHabits, loadJournalEntries, loadMenstrualPeriods, loadNotebooks, loadNotes, loadTags, loadTasks, loadUserSettings, previewGitHubSync, putAttachmentBlob, replaceZingData, saveAnniversaries, saveDailyEnergy, saveDailyEnvironment, saveDailyMoods, saveFocusSessions, saveGitHubDeviceCredential, saveHabitCheckIns, saveHabits, saveJournalEntries, saveMenstrualPeriods, saveNotebooks, saveNotes, saveTags, saveTasks, saveUserSettings, syncWithGitHub } from './db/calendar'
+import { clearZingUserDataWithSync, getAttachmentBlob, getStorageStats, loadAnniversaries, loadDailyEnergy, loadDailyEnvironment, loadDailyMoods, loadFocusSessions, loadGitHubDeviceCredential, loadHabitCheckIns, loadHabits, loadJournalEntries, loadMenstrualPeriods, loadNotebooks, loadNotes, loadTags, loadTasks, loadUserSettings, previewGitHubSync, putAttachmentBlob, replaceZingData, saveEntityWithSync, saveGitHubDeviceCredential, saveTasks, saveUserSettings, syncWithGitHub } from './db/calendar'
+import { b2CleanupResult } from './features/attachments/b2CleanupResult'
 import type { DaySectionKey, SettingsGroupKey } from './domain/layoutPreferences'
 import { DEFAULT_DAY_SECTION_ORDER, DEFAULT_SETTINGS_GROUP_ORDER, normalizeDaySectionOrder, normalizeSettingsGroupOrder } from './domain/layoutPreferences'
 import type { ModuleKey } from './domain/modulePriority'
@@ -46,7 +49,6 @@ import { SettingsPage } from './features/settings/SettingsPage'
 import { StatisticsPage } from './features/statistics/StatisticsPage'
 import { WordIgnoreManager } from './features/statistics/WordIgnoreManager'
 import { SyncDialogs } from './features/sync/SyncDialogs'
-import { recordSyncDiff } from './features/sync/recordSyncDiff'
 import { TagDialogs } from './features/tags/TagDialogs'
 import { useTagManagement } from './features/tags/useTagManagement'
 import { TaskDetails } from './features/tasks/TaskDetails'
@@ -250,9 +252,9 @@ function App() {
   const [habits, setHabits] = useState<Habit[]>([])
   const [habitCheckIns, setHabitCheckIns] = useState<HabitCheckIn[]>([])
   const [habitsHydrated, setHabitsHydrated] = useState(false)
-  useEffect(() => { let active=true; Promise.all([loadHabits<Habit>(),loadHabitCheckIns<HabitCheckIn>()]).then(([h,c])=>{if(active){setHabits(h);setHabitCheckIns(c);setHabitsHydrated(true)}}).catch(error=>{console.error('Habit hydration failed',error);if(active)setHabitsHydrated(true)});return ()=>{active=false} },[])
-  useEffect(()=>{if(!habitsHydrated)return;void saveHabits(habits).then(()=>{if(!syncSnapshotReadyRef.current.habit){syncSnapshotsRef.current.habit=habits;syncSnapshotReadyRef.current.habit=true}else{const previous=syncSnapshotsRef.current.habit;syncSnapshotsRef.current.habit=habits;void recordSyncDiff('habit',previous,habits).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}}).catch(console.error)},[habits,habitsHydrated])
-  useEffect(()=>{if(!habitsHydrated)return;void saveHabitCheckIns(habitCheckIns).then(()=>{if(!syncSnapshotReadyRef.current.habitCheckIn){syncSnapshotsRef.current.habitCheckIn=habitCheckIns;syncSnapshotReadyRef.current.habitCheckIn=true}else{const previous=syncSnapshotsRef.current.habitCheckIn;syncSnapshotsRef.current.habitCheckIn=habitCheckIns;void recordSyncDiff('habitCheckIn',previous,habitCheckIns).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}}).catch(console.error)},[habitCheckIns,habitsHydrated])
+  useEffect(() => { let active=true; Promise.all([loadHabits<Habit>(),loadHabitCheckIns<HabitCheckIn>()]).then(([h,c])=>{if(active){setHabits(h);setHabitCheckIns(c);setHabitsHydrated(true)}}).catch(error=>{console.error('Habit hydration failed',error)});return ()=>{active=false} },[])
+  useEntityPersistence('habit', habits, habitsHydrated, setLocalWriteRevision)
+  useEntityPersistence('habitCheckIn', habitCheckIns, habitsHydrated, setLocalWriteRevision)
   const quickHabitCheckIn=(habit:Habit,date:string)=>{if(habit.archivedAt)return;const now=new Date().toISOString();setHabitCheckIns(current=>[...current,{id:crypto.randomUUID(),habitId:habit.id,occurredDate:date,quantity:habit.quantityTarget,createdAt:now,updatedAt:now}])}
   const undoHabitCheckIn=(habit:Habit,date:string)=>{if(habit.archivedAt)return;setHabitCheckIns(current=>{const entry=[...current].reverse().find(row=>row.habitId===habit.id&&row.occurredDate===date&&!row.deletedAt);if(!entry)return current;const now=new Date().toISOString();return current.map(row=>row.id===entry.id?{...row,deletedAt:now,updatedAt:now}:row)})}
   const [menstrualPeriods, setMenstrualPeriods] = useState<MenstrualPeriod[]>([])
@@ -510,7 +512,6 @@ function App() {
       setTasksHydrated(true)
     }).catch(error => {
       console.error('Failed to load tasks from IndexedDB', error)
-      if (active) setTasksHydrated(true)
     })
     return () => { active = false }
   }, [])
@@ -832,18 +833,7 @@ function App() {
     setViewingJournalId(current => current === id ? null : current)
   }
 
-  useEffect(() => {
-    if (!tasksHydrated) return
-    saveTasks(tasks).catch(error => console.error('Failed to save tasks to IndexedDB', error))
-    if (!syncSnapshotReadyRef.current.task) {
-      syncSnapshotsRef.current.task = tasks
-      syncSnapshotReadyRef.current.task = true
-    } else {
-      const previous = syncSnapshotsRef.current.task
-      syncSnapshotsRef.current.task = tasks
-      void recordSyncDiff('task', previous, tasks).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record task sync changes', error))
-    }
-  }, [tasks, tasksHydrated])
+  useEntityPersistence('task', tasks, tasksHydrated, setLocalWriteRevision)
 
   useEffect(() => {
     let active = true
@@ -852,14 +842,13 @@ function App() {
       const books=ensureDefaultNotebook(bookRows)
       setNotebooks(books); setNotes(normalizeNotes(noteRows,new Set(books.map(book=>book.id))))
       setNotebooksHydrated(true); setNotesHydrated(true)
-    }).catch(error=>{console.error('Failed to load notes',error);if(active){setNotebooks(ensureDefaultNotebook([]));setNotebooksHydrated(true);setNotesHydrated(true)}})
+    }).catch(error=>{console.error('Failed to load notes',error);})
     loadJournalEntries<JournalEntry>().then(rows => {
       if (!active) return
       setJournalEntries(rows.map(entry => entry.title ? entry : ({ ...entry, title: entry.content?.slice(0, 60) || '记录', content: '' })))
       setJournalHydrated(true)
     }).catch(error => {
       console.error('Failed to load journal entries from IndexedDB', error)
-      if (active) setJournalHydrated(true)
     })
     loadTags<Tag>().then(rows => {
       if (!active) return
@@ -871,7 +860,6 @@ function App() {
       setTagsHydrated(true)
     }).catch(error => {
       console.error('Failed to load tags', error)
-      if (active) setTagsHydrated(true)
     })
     loadAnniversaries<Anniversary>().then(rows => {
       if (!active) return
@@ -879,7 +867,6 @@ function App() {
       setAnniversariesHydrated(true)
     }).catch(error => {
       console.error('Failed to load anniversaries', error)
-      if (active) setAnniversariesHydrated(true)
     })
     loadDailyMoods<DailyMood>().then(rows => {
       if (!active) return
@@ -887,125 +874,44 @@ function App() {
       setMoodsHydrated(true)
     }).catch(error => {
       console.error('Failed to load daily moods from IndexedDB', error)
-      if (active) setMoodsHydrated(true)
     })
     loadDailyEnergy<DailyEnergy>().then(rows => {
       if (!active) return
       setDailyEnergy(rows); setEnergyHydrated(true)
-    }).catch(error => { console.error('Failed to load daily energy',error); if(active)setEnergyHydrated(true) })
+    }).catch(error => { console.error('Failed to load daily energy',error); })
     loadDailyEnvironment<DailyEnvironment>().then(rows => {
       if (!active) return
       setDailyEnvironment(rows); setEnvironmentHydrated(true)
-    }).catch(error => { console.error('Failed to load daily environment',error); if(active)setEnvironmentHydrated(true) })
+    }).catch(error => { console.error('Failed to load daily environment',error); })
     loadMenstrualPeriods<MenstrualPeriod>().then(rows => {
       if (!active) return
       setMenstrualPeriods(rows); setPeriodsHydrated(true)
-    }).catch(error => { console.error('Failed to load menstrual periods',error); if(active)setPeriodsHydrated(true) })
+    }).catch(error => { console.error('Failed to load menstrual periods',error); })
     loadFocusSessions<FocusSession>().then(rows => {
       if (!active) return
       setFocusSessions(rows); setFocusHydrated(true)
-    }).catch(error => { console.error('Failed to load focus sessions',error); if(active)setFocusHydrated(true) })
+    }).catch(error => { console.error('Failed to load focus sessions',error); })
     return () => { active = false }
   }, [])
 
-  useEffect(() => {
-    if (!focusHydrated) return
-    saveFocusSessions(focusSessions).catch(error => console.error('Failed to save focus sessions', error))
-    if (!syncSnapshotReadyRef.current.focus) {
-      syncSnapshotsRef.current.focus = focusSessions
-      syncSnapshotReadyRef.current.focus = true
-    } else {
-      const previous = syncSnapshotsRef.current.focus
-      syncSnapshotsRef.current.focus = focusSessions
-      void recordSyncDiff('focus', previous, focusSessions).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record focus sync changes', error))
-    }
-  }, [focusSessions, focusHydrated])
+  useEntityPersistence('focus', focusSessions, focusHydrated, setLocalWriteRevision)
 
-  useEffect(() => {
-    if (!anniversariesHydrated) return
-    saveAnniversaries(anniversaries).catch(error => console.error('Failed to save anniversaries', error))
-    if (!syncSnapshotReadyRef.current.anniversary) {
-      syncSnapshotsRef.current.anniversary = anniversaries
-      syncSnapshotReadyRef.current.anniversary = true
-    } else {
-      const previous = syncSnapshotsRef.current.anniversary
-      syncSnapshotsRef.current.anniversary = anniversaries
-      void recordSyncDiff('anniversary', previous, anniversaries).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record anniversary sync changes', error))
-    }
-  }, [anniversaries, anniversariesHydrated])
+  useEntityPersistence('anniversary', anniversaries, anniversariesHydrated, setLocalWriteRevision)
 
-  useEffect(()=>{
-    if(!notebooksHydrated)return
-    saveNotebooks(notebooks).catch(error=>console.error('Failed to save notebooks',error))
-    if(!syncSnapshotReadyRef.current.notebook){syncSnapshotsRef.current.notebook=notebooks;syncSnapshotReadyRef.current.notebook=true}
-    else {const previous=syncSnapshotsRef.current.notebook;syncSnapshotsRef.current.notebook=notebooks;void recordSyncDiff('notebook',previous,notebooks).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}
-  },[notebooks,notebooksHydrated])
-  useEffect(()=>{
-    if(!notesHydrated)return
-    saveNotes(notes).catch(error=>console.error('Failed to save notes',error))
-    if(!syncSnapshotReadyRef.current.note){syncSnapshotsRef.current.note=notes;syncSnapshotReadyRef.current.note=true}
-    else {const previous=syncSnapshotsRef.current.note;syncSnapshotsRef.current.note=notes;void recordSyncDiff('note',previous,notes).then(changed=>{if(changed)setLocalWriteRevision(v=>v+1)})}
-  },[notes,notesHydrated])
+  useEntityPersistence('notebook', notebooks, notebooksHydrated, setLocalWriteRevision)
+  useEntityPersistence('note', notes, notesHydrated, setLocalWriteRevision)
 
-  useEffect(() => {
-    if (!journalHydrated) return
-    saveJournalEntries(journalEntries).catch(error => console.error('Failed to save journal entries', error))
-    if (!syncSnapshotReadyRef.current.journal) {
-      syncSnapshotsRef.current.journal = journalEntries
-      syncSnapshotReadyRef.current.journal = true
-    } else {
-      const previous = syncSnapshotsRef.current.journal
-      syncSnapshotsRef.current.journal = journalEntries
-      void recordSyncDiff('journal', previous, journalEntries).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record journal sync changes', error))
-    }
-  }, [journalEntries, journalHydrated])
+  useEntityPersistence('journal', journalEntries, journalHydrated, setLocalWriteRevision)
 
-  useEffect(() => {
-    if (!tagsHydrated) return
-    saveTags(tags).catch(error => console.error('Failed to save tags', error))
-    if (!syncSnapshotReadyRef.current.tag) {
-      syncSnapshotsRef.current.tag = tags
-      syncSnapshotReadyRef.current.tag = true
-    } else {
-      const previous = syncSnapshotsRef.current.tag
-      syncSnapshotsRef.current.tag = tags
-      void recordSyncDiff('tag', previous, tags).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record tag sync changes', error))
-    }
-  }, [tags, tagsHydrated])
+  useEntityPersistence('tag', tags, tagsHydrated, setLocalWriteRevision)
 
-  useEffect(() => {
-    if (!moodsHydrated) return
-    saveDailyMoods(dailyMoods).catch(error => console.error('Failed to save daily moods', error))
-    if (!syncSnapshotReadyRef.current.mood) {
-      syncSnapshotsRef.current.mood = dailyMoods
-      syncSnapshotReadyRef.current.mood = true
-    } else {
-      const previous = syncSnapshotsRef.current.mood
-      syncSnapshotsRef.current.mood = dailyMoods
-      void recordSyncDiff('mood', previous, dailyMoods).then(changed => { if (changed) setLocalWriteRevision(value => value + 1) }).catch(error => console.error('Failed to record mood sync changes', error))
-    }
-  }, [dailyMoods, moodsHydrated])
+  useEntityPersistence('mood', dailyMoods, moodsHydrated, setLocalWriteRevision)
 
-  useEffect(() => {
-    if (!energyHydrated) return
-    saveDailyEnergy(dailyEnergy).catch(error => console.error('Failed to save daily energy',error))
-    if (!syncSnapshotReadyRef.current.energy) { syncSnapshotsRef.current.energy=dailyEnergy; syncSnapshotReadyRef.current.energy=true }
-    else { const previous=syncSnapshotsRef.current.energy; syncSnapshotsRef.current.energy=dailyEnergy; void recordSyncDiff('energy',previous,dailyEnergy).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}) }
-  }, [dailyEnergy,energyHydrated])
+  useEntityPersistence('energy', dailyEnergy, energyHydrated, setLocalWriteRevision)
 
-  useEffect(() => {
-    if (!environmentHydrated) return
-    saveDailyEnvironment(dailyEnvironment).catch(error => console.error('Failed to save daily environment',error))
-    if (!syncSnapshotReadyRef.current.environment) { syncSnapshotsRef.current.environment=dailyEnvironment; syncSnapshotReadyRef.current.environment=true }
-    else { const previous=syncSnapshotsRef.current.environment; syncSnapshotsRef.current.environment=dailyEnvironment; void recordSyncDiff('environment',previous,dailyEnvironment).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}) }
-  }, [dailyEnvironment,environmentHydrated])
+  useEntityPersistence('environment', dailyEnvironment, environmentHydrated, setLocalWriteRevision)
 
-  useEffect(() => {
-    if (!periodsHydrated) return
-    saveMenstrualPeriods(menstrualPeriods).catch(error => console.error('Failed to save menstrual periods',error))
-    if (!syncSnapshotReadyRef.current.period) { syncSnapshotsRef.current.period=menstrualPeriods; syncSnapshotReadyRef.current.period=true }
-    else { const previous=syncSnapshotsRef.current.period; syncSnapshotsRef.current.period=menstrualPeriods; void recordSyncDiff('period',previous,menstrualPeriods).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}) }
-  }, [menstrualPeriods,periodsHydrated])
+  useEntityPersistence('period', menstrualPeriods, periodsHydrated, setLocalWriteRevision)
 
   useEffect(() => {
     loadGitHubDeviceCredential().then(saved => {
@@ -1013,20 +919,20 @@ function App() {
     }).catch(error => console.error('Failed to load GitHub device credential', error))
   }, [])
 
-  useEffect(() => { localStorage.setItem('zing:weatherOptions', JSON.stringify(weatherOptions)) }, [weatherOptions])
-  useEffect(() => { localStorage.setItem('zing:thermalOptions', JSON.stringify(thermalOptions)) }, [thermalOptions])
-  useEffect(() => { localStorage.setItem('zing:emotionOptions', JSON.stringify(emotionOptions)) }, [emotionOptions])
-  useEffect(() => { localStorage.setItem('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
-  useEffect(() => { localStorage.setItem('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
-  useEffect(() => { localStorage.setItem('zing:encouragementStyle', encouragementStyle) }, [encouragementStyle])
-  useEffect(() => { localStorage.setItem('zing:keepScreenAwakeDuringFocus', String(keepScreenAwakeDuringFocus)) }, [keepScreenAwakeDuringFocus])
-  useEffect(()=>{localStorage.setItem('zing:randomPoolGroups',JSON.stringify(randomPoolGroups))},[randomPoolGroups])
-  useEffect(()=>{localStorage.setItem('zing:randomPoolItems',JSON.stringify(randomPoolItems))},[randomPoolItems])
-  useEffect(()=>{const live=new Set(randomPoolItems.map(item=>item.id));const clean=mixedPoolItemIds.filter(id=>live.has(id));if(clean.length!==mixedPoolItemIds.length){setMixedPoolItemIds(clean);return}localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(clean))},[randomPoolItems,mixedPoolItemIds])
-  useEffect(() => { localStorage.setItem('zing:modulePriority', JSON.stringify(moduleOrder)) }, [moduleOrder])
-  useEffect(() => {localStorage.setItem('zing:daySectionOrder',JSON.stringify(daySectionOrder))},[daySectionOrder])
-  useEffect(() => {localStorage.setItem('zing:settingsGroupOrder',JSON.stringify(settingsGroupOrder))},[settingsGroupOrder])
-  useEffect(() => { localStorage.setItem('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
+  useEffect(() => { writeLocalCache('zing:weatherOptions', JSON.stringify(weatherOptions)) }, [weatherOptions])
+  useEffect(() => { writeLocalCache('zing:thermalOptions', JSON.stringify(thermalOptions)) }, [thermalOptions])
+  useEffect(() => { writeLocalCache('zing:emotionOptions', JSON.stringify(emotionOptions)) }, [emotionOptions])
+  useEffect(() => { writeLocalCache('zing:wordCloudIgnored', JSON.stringify(wordCloudIgnored)) }, [wordCloudIgnored])
+  useEffect(() => { writeLocalCache('zing:encouragementMessages', JSON.stringify(encouragementMessages)) }, [encouragementMessages])
+  useEffect(() => { writeLocalCache('zing:encouragementStyle', encouragementStyle) }, [encouragementStyle])
+  useEffect(() => { writeLocalCache('zing:keepScreenAwakeDuringFocus', String(keepScreenAwakeDuringFocus)) }, [keepScreenAwakeDuringFocus])
+  useEffect(()=>{writeLocalCache('zing:randomPoolGroups',JSON.stringify(randomPoolGroups))},[randomPoolGroups])
+  useEffect(()=>{writeLocalCache('zing:randomPoolItems',JSON.stringify(randomPoolItems))},[randomPoolItems])
+  useEffect(()=>{const live=new Set(randomPoolItems.map(item=>item.id));const clean=mixedPoolItemIds.filter(id=>live.has(id));if(clean.length!==mixedPoolItemIds.length){setMixedPoolItemIds(clean);return}writeLocalCache('zing:mixedPoolItemIds',JSON.stringify(clean))},[randomPoolItems,mixedPoolItemIds])
+  useEffect(() => { writeLocalCache('zing:modulePriority', JSON.stringify(moduleOrder)) }, [moduleOrder])
+  useEffect(() => {writeLocalCache('zing:daySectionOrder',JSON.stringify(daySectionOrder))},[daySectionOrder])
+  useEffect(() => {writeLocalCache('zing:settingsGroupOrder',JSON.stringify(settingsGroupOrder))},[settingsGroupOrder])
+  useEffect(() => { writeLocalCache('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
   useEffect(() => { if (mobileNavConfigured) saveLocalNavigation(mobileNav) }, [mobileNav, mobileNavConfigured])
   useEffect(() => {
     const now = new Date().toISOString()
@@ -1060,19 +966,18 @@ function App() {
     const previous = syncSnapshotsRef.current.settings
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
-    void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
+    void saveEntityWithSync('settings',[next]).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
   }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav,moduleOrder,daySectionOrder,settingsGroupOrder])
-  useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
-  useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
-  useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
+  useEffect(() => { writeLocalCache('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
+  useEffect(() => { writeLocalCache('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
+  useEffect(() => { writeLocalCache('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
   useEffect(() => {
-    if (mainView !== 'settings' || !tasksHydrated || !journalHydrated) return
-    const referencedKeys = referencedAttachmentKeys(tasks, journalEntries, notes)
-    cleanupOrphanAttachmentBlobs(referencedKeys)
-      .then(() => getStorageStats())
+    if (mainView !== 'settings' || !tasksHydrated || !journalHydrated || !notesHydrated) return
+    // Opening Settings is read-only; unlinked in-flight blobs must not be garbage-collected.
+    getStorageStats()
       .then(setStorageStats)
       .catch(error => console.error('Failed to clean or calculate storage', error))
-  }, [mainView, tasks, journalEntries, dailyMoods, tags, anniversaries, tasksHydrated, journalHydrated])
+  }, [mainView, tasks, journalEntries, notes, dailyMoods, tags, anniversaries, tasksHydrated, journalHydrated, notesHydrated])
 
   const displayWeekdays = useMemo(() => weekStartsMonday ? WEEKDAYS : [WEEKDAYS[6], ...WEEKDAYS.slice(0,6)], [weekStartsMonday])
   const formatUiDate = (date: Date) => dateFormat === 'mdy'
@@ -1859,16 +1764,16 @@ function App() {
     setOrphanCleanupBusy(true)
     try {
       const referencedKeys=referencedAttachmentKeys(tasks, journalEntries, notes)
-      const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'preview',referencedKeys})})
+      const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json',Authorization:`Bearer ${githubSyncToken.trim()}`},body:JSON.stringify({action:'preview',referencedKeys})})
       const payload:any=await response.json().catch(()=>({}))
       if(!response.ok) throw new Error(String(payload?.error||`HTTP ${response.status}`))
       const keys:string[]=Array.isArray(payload.orphans)?payload.orphans:[]
       const rows=await Promise.all(keys.map(async key=>{
         try{
-          const signedResponse=await fetch(`/api/b2-sign?key=${encodeURIComponent(key)}&method=GET`,{headers:{Accept:'application/json'}})
+          const signedResponse=await fetch(`/api/b2-sign?key=${encodeURIComponent(key)}&method=GET`,{headers:{Accept:'application/json',Authorization:`Bearer ${githubSyncToken.trim()}`}})
           const signed:any=await signedResponse.json().catch(()=>({}))
           if(!signedResponse.ok||!signed.url) throw new Error('sign failed')
-          const headResponse=await fetch(`/api/b2-sign?key=${encodeURIComponent(key)}&method=HEAD`,{headers:{Accept:'application/json'}})
+          const headResponse=await fetch(`/api/b2-sign?key=${encodeURIComponent(key)}&method=HEAD`,{headers:{Accept:'application/json',Authorization:`Bearer ${githubSyncToken.trim()}`}})
           const headSigned:any=await headResponse.json().catch(()=>({}))
           let contentType='',size=0
           if(headResponse.ok&&headSigned.url){ const metadata=await fetch(headSigned.url,{method:'HEAD'}); if(metadata.ok){contentType=metadata.headers.get('content-type')||'';size=Number(metadata.headers.get('content-length')||0)||0} }
@@ -1885,12 +1790,17 @@ function App() {
     setOrphanCleanupBusy(true)
     try{
       const referencedKeys=referencedAttachmentKeys(tasks,journalEntries,notes)
-      const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'delete',referencedKeys,orphanKeys:orphanAttachments.map(item=>item.key)})})
+      const response=await fetch('/api/b2-gc',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json',Authorization:`Bearer ${githubSyncToken.trim()}`},body:JSON.stringify({action:'delete',referencedKeys,orphanKeys:orphanAttachments.map(item=>item.key)})})
       const payload:any=await response.json().catch(()=>({}))
       if(!response.ok)throw new Error(String(payload?.error||`HTTP ${response.status}`))
-      await cleanupOrphanAttachmentBlobs(referencedKeys); setStorageStats(await getStorageStats()); setOrphanAttachments([]); setOrphanCleanupOpen(false)
-      window.alert(payload.skipped?`已清除 ${payload.deleted} 个；另有 ${payload.skipped} 个因重新获得引用而跳过。`:`已清除 ${payload.deleted} 个 B2 孤儿附件。`)
-    }catch(error){window.alert(`孤儿附件清理失败：${error instanceof Error?error.message:String(error)}`)}finally{setOrphanCleanupBusy(false)}
+      const result = b2CleanupResult(payload, orphanAttachments.map(item=>item.key))
+      setOrphanAttachments(current=>current.filter(item=>result.remaining.has(item.key)))
+      if (!result.remaining.size) setOrphanCleanupOpen(false)
+      // Remote cleanup must not collect unrelated local blobs or bytes whose
+      // deletion failed. Storage statistics are read-only and non-blocking.
+      void getStorageStats().then(setStorageStats).catch(console.error)
+      window.alert(result.message)
+    }catch(error){window.alert(`孤儿附件清理失败：${error instanceof Error?error.message:String(error)} · 待确认 ${orphanAttachments.length} 个，请重新扫描。`)}finally{setOrphanCleanupBusy(false)}
   }
   const chooseLibraryImage = (source: Attachment) => {
     const linked: Attachment = { ...source, id: crypto.randomUUID(), createdAt: new Date().toISOString() }
@@ -1921,7 +1831,7 @@ function App() {
       setLocalWriteRevision(value=>value+1)
       setSelectedDate(today); closeDayDetailImmediately(); setSearchQuery('')
       setResetDataConfirm(false)
-      setStorageStats(await getStorageStats())
+      void getStorageStats().then(setStorageStats).catch(console.error)
       setBackupMessage('数据已清空 · 删除将在下次 GitHub 同步传播 · 应用设置已保留')
     } catch (error) {
       console.error('Failed to reset Zing data', error)
@@ -2002,34 +1912,8 @@ function App() {
     try {
       // The archive is fully parsed and validated before any local write begins.
       const restoredTasks = backupPreview.tasks.map(normalizeTaskScheduling)
-      await replaceZingData({
-        tasks:restoredTasks,journals:backupPreview.journals,notes:backupPreview.notes,notebooks:ensureDefaultNotebook(backupPreview.notebooks),moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
-        tags:backupPreview.tags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,habits:backupPreview.habits,habitCheckIns:backupPreview.habitCheckIns,
-        attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
-          const copy = new Uint8Array(item.bytes.byteLength)
-          copy.set(item.bytes)
-          return copy.buffer
-        })()],{type:item.mimeType})}))
-      })
+      const restoredTags = normalizeTags(backupPreview.tags)
       const s=backupPreview.settings ?? {}
-      if (s.greeting!==undefined) localStorage.setItem('zing:greeting',s.greeting || 'Hello, Zing')
-      if (s.weekStart) localStorage.setItem('zing:weekStart',s.weekStart)
-      if (s.dateFormat) localStorage.setItem('zing:dateFormat',s.dateFormat)
-      if (typeof s.showEndedTasks==='boolean') localStorage.setItem('zing:showEndedTasks',String(s.showEndedTasks))
-      if (typeof s.showAllRecurringTasks==='boolean') localStorage.setItem('zing:showAllRecurringTasks',String(s.showAllRecurringTasks))
-      if (typeof s.excludeDefaultFocusStats==='boolean') localStorage.setItem('zing:excludeDefaultFocusStats',String(s.excludeDefaultFocusStats))
-      if (typeof s.defaultPriority==='number' && s.defaultPriority>=0 && s.defaultPriority<=3) localStorage.setItem('zing:defaultPriority',String(s.defaultPriority))
-      if (Array.isArray(s.wordCloudIgnored)) localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(s.wordCloudIgnored))
-      if (Array.isArray(s.encouragementMessages)) localStorage.setItem('zing:encouragementMessages',JSON.stringify(s.encouragementMessages))
-      if (s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random') localStorage.setItem('zing:encouragementStyle',s.encouragementStyle)
-      if (typeof s.maxFocusHours==='number') localStorage.setItem('zing:maxFocusHours',String(Math.min(12,Math.max(2,Math.round(s.maxFocusHours)))))
-      if (typeof s.keepScreenAwakeDuringFocus==='boolean') localStorage.setItem('zing:keepScreenAwakeDuringFocus',String(s.keepScreenAwakeDuringFocus))
-      if (Array.isArray(s.weatherOptions)) localStorage.setItem('zing:weatherOptions',JSON.stringify(s.weatherOptions))
-      if (Array.isArray(s.thermalOptions)) localStorage.setItem('zing:thermalOptions',JSON.stringify(s.thermalOptions))
-      if (Array.isArray(s.emotionOptions)) localStorage.setItem('zing:emotionOptions',JSON.stringify(s.emotionOptions))
-      if (Array.isArray(s.randomPoolGroups)) localStorage.setItem('zing:randomPoolGroups',JSON.stringify(s.randomPoolGroups))
-      if (Array.isArray(s.randomPoolItems)) localStorage.setItem('zing:randomPoolItems',JSON.stringify(s.randomPoolItems))
-      if (Array.isArray(s.mixedPoolItemIds)) localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(s.mixedPoolItemIds))
       // Restore is device-local by design. Persist restored settings locally too, but do
       // not create sync changes/tombstones that could roll the cloud back.
       const restoredAt=new Date().toISOString()
@@ -2046,16 +1930,24 @@ function App() {
         keepScreenAwakeDuringFocus:typeof s.keepScreenAwakeDuringFocus==='boolean'?s.keepScreenAwakeDuringFocus:keepScreenAwakeDuringFocus,
         weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds, defaultMobileNavigation: s.defaultMobileNavigation ? normalizeMobileNav(s.defaultMobileNavigation) : syncedDefaultMobileNav, modulePriority:normalizeModuleOrder(s.modulePriority),daySectionOrder:normalizeDaySectionOrder(s.daySectionOrder),settingsGroupOrder:normalizeSettingsGroupOrder(s.settingsGroupOrder),
       }
+      await replaceZingData({
+        settings:restoredSettings, tasks:restoredTasks,journals:backupPreview.journals,notes:backupPreview.notes,notebooks:ensureDefaultNotebook(backupPreview.notebooks),moods:backupPreview.moods,energies:backupPreview.energies,environments:backupPreview.environments,periods:backupPreview.periods,
+        tags:restoredTags,anniversaries:backupPreview.anniversaries,focusSessions:backupPreview.focusSessions,habits:backupPreview.habits,habitCheckIns:backupPreview.habitCheckIns,
+        attachments:backupPreview.attachments.map(item=>({key:item.storageKey,blob:new Blob([(() => {
+          const copy = new Uint8Array(item.bytes.byteLength)
+          copy.set(item.bytes)
+          return copy.buffer
+        })()],{type:item.mimeType})}))
+      })
       if (s.defaultMobileNavigation) receiveDefaultMobileNav(normalizeMobileNav(s.defaultMobileNavigation))
       setModuleOrder(normalizeModuleOrder(s.modulePriority))
       setDaySectionOrder(normalizeDaySectionOrder(s.daySectionOrder))
       setSettingsGroupOrder(normalizeSettingsGroupOrder(s.settingsGroupOrder))
-      await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
       syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:backupPreview.notes, notebook:ensureDefaultNotebook(backupPreview.notebooks), mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, habit:backupPreview.habits, habitCheckIn:backupPreview.habitCheckIns, settings:[restoredSettings] }
       Object.keys(syncSnapshotReadyRef.current).forEach(key => { syncSnapshotReadyRef.current[key as SyncEntityType] = true })
       setTasks(restoredTasks); setJournalEntries(backupPreview.journals); setNotes(backupPreview.notes); setNotebooks(ensureDefaultNotebook(backupPreview.notebooks)); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
-      setTags(normalizeTags(backupPreview.tags)); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions);setHabits(backupPreview.habits);setHabitCheckIns(backupPreview.habitCheckIns)
+      setTags(restoredTags); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions);setHabits(backupPreview.habits);setHabitCheckIns(backupPreview.habitCheckIns)
       suppressNextSettingsSyncRef.current = true
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
@@ -2076,7 +1968,7 @@ function App() {
       if (Array.isArray(s.randomPoolItems)) setRandomPoolItems(s.randomPoolItems)
       if (Array.isArray(s.mixedPoolItemIds)) setMixedPoolItemIds(s.mixedPoolItemIds)
       setBackupPreview(null); setBackupMessage('恢复完成')
-      setStorageStats(await getStorageStats())
+      void getStorageStats().then(setStorageStats).catch(console.error)
     } catch(error) {
       console.error('Failed to restore backup',error)
       setBackupMessage(error instanceof Error?`恢复失败：${error.message}`:'恢复失败')
@@ -2108,7 +2000,7 @@ function App() {
       setGithubTokenSaved(true)
       const stamp = result.finishedAt
       setLastGithubSyncAt(stamp)
-      localStorage.setItem('zing:lastGithubSyncAt', stamp)
+      writeLocalCache('zing:lastGithubSyncAt', stamp)
       setGithubSyncMessageKind('success')
       setGithubSyncMessage(result.attachmentWarning
         ? `✓ GitHub 数据同步完成 · ⚠ 附件同步失败：${result.attachmentWarning}`
@@ -2128,8 +2020,7 @@ function App() {
       if (missingSystemTags.length) {
         // Persist self-healed schema tags and mark them as upserts so the next
         // GitHub write repairs the cloud tag store instead of losing them again.
-        await saveTags(hydratedTags)
-        await recordSyncDiff('tag', normalizedNextTags, hydratedTags)
+        await saveEntityWithSync('tag', hydratedTags)
       }
       // Remote merge is hydration, not a local user edit. Reset the diff baselines
       // before React state changes so pulled records/deletes do not generate fresh tombstones.
@@ -2162,19 +2053,19 @@ function App() {
         setDaySectionOrder(normalizeDaySectionOrder(incoming.daySectionOrder))
         setSettingsGroupOrder(normalizeSettingsGroupOrder(incoming.settingsGroupOrder))
         suppressNextSettingsSyncRef.current = true
-        localStorage.setItem('zing:greeting',incoming.greeting)
-        localStorage.setItem('zing:weekStart',incoming.weekStartsMonday?'monday':'sunday')
-        localStorage.setItem('zing:dateFormat',incoming.dateFormat)
-        localStorage.setItem('zing:defaultPriority',String(incoming.defaultPriority))
-        localStorage.setItem('zing:showEndedTasks',String(incoming.showEndedTasks))
-        localStorage.setItem('zing:showAllRecurringTasks',String(incoming.showAllRecurringTasks))
-        localStorage.setItem('zing:excludeDefaultFocusStats',String(incoming.excludeDefaultFocusStats))
-        localStorage.setItem('zing:wordCloudIgnored',JSON.stringify(incoming.wordCloudIgnored))
-        localStorage.setItem('zing:encouragementMessages',JSON.stringify(incoming.encouragementMessages))
-        localStorage.setItem('zing:encouragementStyle',incoming.encouragementStyle)
-        localStorage.setItem('zing:maxFocusHours',String(incoming.maxFocusHours))
-        localStorage.setItem('zing:keepScreenAwakeDuringFocus',String(incoming.keepScreenAwakeDuringFocus))
-        localStorage.setItem('zing:randomPoolGroups',JSON.stringify(incoming.randomPoolGroups)); localStorage.setItem('zing:randomPoolItems',JSON.stringify(incoming.randomPoolItems)); localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(incoming.mixedPoolItemIds))
+        writeLocalCache('zing:greeting',incoming.greeting)
+        writeLocalCache('zing:weekStart',incoming.weekStartsMonday?'monday':'sunday')
+        writeLocalCache('zing:dateFormat',incoming.dateFormat)
+        writeLocalCache('zing:defaultPriority',String(incoming.defaultPriority))
+        writeLocalCache('zing:showEndedTasks',String(incoming.showEndedTasks))
+        writeLocalCache('zing:showAllRecurringTasks',String(incoming.showAllRecurringTasks))
+        writeLocalCache('zing:excludeDefaultFocusStats',String(incoming.excludeDefaultFocusStats))
+        writeLocalCache('zing:wordCloudIgnored',JSON.stringify(incoming.wordCloudIgnored))
+        writeLocalCache('zing:encouragementMessages',JSON.stringify(incoming.encouragementMessages))
+        writeLocalCache('zing:encouragementStyle',incoming.encouragementStyle)
+        writeLocalCache('zing:maxFocusHours',String(incoming.maxFocusHours))
+        writeLocalCache('zing:keepScreenAwakeDuringFocus',String(incoming.keepScreenAwakeDuringFocus))
+        writeLocalCache('zing:randomPoolGroups',JSON.stringify(incoming.randomPoolGroups)); writeLocalCache('zing:randomPoolItems',JSON.stringify(incoming.randomPoolItems)); writeLocalCache('zing:mixedPoolItemIds',JSON.stringify(incoming.mixedPoolItemIds))
         setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setKeepScreenAwakeDuringFocus(incoming.keepScreenAwakeDuringFocus); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions); setRandomPoolGroups(incoming.randomPoolGroups); setRandomPoolItems(incoming.randomPoolItems); setMixedPoolItemIds(incoming.mixedPoolItemIds)
       }
     } catch (error) {
@@ -2214,7 +2105,7 @@ function App() {
   })
   const toggleDesktopSidebar = () => setDesktopSidebarCollapsed(current => {
     const next = !current
-    try { localStorage.setItem('zing:desktopSidebarCollapsed', String(next)) } catch { /* local storage unavailable */ }
+    try { writeLocalCache('zing:desktopSidebarCollapsed', String(next)) } catch { /* local storage unavailable */ }
     return next
   })
 
@@ -2253,7 +2144,7 @@ function App() {
     const todayKey = toDateKey(new Date())
     if (localStorage.getItem('zing:lastAutoSyncDate') === todayKey) return
     // Claim today's single automatic attempt before starting. A failed attempt is not retried automatically.
-    localStorage.setItem('zing:lastAutoSyncDate', todayKey)
+    writeLocalCache('zing:lastAutoSyncDate', todayKey)
     void runGithubSync(true)
   }, [localWriteRevision, githubSyncBusy, githubSyncToken])
 

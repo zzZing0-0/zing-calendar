@@ -1,3 +1,4 @@
+import { validateBackupAttachmentReferences, validateBackupSettings } from './backupValidation'
 import type { Attachment, Anniversary, DailyEnergy, DailyEnvironment, DailyMood, FocusSession, JournalEntry, MenstrualPeriod, Note, Notebook, Tag, Task, BackupPreview } from '../types'
 
 export type ZipEntry = { path: string; bytes: Uint8Array }
@@ -115,7 +116,7 @@ export async function readZingZip(file: File): Promise<Map<string, Uint8Array>> 
 export function decodeBackupJson<T>(entries: Map<string, Uint8Array>, path: string): T {
   const bytes = entries.get(path)
   if (!bytes) throw new Error(`缺少 ${path}`)
-  try { return JSON.parse(new TextDecoder().decode(bytes)) as T } catch { throw new Error(`${path} 无法解析`) }
+  try { return JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes)) as T } catch { throw new Error(`${path} 无法解析`) }
 }
 
 export function csvCell(value: unknown) {
@@ -146,8 +147,10 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
   const habitCheckIns = entries.has('data/habit-checkins.json') ? decodeBackupJson<BackupPreview['habitCheckIns']>(entries, 'data/habit-checkins.json') : []
   const settings = decodeBackupJson<BackupPreview['settings']>(entries, 'data/settings.json')
   if (![tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, habits, habitCheckIns].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
-  if (!manifest.counts || typeof manifest.counts !== 'object' || !Array.isArray(manifest.attachments)) throw new Error('备份清单格式错误')
+  if (!manifest.counts || typeof manifest.counts !== 'object' || Array.isArray(manifest.counts) || !Array.isArray(manifest.attachments)) throw new Error('备份清单格式错误')
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('备份设置格式错误')
+  validateBackupSettings(settings as Record<string, unknown>)
+  for (const value of Object.values(manifest.counts)) if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error('备份数量格式错误')
   const dataGroups = { tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, habits, habitCheckIns }
   for (const [group, records] of Object.entries(dataGroups)) {
     for (const record of records) {
@@ -166,9 +169,13 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
   }
   const rows = manifest.attachments
   const attachmentKeys = new Set<string>()
+  const attachmentPaths = new Set<string>()
   const attachments = rows.map((row:any) => {
     if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
     if (typeof row.storageKey !== 'string' || typeof row.path !== 'string' || typeof row.mimeType !== 'string' || typeof row.type !== 'string') throw new Error('附件清单字段类型错误')
+    if (!row.path.startsWith('attachments/') || row.path.split('/').some((part:string)=>!part || part==='..' || part==='.') || attachmentPaths.has(row.path) || !['image','audio'].includes(row.type)) throw new Error('附件清单路径或类型无效')
+    attachmentPaths.add(row.path)
+    if (row.size !== undefined && (typeof row.size !== 'number' || !Number.isSafeInteger(row.size) || row.size < 0)) throw new Error('附件大小无效')
     if (attachmentKeys.has(row.storageKey)) throw new Error('附件清单存在重复存储键')
     attachmentKeys.add(row.storageKey)
     const bytes = entries.get(row.path)
@@ -176,6 +183,7 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
     if (typeof row.size === 'number' && bytes.length !== row.size) throw new Error(`附件大小不一致：${row.filename ?? row.path}`)
     return { ...row, bytes }
   })
+  validateBackupAttachmentReferences(tasks,journals,notes,attachmentKeys)
   const expected = manifest.counts ?? {}
   if ((expected.tasks ?? tasks.length) !== tasks.length || (expected.journals ?? journals.length) !== journals.length ||
       (expected.notes ?? notes.length) !== notes.length || (expected.notebooks ?? notebooks.length) !== notebooks.length ||

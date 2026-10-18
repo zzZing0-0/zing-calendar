@@ -1,3 +1,4 @@
+import { writeLocalCache } from '../features/application/settingsCache'
 import { useEffect, useState } from 'react'
 import type { TaskPriority } from '../types'
 import { clampMaxFocusHours, parseDefaultPriority } from '../domain/settings'
@@ -41,14 +42,14 @@ export function useAppPreferences() {
   const [maxFocusHours, setMaxFocusHours] = useState(initial.maxFocusHours)
   const [defaultPriority, setDefaultPriority] = useState<TaskPriority>(initial.defaultPriority)
 
-  useEffect(() => { localStorage.setItem('zing:greeting', greeting || 'Hello, Zing') }, [greeting])
-  useEffect(() => { localStorage.setItem('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
-  useEffect(() => { localStorage.setItem('zing:dateFormat', dateFormat) }, [dateFormat])
-  useEffect(() => { localStorage.setItem('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
-  useEffect(() => { localStorage.setItem('zing:showAllRecurringTasks', String(showAllRecurringTasks)) }, [showAllRecurringTasks])
-  useEffect(() => { localStorage.setItem('zing:excludeDefaultFocusStats', String(excludeDefaultFocusStats)) }, [excludeDefaultFocusStats])
-  useEffect(() => { localStorage.setItem('zing:maxFocusHours', String(maxFocusHours)) }, [maxFocusHours])
-  useEffect(() => { localStorage.setItem('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
+  useEffect(() => { writeLocalCache('zing:greeting', greeting || 'Hello, Zing') }, [greeting])
+  useEffect(() => { writeLocalCache('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
+  useEffect(() => { writeLocalCache('zing:dateFormat', dateFormat) }, [dateFormat])
+  useEffect(() => { writeLocalCache('zing:showEndedTasks', String(showEndedTasks)) }, [showEndedTasks])
+  useEffect(() => { writeLocalCache('zing:showAllRecurringTasks', String(showAllRecurringTasks)) }, [showAllRecurringTasks])
+  useEffect(() => { writeLocalCache('zing:excludeDefaultFocusStats', String(excludeDefaultFocusStats)) }, [excludeDefaultFocusStats])
+  useEffect(() => { writeLocalCache('zing:maxFocusHours', String(maxFocusHours)) }, [maxFocusHours])
+  useEffect(() => { writeLocalCache('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
 
   return {
     greeting, setGreeting,

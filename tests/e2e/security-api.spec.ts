@@ -1,3 +1,4 @@
+import { mockB2Authorization } from '../helpers/b2AuthorizationMock'
 import { expect, test } from '@playwright/test'
 import { POST as githubSyncPost } from '../../api/github-sync'
 import { GET as b2SignGet } from '../../api/b2-sign'
@@ -68,8 +69,9 @@ test.describe('API security boundary regression', () => {
   test('B2 signer creates only short-lived URLs and does not expose the application key', async () => {
     const old = { id:process.env.B2_KEY_ID, key:process.env.B2_APPLICATION_KEY, bucket:process.env.B2_BUCKET_NAME, endpoint:process.env.B2_ENDPOINT }
     Object.assign(process.env,{B2_KEY_ID:'test-id',B2_APPLICATION_KEY:'super-secret-key',B2_BUCKET_NAME:'private-bucket',B2_ENDPOINT:'s3.us-west-004.backblazeb2.com'})
+    const disposeAuth = mockB2Authorization()
     try {
-      const req = new Request('https://zing.example/api/b2-sign?key=attachment:12345678-1234-1234-1234-123456789abc&method=GET')
+      const req = new Request('https://zing.example/api/b2-sign?key=attachment:12345678-1234-1234-1234-123456789abc&method=GET',{headers:{Authorization:'Bearer mock-device'}})
       const response = await b2SignGet(req); const payload:any = await response.json()
       expect(response.status).toBe(200)
       expect(payload.url).toContain('X-Amz-Expires=300')
@@ -77,6 +79,7 @@ test.describe('API security boundary regression', () => {
       expect(response.headers.get('cache-control')).toContain('no-store')
     } finally {
       const restore=(name:string,value:string|undefined)=> value===undefined ? delete process.env[name] : process.env[name]=value
+      disposeAuth()
       restore('B2_KEY_ID',old.id); restore('B2_APPLICATION_KEY',old.key); restore('B2_BUCKET_NAME',old.bucket); restore('B2_ENDPOINT',old.endpoint)
     }
   })
@@ -100,16 +103,17 @@ test('B2 GC rejects cross-site and malformed reference sets before touching B2',
   expect((await b2GcPost(invalid)).status).toBe(400)
 })
 
-test('B2 GC deletes only unreferenced allowlisted attachment objects', async () => {
+test('B2 GC deletes only reviewed unreferenced objects inside the authorized bucket', async () => {
   const old={id:process.env.B2_KEY_ID,key:process.env.B2_APPLICATION_KEY,bucket:process.env.B2_BUCKET_NAME,endpoint:process.env.B2_ENDPOINT}
   Object.assign(process.env,{B2_KEY_ID:'test-id',B2_APPLICATION_KEY:'secret',B2_BUCKET_NAME:'bucket',B2_ENDPOINT:'s3.us-west-004.backblazeb2.com'})
   const keep='attachment:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', orphan='attachment:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
   const original=globalThis.fetch; const deleted:string[]=[]
   globalThis.fetch=(async(input:any,init:any={})=>{ const url=String(input); if((init.method||'GET')==='DELETE'){deleted.push(decodeURIComponent(new URL(url).pathname.split('/').pop()||'')); return new Response(null,{status:204})} return new Response(`<ListBucketResult><Contents><Key>${keep}</Key></Contents><Contents><Key>${orphan}</Key></Contents><Contents><Key>unrelated.txt</Key></Contents></ListBucketResult>`,{status:200}) }) as typeof fetch
+  const disposeAuth = mockB2Authorization(globalThis.fetch)
   try{
-    const previewReq=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'preview',referencedKeys:[keep]})})
+    const previewReq=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer mock-device'},body:JSON.stringify({action:'preview',referencedKeys:[keep]})})
     const preview=await b2GcPost(previewReq); expect(preview.status).toBe(200); expect(await preview.json()).toMatchObject({scanned:2,orphans:[orphan]}); expect(deleted).toEqual([])
-    const deleteReq=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',referencedKeys:[keep],orphanKeys:[orphan,keep]})})
-    const response=await b2GcPost(deleteReq); expect(response.status).toBe(200); expect(await response.json()).toMatchObject({scanned:2,deleted:1,skipped:1}); expect(deleted).toEqual([orphan])
-  } finally { globalThis.fetch=original; const restore=(n:string,v:string|undefined)=>v===undefined?delete process.env[n]:process.env[n]=v; restore('B2_KEY_ID',old.id);restore('B2_APPLICATION_KEY',old.key);restore('B2_BUCKET_NAME',old.bucket);restore('B2_ENDPOINT',old.endpoint) }
+    const deleteReq=new Request('https://zing.example/api/b2-gc',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer mock-device'},body:JSON.stringify({action:'delete',referencedKeys:[keep],orphanKeys:[orphan,keep]})})
+    const response=await b2GcPost(deleteReq); expect(response.status).toBe(200); expect(await response.json()).toMatchObject({deleted:1,skipped:1,deletedKeys:[orphan],remainingKeys:[keep]}); expect(deleted).toEqual([orphan])
+  } finally { disposeAuth(); globalThis.fetch=original; const restore=(n:string,v:string|undefined)=>v===undefined?delete process.env[n]:process.env[n]=v; restore('B2_KEY_ID',old.id);restore('B2_APPLICATION_KEY',old.key);restore('B2_BUCKET_NAME',old.bucket);restore('B2_ENDPOINT',old.endpoint) }
 })

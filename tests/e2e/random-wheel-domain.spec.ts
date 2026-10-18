@@ -149,7 +149,7 @@ test.describe('random wheel v2.8.10 mixed pool regression', () => {
     expect(mixedBlock).not.toContain('item.enabled')
     expect(pool).toContain('onMixedPoolItemIds(mixedPoolItemIds.filter(id => id !== item.id))')
     expect(pool).toContain('onMixedPoolItemIds(mixedPoolItemIds.filter(id => !groupItems.some(item => item.id === id)))')
-    expect(app).toContain("localStorage.setItem('zing:mixedPoolItemIds'")
+    expect(app).toContain("writeLocalCache('zing:mixedPoolItemIds'")
   })
 
   test('mixed pool participates in settings sync backup and restore', async () => {

@@ -299,7 +299,7 @@ test('notes search and sync lifecycle regression › trashed Notes stay searchab
   const searchSource = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/search.ts'), 'utf8')
   expect(appSource).toContain('activeNotes: notes.filter(note=>!note.trashedAt)')
   expect(searchSource).toContain("if (searchFilter === 'all' || searchFilter === 'note')")
-  expect(appSource).toContain("recordSyncDiff('note',previous,notes)")
+  expect(appSource).toContain("useEntityPersistence('note', notes, notesHydrated, setLocalWriteRevision)")
 
   const liveNote = { id: 'note-1', title: 'Reference', content: 'keep me', updatedAt: 1 }
   const trashedNote = { ...liveNote, trashedAt: 2, updatedAt: 2 }
