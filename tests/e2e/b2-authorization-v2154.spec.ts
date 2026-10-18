@@ -78,3 +78,21 @@ test('authorized signing rechecks revocation on every request and signs B2-compa
     dispose()
   }
 })
+
+// A B2-compatible PUT is not an atomic create-only operation. Keep the auth boundary
+// explicitly covered instead of deleting the original security intent.
+test('PUT signing rejects missing bearer and cross-site attempts', async () => {
+  const dispose = mockB2Authorization()
+  try {
+    expect((await sign(request('PUT', {}))).status).toBe(401)
+    expect((await sign(request('PUT', { Authorization: 'Bearer isolated-token', Origin: 'https://attacker.invalid', 'sec-fetch-site': 'cross-site' }))).status).toBe(403)
+  } finally { dispose() }
+})
+
+test('PUT signing rejects revoked and unauthorized identities', async () => {
+  const dispose = mockB2Authorization()
+  try {
+    globalThis.fetch = async () => new Response(null, { status: 401 })
+    expect((await sign(request('PUT'))).status).toBe(401)
+  } finally { dispose() }
+})
