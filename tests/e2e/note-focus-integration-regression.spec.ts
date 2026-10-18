@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { readApplicationSource } from '../helpers/applicationSource'
 
 const root=path.resolve(process.cwd())
-const app=()=>fs.readFileSync(path.join(root,'src/App.tsx'),'utf8')
+const app=()=>readApplicationSource()
 const notes=()=>fs.readFileSync(path.join(root,'src/features/notes/NotesPage.tsx'),'utf8')
 
 test('Note focus uses shared global FocusSession runtime instead of storing aggregate time on Note', () => {

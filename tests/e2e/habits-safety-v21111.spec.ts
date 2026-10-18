@@ -1,9 +1,10 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { progressForDate, mergeHabitCheckIns, visibleOnDay } from '../../src/features/habits/habitDomain'
 import type { Habit, HabitCheckIn } from '../../src/features/habits/habitDomain'
+import { mergeHabitCheckIns, progressForDate, visibleOnDay } from '../../src/features/habits/habitDomain'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = readFileSync('src/App.tsx','utf8')
+const app = readApplicationSource()
 const search = readFileSync('src/domain/search.ts','utf8')
 const page = readFileSync('src/features/habits/HabitsPage.tsx','utf8')
 const habit: Habit = {id:'h',name:'读书',schedule:{kind:'flexible',period:'day',times:3},quantityTarget:10,unit:'分钟',createdAt:'2026-10-01T00:00:00Z',updatedAt:'2026-10-01T00:00:00Z'}

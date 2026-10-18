@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
+import { readStylesheet } from '../helpers/applicationSource'
 
 const notesPage = fs.readFileSync('src/features/notes/NotesPage.tsx', 'utf8')
-const css = fs.readFileSync('src/App.css', 'utf8')
+const css = readStylesheet('src/App.css')
 
 test('note editor follows notebook status title focus tags media content hierarchy', () => {
   const topbar = notesPage.indexOf('className="note-editor-topbar"')

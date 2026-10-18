@@ -6,7 +6,7 @@ This file is the maintenance map for the post-v1.10 refactor. The goal is not to
 
 Zing Calendar is local-first. IndexedDB is the primary local data store. Private GitHub sync is the structured-data ledger, and private Backblaze B2 stores binary attachments. Vercel serves the UI/auth/API relay. Do not move structured data to a remote database merely to simplify UI code.
 
-`App.tsx` is intentionally the composition/orchestration layer. It owns cross-feature React state, browser effects, modal/view coordination, IndexedDB hydration/persistence, sync/backup orchestration, attachment UI, and the continuous-calendar/Day Detail interaction state machine. A large line count alone is not a reason to split it further.
+`App.tsx` is the composition root. It owns persisted cross-feature data, IndexedDB hydration/persistence, sync/backup coordination, and the continuous-calendar/Day Detail interaction state machine. Business workspaces and dialogs own their presentation behind explicit typed props; feature controllers own local interactions. Features never import the composition root or a global App state type.
 
 ## Feature boundaries
 
@@ -61,11 +61,20 @@ Focus also has a protected interaction invariant: the just-used Focus tag remain
 - Backup restore and remote sync can update settings outside `useAppPreferences`; preserve that cross-layer behavior when changing preferences. Shared settings normalization belongs in `domain/settings.ts`, while IndexedDB/GitHub side effects remain orchestration concerns.
 - Sync diff identity/planning belongs in `domain/sync.ts`; persistence of tombstones/change rows remains in the orchestration/database boundary.
 
-## Refactor completion rule
+## UI refactor boundaries (v2.15.2 baseline)
 
-The v1.10 refactor deliberately stops before splitting orchestration merely to reduce `App.tsx` line count. v1.10.18 is the consolidated stabilization endpoint for this refactor line. New extraction is justified only when it creates a clear feature boundary, lowers change risk, or makes independently testable behavior explicit. Avoid a forest of tiny hooks/components with heavy parameter plumbing.
+The design-system refactor starts solely from commit `9ca65378df717fc9b93028df04be4f8643a1a128`. The application version, persisted types, domain algorithms, database schema, API relay, sync protocol, backup formats, date preferences, and service worker retain the v2.15.2 contracts.
 
-For future changes: edit the relevant domain module first when the change is a business rule; edit `App.tsx` when the change is cross-feature orchestration or UI state; add/update a targeted regression test for changed invariants; then run the full build and mobile regression suite.
+- `components/ui/` provides native Button and Field controls, PageHeading, DialogHeader, and EmptyState. Wrappers preserve DOM semantics, refs, disabled states, accessible labels, and existing feature class names. Dialog headers retain their `aria-labelledby` target IDs.
+- `styles/tokens.css` owns the shared canvas, surfaces, text, accent, borders, typography, spacing, radii, shadows, focus treatment, and motion vocabulary. Data-owned tag colors and semantic mood/priority colors remain separate.
+- `styles/components.css` applies the shared visual treatment after existing feature layout styles. `App.css` retains calendar geometry, overlay stacking, and compatibility selectors; feature-specific layouts are not global UI primitives.
+- `features/calendar/` owns CalendarPage, DayDetail, MonthPicker, and calendar renderers. The selection/open/close/scroll state machine stays in the root to preserve its interdependent refs and browser effects.
+- `features/tasks/`, `journal/`, `anniversaries/`, `inbox/`, `trash/`, `tags/`, `environment/`, `attachments/`, `backup/`, and `sync/` own their respective viewers, editors, managers, and dialogs. Notes, Habits, navigation, and random-wheel keep their existing business boundaries.
+- `useTagManagement` owns tag drafts, scope checks, archive/delete actions and usage selectors. `useGlobalSearch` owns query/filter state, derived search presentation and dismissal listeners. `useFocusRuntime` owns focus controls, exclusivity, auto-stop, wake lock and recovery routing. `useFocusHistoryEditor` owns historical interval editing shared across free/task/note/habit contexts. `useTaskNotesEditor` owns checklist editing and caret restoration. `useMobileNavigationPreferences` owns device-local navigation and explicit synced defaults.
+- StatisticsPage owns its range, heatmap and expanded-color state and derives statistics through the unchanged domain module. It remains mounted across workspace changes so switching pages retains the selected range.
+- No all-application context, copied App controller, or type-only dependency back to App is used. Root-to-feature props explicitly enumerate the data and actions a boundary consumes. CSV export construction and attachment rendering are reusable feature modules.
+
+For future changes, edit the relevant domain module for business rules, the feature for local interaction/presentation, and App only for cross-feature coordination. Keep UI components independent of storage, syncing and date-format policy. See [the design system guide](DESIGN_SYSTEM.md) for visual conventions and validation commands.
 
 ## Data-safety regression tests
 

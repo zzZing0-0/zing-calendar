@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { FocusSession, Task } from '../../src/types'
 import { focusHistoryForDate, taskFocusSeconds } from '../../src/domain/focus'
+import type { FocusSession, Task } from '../../src/types'
+import { readApplicationSource } from '../helpers/applicationSource'
 
 const task: Task = { id:'task-a',title:'写报告',date:'2026-10-11',priority:1,status:'todo',allDay:true,createdAt:'2026-10-11T00:00:00Z',updatedAt:'2026-10-11T00:00:00Z' }
 const session=(id:string,start:string,end:string):FocusSession=>({id,tagIds:['default'],mode:'stopwatch',startedAt:start,endedAt:end,durationSeconds:(new Date(end).getTime()-new Date(start).getTime())/1000,createdAt:start,updatedAt:end,context:{kind:'task',taskId:'task-a'}})
@@ -14,7 +15,7 @@ test('task time is derived only from task-context FocusSessions',()=>{
 })
 
 test('recurring tasks expose no timer path and legacy task timer fields are gone',()=>{
-  const app=fs.readFileSync(path.resolve('src/App.tsx'),'utf8')
+  const app=readApplicationSource()
   const types=fs.readFileSync(path.resolve('src/types.ts'),'utf8')
   expect(app).toContain("viewingTask.status === 'todo' && !viewingTask.recurrence && !viewingTask.seriesId")
   for(const legacy of ['actualDurationMinutes','timerSessions','timerSecondsRemainder','activeTimerStartedAt','activeTimerFocusTagIds']) expect(types).not.toContain(legacy)

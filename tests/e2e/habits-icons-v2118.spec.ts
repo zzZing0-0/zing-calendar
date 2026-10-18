@@ -1,8 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
+import { readStylesheet } from '../helpers/applicationSource'
 
 const picker = fs.readFileSync('src/features/habits/HabitIcons.tsx', 'utf8')
-const styles = fs.readFileSync('src/features/habits/habits.css', 'utf8')
+const styles = readStylesheet('src/features/habits/habits.css')
 
 test('habit icon browser has Chinese categories and no required English search', () => {
   for (const category of ['运动健康', '学习工作', '生活家居', '自然动物', '娱乐艺术', '交通旅行']) expect(picker).toContain(category)

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 
 test('note tag picker is mounted independently of the global focus modal', () => {
   const focusModal = app.indexOf('{focusOpen && (')

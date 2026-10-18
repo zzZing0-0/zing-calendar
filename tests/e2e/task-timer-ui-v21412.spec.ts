@@ -1,8 +1,8 @@
-import { test, expect } from '@playwright/test'
-import { readFileSync } from 'node:fs'
+import { expect, test } from '@playwright/test'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
-const app = readFileSync('src/App.tsx', 'utf8')
-const css = readFileSync('src/App.css', 'utf8')
+const app = readApplicationSource()
+const css = readStylesheet('src/App.css')
 
 test('task timer does not render redundant label around start button', () => {
   expect(app).not.toContain('<span className="task-timer-label">任务计时</span>')

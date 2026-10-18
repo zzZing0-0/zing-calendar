@@ -1,10 +1,11 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { readStylesheet } from '../helpers/applicationSource'
 
 const habit = readFileSync('src/features/habits/HabitsPage.tsx', 'utf8')
-const habitCss = readFileSync('src/features/habits/habits.css', 'utf8')
+const habitCss = readStylesheet('src/features/habits/habits.css')
 const notes = readFileSync('src/features/notes/NotesPage.tsx', 'utf8')
-const appCss = readFileSync('src/App.css', 'utf8')
+const appCss = readStylesheet('src/App.css')
 
 test('habit details use a single check-in entry and a separate dialog for date and quantity', () => {
   expect(habit).toContain('className="habit-open-log-button"')

@@ -2,8 +2,9 @@ import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import { focusHistoryForDate } from '../../src/domain/focus'
 import type { FocusSession, Note } from '../../src/types'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 const notesPage = fs.readFileSync('src/features/notes/NotesPage.tsx', 'utf8')
 
 const note = (id='n1'): Note => ({id,title:'占位论文',content:'',notebookId:'default',tagIds:[],active:true,createdAt:'2026-10-11T08:00:00.000Z',updatedAt:'2026-10-11T08:00:00.000Z'})
@@ -36,7 +37,7 @@ test('Today Focus separates free focus notes and tasks and only raw free focus i
   expect(app).toContain("(['direct','note','task','habit'] as const).map(kind=>")
   expect(app).toContain("kind==='direct'?'自由专注':kind==='note'?'笔记':kind==='habit'?'习惯':'任务'")
   expect(app).toContain("(record.kind==='direct'||record.kind==='habit')&&record.session&&<>")
-  expect(app).toContain("record.kind==='note'&&record.note&&<button")
+  expect(app).toContain("record.kind==='note'&&record.note&&<Button")
 })
 
 test('a note exposes derived total focus and opens its own raw focus history', () => {

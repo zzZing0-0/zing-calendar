@@ -1,10 +1,11 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
 const page = fs.readFileSync('src/features/habits/HabitsPage.tsx', 'utf8')
 const icons = fs.readFileSync('src/features/habits/HabitIcons.tsx', 'utf8')
-const styles = fs.readFileSync('src/features/habits/habits.css', 'utf8')
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const styles = readStylesheet('src/features/habits/habits.css')
+const app = readApplicationSource()
 
 test('habits use searchable Lucide SVG icons in editor, list and daily details', () => {
   expect(icons).toContain("from 'lucide-react'")

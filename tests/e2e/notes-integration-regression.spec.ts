@@ -2,8 +2,9 @@ import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { planSyncDiff } from '../../src/domain/sync'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
-const appSource = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+const appSource = readApplicationSource()
 
 test('notes integration regression › note search results route to Notes instead of Anniversary editor', () => {
   expect(appSource).toContain("if (result.kind === 'note')")
@@ -27,14 +28,14 @@ test('notes integration regression › GitHub rehydrate loads and applies notes 
 
 
 test('notes overlay regression › notebook and editor panels stay above their backdrop', () => {
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(css).toContain('.notes-overlay>.modal-backdrop,.note-editor-overlay>.modal-backdrop{z-index:0}')
   expect(css).toContain('.notebook-drawer{position:absolute;z-index:2')
   expect(css).toContain('.note-editor{position:absolute;z-index:2')
 })
 
 test('notes presentation regression › editor covers global search and markdown task lists have no extra bullet', () => {
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(css).toContain('.notes-overlay,.note-editor-overlay{z-index:240}')
   expect(css).toContain('.zing-markdown .task-list-item{list-style:none}')
   expect(css).toContain('.zing-markdown .task-list-item::marker{content:""}')
@@ -42,7 +43,7 @@ test('notes presentation regression › editor covers global search and markdown
 
 test('notes presentation regression › active state is consistently Chinese and visually highlighted', () => {
   const notesPage = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(notesPage).not.toContain('Active Notes')
   expect(notesPage).not.toContain('● Active')
   expect(notesPage).toContain('● 已激活')
@@ -52,7 +53,7 @@ test('notes presentation regression › active state is consistently Chinese and
 })
 
 test('notes markdown regression › emphasized text receives a visible synthesized slant', () => {
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(css).toContain('.zing-markdown em{font-style:italic')
   expect(css).toContain('transform:skewX(-8deg)')
 })
@@ -70,7 +71,7 @@ test('notes markdown regression › toolbar is grouped and exposes heading level
 
 
 test('notes markdown regression › Chinese emphasis has visual breathing room', () => {
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(css).toContain('margin-inline:.14em')
 })
 
@@ -87,14 +88,14 @@ test('Notes editor owns checklist completion toggling while Preview stays read-o
 })
 
 test('Markdown preview gives GFM tables an explicit visible table treatment', async () => {
-  const css=fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'),'utf8')
+  const css=readStylesheet('src/App.css')
   expect(css).toContain('.zing-markdown table{width:100%;border-collapse:collapse')
   expect(css).toContain('.zing-markdown th,.zing-markdown td{border:1px solid')
 })
 
 test('notes markdown regression › checklist toggle preserves viewport state and uses a toolbar-consistent icon', () => {
   const editor = fs.readFileSync(path.resolve(process.cwd(), 'src/components/markdown/MarkdownEditorAdapter.tsx'), 'utf8')
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(editor).toMatch(/const scrollSnapshots\s*=\s*root/)
   expect(editor).toMatch(/\.map\(el\s*=>\s*\(\{\s*el,\s*top:\s*el\.scrollTop,\s*left:\s*el\.scrollLeft\s*\}\)\)/)
   expect(editor).toMatch(/focus\(\{\s*preventScroll:\s*true\s*\}\)/)
@@ -104,10 +105,10 @@ test('notes markdown regression › checklist toggle preserves viewport state an
 })
 
 test('notes markdown regression › preview quotes have a distinct visual treatment', () => {
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(css).toContain('.zing-markdown blockquote{')
   expect(css).toContain('border-left:4px solid')
-  expect(css).toContain('background:#f4f7f5')
+  expect(css).toContain('background:var(--color-surface-soft)')
 })
 
 test('notes desktop regression › editor adapter reports scroll progress and Notes applies it to preview', () => {
@@ -342,7 +343,7 @@ test('notes image library integration › Notes can reuse an existing library im
 
 
 test('notes tags integration regression › Notes receives shared tag state and exposes color-sorted filter plus multi-select editor', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readApplicationSource()
   const notesPage = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
   expect(app).toContain('<NotesPage notes={notes} notebooks={notebooks} tags={tags}')
   expect(notesPage).toContain('noteSelectableTags(tags)')
@@ -353,7 +354,7 @@ test('notes tags integration regression › Notes receives shared tag state and 
 
 
 test('notes tags integration regression › deleting a tag removes Note references without inventing a default Note tag', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readApplicationSource()
   const tagsDomain = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/tags.ts'), 'utf8')
   expect(app).toContain('const noteCount = notes.filter')
   expect(app).toContain('tagIds:cleanupNoteTagIdsAfterDelete(note.tagIds,id)')
@@ -363,7 +364,7 @@ test('notes tags integration regression › deleting a tag removes Note referenc
 
 test('notes tags desktop regression › overflowing tag pills can scroll horizontally with a normal mouse wheel', () => {
   const notesPage = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(notesPage).toContain('onWheel={scrollTagFilter}')
   expect(notesPage).toContain('row.scrollWidth<=row.clientWidth')
   expect(notesPage).toContain('row.scrollLeft+=delta')
@@ -380,8 +381,8 @@ test('notes card regression › active cards use a dot, show at most three tags 
   expect(page).toContain('className="note-row-meta"')
   expect(page).toContain('draggable={canReorderActive}')
   expect(page).toContain('dropActiveNote(n.id)')
-  expect(page).not.toContain('>↑</button>')
-  expect(page).not.toContain('>↓</button>')
+  expect(page).not.toContain('>↑</Button>')
+  expect(page).not.toContain('>↓</Button>')
   expect(page).not.toContain("n.active?'● 已激活':'○ 激活'")
 })
 
@@ -395,7 +396,7 @@ test('notes card regression › metadata separates tags left from notebook/date 
 
 test('notes editor regression › desktop tag selector scrolls horizontally while editor active control stays textual', () => {
   const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(page).toContain('className="note-tag-editor-scroll" onWheel={scrollTagFilter}')
   expect(css).toContain('.note-tag-editor-scroll')
   expect(css).toContain('overflow-x:auto')
@@ -410,7 +411,7 @@ test('notes editor regression › editor timestamp uses the shared UI date forma
 
 
 test('notes integration regression › shared UI date formatter is declared and destructured by NotesPage', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readApplicationSource()
   const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
   expect(app).toContain('formatUiDate={formatUiDate}')
   expect(page).toContain('formatUiDate:(date:Date)=>string')
@@ -421,7 +422,7 @@ test('notes integration regression › shared UI date formatter is declared and 
 
 test('notes active ordering regression › only unfiltered Active page exposes sorting and mobile gets a touch handle', () => {
   const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(page).toContain('canReorderActive=!selectedNotebook&&!selectedTagId')
   expect(page).toContain('className="note-drag-handle"')
   expect(page).toContain('onPointerDown={e=>startTouchActiveDrag(e,n.id)}')
@@ -439,7 +440,7 @@ test('notes active ordering regression › Active home source remains active-onl
 
 
 test('notes mobile polish regression › drag handle sits top-right and long titles ellipsize without overlap', () => {
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(css).toContain('.note-row-title{min-width:0;padding-right:38px}')
   expect(css).toContain('text-overflow:ellipsis')
   expect(css).toContain('white-space:nowrap')
@@ -450,7 +451,7 @@ test('notes mobile polish regression › drag handle sits top-right and long tit
 
 test('notes presentation regression › redundant Active subtitle is removed and navigation controls share neutral styling', () => {
   const page = fs.readFileSync(path.resolve(process.cwd(), 'src/features/notes/NotesPage.tsx'), 'utf8')
-  const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(page).not.toContain('已激活笔记 · 当前工作集')
   expect(page).toContain('className="notes-secondary-action" onClick={()=>setNotebookOpen(true)}')
   expect(page).toContain('className="notes-back notes-secondary-action"')
@@ -466,7 +467,7 @@ test('notes creation regression › a just-created note exposes Cancel and disca
   expect(page).toContain('setNewNoteId(id);setEditingId(id)')
   expect(page).toContain('const cancelNewNote=()=>')
   expect(page).toContain('rows.filter(note=>note.id!==newNoteId)')
-  expect(page).toContain('newNoteId===editing.id?<button className="ghost-button" onClick={cancelNewNote}>取消</button>')
+  expect(page).toContain('newNoteId===editing.id?<Button className="ghost-button" onClick={cancelNewNote}>取消</Button>')
   expect(page).toContain('const finishEditing=()=>{setNewNoteId(null);setEditingId(null)}')
 })
 

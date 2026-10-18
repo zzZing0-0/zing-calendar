@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
-import path from 'node:path'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
-const source = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+const source = readApplicationSource()
+const css = readStylesheet('src/App.css')
 
 test('trash task view separates unfinished and completed tasks when ended items are visible', () => {
   expect(source).toContain("{label:'未完成',items:trashTaskGroups.active}")

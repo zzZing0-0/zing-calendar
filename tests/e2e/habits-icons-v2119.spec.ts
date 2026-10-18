@@ -1,8 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
+import { readStylesheet } from '../helpers/applicationSource'
 
 const picker = fs.readFileSync('src/features/habits/HabitIcons.tsx', 'utf8')
-const styles = fs.readFileSync('src/features/habits/habits.css', 'utf8')
+const styles = readStylesheet('src/features/habits/habits.css')
 
 test('icon category navigation is horizontal at every viewport size', () => {
   expect(styles).toMatch(/\.habit-icon-browser-body\{display:grid;grid-template-columns:minmax\(0,1fr\)/)

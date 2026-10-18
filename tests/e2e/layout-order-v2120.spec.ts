@@ -1,9 +1,10 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-const app=readFileSync('src/App.tsx','utf8')
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
+const app=readApplicationSource()
 const domain=readFileSync('src/domain/layoutPreferences.ts','utf8')
 const settings=readFileSync('src/domain/settings.ts','utf8')
-const css=readFileSync('src/App.css','utf8')
+const css=readStylesheet('src/App.css')
 
 test('day detail keeps task fixed, while mood calendar and other sections are independently sortable',()=>{
  expect(domain).toContain("['mood','energy','calendar','journal','habit','period']")

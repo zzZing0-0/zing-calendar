@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav, resizeMobileNav, selectMobileNav } from '../../src/features/navigation/navigationConfig'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 const storage = fs.readFileSync('src/features/navigation/navigationStorage.ts', 'utf8')
 
 test('mobile navigation normalizes malformed values and preserves fixed ends', () => {

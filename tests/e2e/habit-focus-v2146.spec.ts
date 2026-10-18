@@ -1,7 +1,8 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = readFileSync('src/App.tsx','utf8')
+const app = readApplicationSource()
 const page = readFileSync('src/features/habits/HabitsPage.tsx','utf8')
 const runtime = readFileSync('src/domain/focusRuntime.ts','utf8')
 const selectors = readFileSync('src/domain/focusHistorySelectors.ts','utf8')

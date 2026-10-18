@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 
 test('all focus panels can close while keeping the session running', () => {
   expect(app).toContain('aria-label="关闭专注界面" onClick={()=>setFocusOpen(false)}')

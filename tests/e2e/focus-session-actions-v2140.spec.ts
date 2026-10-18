@@ -1,9 +1,9 @@
-import { test, expect } from '@playwright/test'
-import { readFileSync } from 'node:fs'
-import { appendFocusSession, endFocusSession, editFinishedFocusSession } from '../../src/domain/focusSessionActions'
+import { expect, test } from '@playwright/test'
+import { appendFocusSession, editFinishedFocusSession, endFocusSession } from '../../src/domain/focusSessionActions'
 import type { FocusSession } from '../../src/types'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 const sample: FocusSession = { id:'s', tagIds:['old'], mode:'stopwatch', startedAt:'2026-10-01T10:00:00.000Z', endedAt:null, durationSeconds:0, createdAt:'2026-10-01T10:00:00.000Z', updatedAt:'2026-10-01T10:00:00.000Z' }
 
 test('all four focus flows use shared immutable append and end operations', () => {

@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
-import path from 'node:path'
 import { planSyncDiff, rowSyncId, syncEntityKey } from '../../src/domain/sync'
+import { readApplicationSource } from '../helpers/applicationSource'
 
 test.describe('sync domain regression', () => {
   test('date-keyed entities use date identity while ordinary entities use id', () => {
@@ -37,7 +36,7 @@ test.describe('sync domain regression', () => {
 
 
 test('sync presentation regression › every preview entity has a Chinese label and never falls back to raw storage keys', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readApplicationSource()
   expect(app).toContain("note:'笔记'")
   expect(app).toContain("notebook:'笔记本'")
   expect(app).toContain('syncEntityLabel(row.entityType)')
@@ -46,16 +45,16 @@ test('sync presentation regression › every preview entity has a Chinese label 
 })
 
 test('language consistency regression › common Chinese UI controls do not retain accidental English labels', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-  expect(app).not.toContain('>Today</button>')
+  const app = readApplicationSource()
+  expect(app).not.toContain('>Today</Button>')
   expect(app).not.toContain('Daily Mood 天数')
-  expect(app).toContain('>今天</button>')
+  expect(app).toContain('>今天</Button>')
   expect(app).toContain('<small>记录天数</small>')
 })
 
 
 test('sync preview labels regression › dynamic preview rows use the typed Chinese label helper', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readApplicationSource()
   expect(app).toContain('function syncEntityLabel(entityType: string)')
   expect(app).toContain("SYNC_ENTITY_LABELS[entityType as SyncEntityType | 'trash']")
   expect(app).not.toContain('SYNC_ENTITY_LABELS[row.entityType]')

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { readStylesheet } from '../helpers/applicationSource'
 
 test('notes markdown regression › desktop preview is a bounded scroll container for synchronized scrolling', () => {
-  const css = readFileSync('src/App.css', 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(css).toContain('.note-edit-pane,.note-preview-pane{min-width:0;min-height:0;overflow:auto}')
 })
 
@@ -17,7 +18,7 @@ test('notes markdown regression › UIW adapter reports real editor scroll progr
 
 test('notes markdown polish › renderer owns copyable code blocks, safe external links, and horizontally scrollable tables', () => {
   const renderer = readFileSync('src/components/markdown/MarkdownRenderer.tsx', 'utf8')
-  const css = readFileSync('src/App.css', 'utf8')
+  const css = readStylesheet('src/App.css')
   expect(renderer).toContain('navigator.clipboard.writeText(code)')
   expect(renderer).toContain("copied?'✓ 已复制':'复制'")
   expect(renderer).toContain('target="_blank" rel="noopener noreferrer"')
@@ -43,7 +44,7 @@ test('notes markdown polish › toolbar title wrapper accepts UIW nullable butto
 test('notes mobile architecture regression › mobile editing is independent of UIW viewport and scroll containers', () => {
   const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx','utf8')
   const notes = readFileSync('src/features/notes/NotesPage.tsx','utf8')
-  const css = readFileSync('src/App.css','utf8')
+  const css = readStylesheet('src/App.css')
   expect(adapter).toContain('if(isMobile)return <MobileMarkdownEditor')
   expect(adapter).toContain('data-mobile-single-layer="true"')
   expect(adapter).toContain('className="zing-mobile-md-textarea"')
@@ -59,7 +60,7 @@ test('notes mobile architecture regression › mobile editing is independent of 
 })
 
 test('notes mobile layout regression › the headless toolbar is the only sticky editor control', () => {
-  const css = readFileSync('src/App.css','utf8')
+  const css = readStylesheet('src/App.css')
   const adapter = readFileSync('src/components/markdown/MarkdownEditorAdapter.tsx','utf8')
   expect(adapter).toContain('className="zing-mobile-md-toolbar"')
   expect(css).toContain('.zing-mobile-md-toolbar-shell{position:-webkit-sticky;position:sticky;top:0')

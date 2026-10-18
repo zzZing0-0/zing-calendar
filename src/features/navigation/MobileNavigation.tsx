@@ -1,4 +1,6 @@
-import type { MobileNavConfig, MobileNavChoice } from './navigationConfig'
+import { Button } from '../../components/ui/Button'
+import type { MobileNavChoice, MobileNavConfig } from './navigationConfig'
+import type { MainView } from './navigationTypes'
 export const mobileNavLabel = (id: 'calendar' | 'settings' | MobileNavChoice) => ({ calendar:'日历', habits:'习惯', notes:'笔记', anniversaries:'纪念日', statistics:'统计', settings:'设置' })[id]
 export function mobileNavIcon(id: 'calendar' | 'settings' | MobileNavChoice) {
   const paths = {
@@ -12,18 +14,18 @@ export function mobileNavIcon(id: 'calendar' | 'settings' | MobileNavChoice) {
   return <svg className="bottom-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={paths[id]}/></svg>
 }
 
-export type NavigationPage = 'calendar' | 'notes' | 'habits' | 'anniversaries' | 'statistics' | 'settings'
+export type NavigationPage = MainView
 export function MobileNavigation({ config, active, onNavigate }: { config: MobileNavConfig; active: NavigationPage; onNavigate: (page: NavigationPage) => void }) {
   const pages: NavigationPage[] = ['calendar', ...config.middleItems, 'settings']
   return <nav className="bottom-nav" aria-label="主要功能">{pages.map(id =>
-    <button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>
+    <Button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>
       {mobileNavIcon(id)}{mobileNavLabel(id)}
-    </button>
+    </Button>
   )}</nav>
 }
 export function DesktopNavigation({ active, onNavigate }: { active: NavigationPage; onNavigate: (page: NavigationPage) => void }) {
   const pages: NavigationPage[] = ['calendar', 'notes', 'habits', 'anniversaries', 'statistics', 'settings']
   return <nav className="desktop-navigation" aria-label="主要功能">{pages.map(id =>
-    <button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>{mobileNavLabel(id)}</button>
+    <Button key={id} type="button" className={active === id ? 'active' : ''} aria-label={mobileNavLabel(id)} onClick={() => onNavigate(id)}>{mobileNavLabel(id)}</Button>
   )}</nav>
 }

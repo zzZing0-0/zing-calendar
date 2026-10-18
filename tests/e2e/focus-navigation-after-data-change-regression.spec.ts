@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 
 test('active focus session auto-navigation is once per session, not once per task or note mutation', () => {
   expect(app).toContain('const routedFocusSessionIdRef = useRef<string | null>(null)')

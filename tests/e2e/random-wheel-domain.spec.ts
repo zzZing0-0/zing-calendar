@@ -1,20 +1,21 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
 const root = process.cwd()
 const read = (path: string) => readFile(resolve(root, path), 'utf8')
 
 test.describe('random wheel regression', () => {
   test('wheel and pool overlays are actually mounted from Settings state', async () => {
-    const source = await read('src/App.tsx')
+    const source = await readApplicationSource()
     expect(source).toContain('<RandomWheelPage groups={randomPoolGroups} items={randomPoolItems}')
     expect(source).toContain('<RandomPoolManager groups={randomPoolGroups} items={randomPoolItems}')
     expect(source).toContain('!randomWheelOpen && !randomPoolOpen')
   })
 
   test('pool naming is consistently 幸运池', async () => {
-    const app = await read('src/App.tsx')
+    const app = await readApplicationSource()
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
     const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
     expect(app).toContain('<strong>幸运池</strong>')
@@ -35,7 +36,7 @@ test.describe('random wheel regression', () => {
 
 test.describe('random wheel v2.8.6 presentation regression', () => {
   test('settings and wheel title stay emoji-free while prize content may remain playful', async () => {
-    const app = await read('src/App.tsx')
+    const app = await readApplicationSource()
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
     expect(app).toContain('<strong>抽奖大转盘</strong>')
     expect(app).not.toContain('<strong>🎡 抽奖大转盘</strong>')
@@ -44,7 +45,7 @@ test.describe('random wheel v2.8.6 presentation regression', () => {
   })
 
   test('marquee lamps glow without scale-based popping', async () => {
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     const block = css.slice(css.indexOf('/* v2.8.6 — lucky wheel marquee'))
     expect(block).toContain('@keyframes ferrisLampGlow')
     expect(block).toContain('filter:brightness(1.42)')
@@ -54,7 +55,7 @@ test.describe('random wheel v2.8.6 presentation regression', () => {
 
   test('pool groups are collapsible and item editor uses two-row mobile layout with custom checkbox', async () => {
     const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     expect(pool).toContain('aria-expanded={!isCollapsed}')
     expect(pool).toContain('random-pool-item-main')
     expect(pool).toContain('random-pool-item-details')
@@ -67,7 +68,7 @@ test.describe('random wheel v2.8.6 presentation regression', () => {
 test.describe('random wheel v2.8.7 regression', () => {
   test('marquee lamps use per-lamp staggered delays instead of flashing in sync', async () => {
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     expect(wheel).toContain("'--lamp-delay':`${i*90}ms`")
     expect(css).toContain('animation-delay:var(--lamp-delay)!important')
     expect(css).toContain('6%,9%{opacity:1')
@@ -83,7 +84,7 @@ test.describe('random wheel v2.8.7 regression', () => {
 
   test('group picker sits beside the wheel title and mobile spin button has breathing room', async () => {
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     expect(wheel).toContain('random-wheel-title-row')
     expect(wheel).toContain('className="random-wheel-group-select"')
     expect(wheel).not.toContain('className="random-wheel-group-tabs"')
@@ -95,7 +96,7 @@ test.describe('random wheel v2.8.7 regression', () => {
 test.describe('random wheel v2.8.8 regression', () => {
   test('lucky pool item details stay in one compact second row on mobile', async () => {
     const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     expect(pool).toContain('<div className="random-pool-item-details">')
     expect(pool).toContain('<span>数量</span>')
     expect(pool).toContain('<span>单位</span>')
@@ -110,7 +111,7 @@ test.describe('random wheel v2.8.8 regression', () => {
 test.describe('random wheel v2.8.9 regression', () => {
   test('marquee alternates one chase lap with two synchronized flashes', async () => {
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     expect(wheel).toContain('[lampFlash,setLampFlash]=useState(false)')
     expect(wheel).toContain('setLampFlash(true)')
     expect(wheel).toContain('setLampFlash(false);schedule()')
@@ -121,7 +122,7 @@ test.describe('random wheel v2.8.9 regression', () => {
   })
 
   test('mobile wheel and spin button use the lower half of the page more comfortably', async () => {
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     const block = css.slice(css.indexOf('/* v2.8.9 — marquee rhythm'))
     expect(block).toContain('.ferris-wrap{margin-top:14px}')
     expect(block).toContain('.random-spin-button{margin-top:44px}')
@@ -143,7 +144,7 @@ test.describe('random wheel v2.8.10 mixed pool regression', () => {
   test('mixed selection is independent of ordinary enabled state and cleans deleted references', async () => {
     const domain = await read('src/domain/randomWheel.ts')
     const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
-    const app = await read('src/App.tsx')
+    const app = await readApplicationSource()
     const mixedBlock = domain.slice(domain.indexOf('export function validMixedRandomItems'), domain.indexOf('export function chooseWeightedFromItems'))
     expect(mixedBlock).not.toContain('item.enabled')
     expect(pool).toContain('onMixedPoolItemIds(mixedPoolItemIds.filter(id => id !== item.id))')
@@ -154,7 +155,7 @@ test.describe('random wheel v2.8.10 mixed pool regression', () => {
   test('mixed pool participates in settings sync backup and restore', async () => {
     const settings = await read('src/domain/settings.ts')
     const types = await read('src/types.ts')
-    const app = await read('src/App.tsx')
+    const app = await readApplicationSource()
     expect(settings).toContain('mixedPoolItemIds: input.mixedPoolItemIds ?? []')
     expect(settings).toContain('mixedPoolItemIds: settings.mixedPoolItemIds ?? []')
     expect(types).toContain('mixedPoolItemIds?: string[]')
@@ -196,8 +197,8 @@ test.describe('random wheel v2.8.12 UI consistency regression', () => {
   })
 
   test('focus limit keeps title unit and numeric input on one line', async () => {
-    const app = await read('src/App.tsx')
-    const css = await read('src/App.css')
+    const app = await readApplicationSource()
+    const css = await readStylesheet('src/App.css')
     expect(app).toContain('最长专注时长（小时）')
     expect(app).toContain('className="max-focus-setting-line"')
     expect(app).not.toContain('<b>小时</b>')
@@ -206,14 +207,14 @@ test.describe('random wheel v2.8.12 UI consistency regression', () => {
 
   test('mobile wheel reserves a standalone navigation row above its content', async () => {
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     expect(wheel).toContain('random-wheel-top random-wheel-page-top')
     expect(css).toContain('.random-wheel-page .random-wheel-page-top>button{grid-row:1')
     expect(css).toContain('.random-wheel-page .random-wheel-page-top>div{grid-row:2')
   })
 
   test('settings card separators follow one internal-row rule', async () => {
-    const css = await read('src/App.css')
+    const css = await readStylesheet('src/App.css')
     expect(css).toContain('.settings-group-title + .setting-row')
     expect(css).toContain('.settings-group-title + .settings-link-row')
     expect(css).toContain('.encouragement-style-setting{border-bottom:0}')

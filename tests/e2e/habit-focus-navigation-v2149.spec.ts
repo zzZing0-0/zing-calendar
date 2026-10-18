@@ -1,6 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-const app = readFileSync('src/App.tsx', 'utf8')
+import { readApplicationSource } from '../helpers/applicationSource'
+const app = readApplicationSource()
 const habits = readFileSync('src/features/habits/HabitsPage.tsx', 'utf8')
 test('active habit focus header navigates to the exact habit detail', () => {
   expect(app).toContain('setRequestedHabitId(previous=>({id:activeFocusHabit.id')

@@ -1,8 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-const app=readFileSync('src/App.tsx','utf8')
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
+const app=readApplicationSource()
 const domain=readFileSync('src/domain/modulePriority.ts','utf8')
-const css=readFileSync('src/App.css','utf8')
+const css=readStylesheet('src/App.css')
 test('module priority defaults to task note habit journal anniversary focus',()=>{
  expect(domain).toContain("['task','note','habit','journal','anniversary','focus']")
  expect(domain).toContain('normalizeModuleOrder')

@@ -1,8 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+const app = readApplicationSource()
 
 test('task focus history regression › compact task viewer owns raw task focus history CRUD', () => {
   expect(app).toContain('taskFocusHistoryOpen')

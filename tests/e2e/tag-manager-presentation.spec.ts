@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
-import path from 'node:path'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
-const source = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+const source = readApplicationSource()
+const css = readStylesheet('src/App.css')
 
 test('tag manager keeps creation and browsing in the main panel while editing opens a dedicated modal', () => {
   const managerStart = source.indexOf('{tagManagerOpen && (')
@@ -24,7 +23,7 @@ test('tag editor uses draft state with consistent secondary actions and an expli
   expect(css).toContain('.compact-tag-edit-secondary{display:flex;align-items:center;gap:10px}')
   expect(css).toContain('.compact-tag-edit-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 24px 22px')
   expect(css).toContain('.compact-tag-edit-actions .ghost-button,.compact-tag-edit-actions .danger-button,.compact-tag-edit-actions .save-button{box-sizing:border-box;min-height:40px')
-  expect(css).toContain('.compact-tag-edit-actions .danger-button{border:1px solid #ead8d5;background:#fff;color:#b56b63}')
+  expect(css).toContain('.compact-tag-edit-actions .danger-button{border:1px solid #ead8d5;background:var(--color-surface);color:#b56b63}')
 })
 
 test('closing tag manager also clears its nested tag editor state', () => {
@@ -66,13 +65,13 @@ test('tag edits are drafts: close discards them and save commits them', async ({
 
 
 test('tag manager regression › note is a first-class tag scope beside shared task and journal', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readApplicationSource()
   expect(app).toContain("['note','笔记']")
 })
 
 
 test('tag manager regression › focus is a first-class tag scope beside shared task journal and note', () => {
-  const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readApplicationSource()
   expect(app).toContain("['focus','专注']")
 })
 
@@ -137,8 +136,8 @@ test('settings v2.9.5 regression › every Settings group title gets the same di
 })
 
 test('settings v2.9.7 regression › Settings heading is a real card while preserving the existing heading content', () => {
-  expect(source).toContain('<div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>')
-  expect(css).toMatch(/\.settings-page \.page-heading\{[\s\S]*background:#fff;[\s\S]*border-radius:18px;/)
+  expect(source).toContain('<PageHeading title={<>设置</>} eyebrow={<>SETTINGS</>} />')
+  expect(css).toMatch(/\.settings-page \.page-heading\{[\s\S]*background:var\(--color-surface\);[\s\S]*border-radius:var\(--radius-panel\);/)
 })
 
 test('settings v2.9.7 regression › Settings does not override the shared page-heading title typography', () => {

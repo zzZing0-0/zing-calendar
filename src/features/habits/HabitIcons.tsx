@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import type { ComponentType } from 'react'
 import * as Lucide from 'lucide-react'
+import type { ComponentType } from 'react'
+import { useMemo, useState } from 'react'
+import { Button } from '../../components/ui/Button'
 
 type SvgIcon = ComponentType<{ size?: number; strokeWidth?: number; className?: string }>
 const library = Lucide as unknown as Record<string, SvgIcon>
@@ -42,11 +43,11 @@ export function HabitIconPicker({ value, onChange }: { value: string; onChange: 
   return <div className="habit-icon-browser">
     <div className="habit-icon-browser-header"><span>选择图标</span><span className="habit-icon-browser-current"><HabitIcon name={value} /> 当前图标</span></div>
     <div className="habit-icon-browser-body">
-      <nav className="habit-icon-categories" aria-label="图标分类">{categories.map(item => <button key={item.id} type="button" aria-pressed={category === item.id} onClick={() => { setCategory(item.id); setPage(0) }}>{item.label}</button>)}</nav>
+      <nav className="habit-icon-categories" aria-label="图标分类">{categories.map(item => <Button key={item.id} type="button" aria-pressed={category === item.id} onClick={() => { setCategory(item.id); setPage(0) }}>{item.label}</Button>)}</nav>
       <div className="habit-icon-browser-content">
         <input className="habit-icon-search" aria-label="搜索习惯图标" placeholder="可选：搜索图标名称" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} />
-        <div className="habit-icon-results">{shown.map(key => { const name = key.slice(0, -4); return <button type="button" className="habit-icon-result" key={key} title={name} aria-label={name} aria-pressed={value===name} onClick={() => onChange(name)}><HabitIcon name={name} /></button> })}</div>
-        <div className="habit-icon-pagination"><span>{results.length ? `${results.length} 个图标` : '暂无匹配图标'}</span><div><button type="button" disabled={page === 0} onClick={() => setPage(n => Math.max(0, n - 1))}>上一页</button><span aria-live="polite">{page + 1} / {pages}</span><button type="button" disabled={page >= pages - 1} onClick={() => setPage(n => Math.min(pages - 1, n + 1))}>下一页</button></div></div>
+        <div className="habit-icon-results">{shown.map(key => { const name = key.slice(0, -4); return <Button type="button" className="habit-icon-result" key={key} title={name} aria-label={name} aria-pressed={value===name} onClick={() => onChange(name)}><HabitIcon name={name} /></Button> })}</div>
+        <div className="habit-icon-pagination"><span>{results.length ? `${results.length} 个图标` : '暂无匹配图标'}</span><div><Button type="button" disabled={page === 0} onClick={() => setPage(n => Math.max(0, n - 1))}>上一页</Button><span aria-live="polite">{page + 1} / {pages}</span><Button type="button" disabled={page >= pages - 1} onClick={() => setPage(n => Math.min(pages - 1, n + 1))}>下一页</Button></div></div>
       </div>
     </div>
   </div>

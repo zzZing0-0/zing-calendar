@@ -1,6 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { readApplicationSource } from '../helpers/applicationSource'
 const source = (name: string) => readFileSync(resolve('src', name), 'utf8')
 test('habit deletion and restore cascade only associated sessions', () => {
   const lifecycle = source('domain/habitFocusLifecycle.ts')
@@ -12,7 +13,7 @@ test('habit deletion and restore cascade only associated sessions', () => {
   expect(lifecycle).toContain('purgeTrashWithHabitFocus')
 })
 test('habit deletion, restoration, permanent deletion, and trash purge use cascade', () => {
-  const app = source('App.tsx')
+  const app = readApplicationSource()
   const page = source('features/habits/HabitsPage.tsx')
   expect(page).toContain('onDeleteHabit(habit.id)')
   expect(app).toContain('cascadeTrashHabitFocus(current,habitId,now)')

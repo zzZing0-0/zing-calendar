@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import MDEditor, { commands } from '@uiw/react-md-editor'
@@ -39,22 +40,22 @@ function MobileMarkdownEditor({value,onChange,getTimestampText}:{value:string;on
   <div className="zing-mobile-md-toolbar-shell">
    <div className="zing-mobile-md-toolbar" role="toolbar" aria-label="Markdown 工具栏" onPointerDownCapture={preserveToolbarFocus} onMouseDownCapture={preserveToolbarFocus}>
    <select aria-label="标题" defaultValue="" onChange={e=>{const n=Number(e.target.value);if(n)heading(n);e.currentTarget.value='' }}><option value="">H⌄</option>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>H{n}</option>)}</select>
-   <button type="button" title="粗体" onClick={()=>wrap('**')}>B</button>
-   <button type="button" title="斜体" onClick={()=>wrap('*')}><i>I</i></button>
-   <button type="button" title="删除线" onClick={()=>wrap('~~')}><s>S</s></button>
+   <Button type="button" title="粗体" onClick={()=>wrap('**')}>B</Button>
+   <Button type="button" title="斜体" onClick={()=>wrap('*')}><i>I</i></Button>
+   <Button type="button" title="删除线" onClick={()=>wrap('~~')}><s>S</s></Button>
    <span className="divider"/>
-   <button type="button" title="无序列表" onClick={()=>prefix('- ')}>•≡</button>
-   <button type="button" title="有序列表" onClick={()=>prefix('1. ')}>1.</button>
-   <button type="button" aria-label="插入/切换清单" title="插入/切换清单" onClick={toggleTask}>☑</button>
-   <button type="button" title="引用" onClick={()=>prefix('> ')}>❯</button>
+   <Button type="button" title="无序列表" onClick={()=>prefix('- ')}>•≡</Button>
+   <Button type="button" title="有序列表" onClick={()=>prefix('1. ')}>1.</Button>
+   <Button type="button" aria-label="插入/切换清单" title="插入/切换清单" onClick={toggleTask}>☑</Button>
+   <Button type="button" title="引用" onClick={()=>prefix('> ')}>❯</Button>
    <span className="divider"/>
-   <button type="button" title="插入链接" onClick={()=>wrap('[','](https://)','链接')}>🔗</button>
-   <button type="button" title="插入表格" onClick={()=>insert('| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n')}>▦</button>
+   <Button type="button" title="插入链接" onClick={()=>wrap('[','](https://)','链接')}>🔗</Button>
+   <Button type="button" title="插入表格" onClick={()=>insert('| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n')}>▦</Button>
    <span className="divider"/>
-   <button type="button" title="行内代码" onClick={()=>wrap('`')}>{'</>'}</button>
-   <button type="button" title="代码块" onClick={()=>wrap('```\n','\n```','代码')}>▣</button>
-   <button type="button" title="分隔线" onClick={()=>insert('\n---\n')}>—</button>
-   {getTimestampText&&<button type="button" aria-label="插入时间戳" title="插入时间戳" onClick={()=>insert(getTimestampText())}>🕒</button>}
+   <Button type="button" title="行内代码" onClick={()=>wrap('`')}>{'</>'}</Button>
+   <Button type="button" title="代码块" onClick={()=>wrap('```\n','\n```','代码')}>▣</Button>
+   <Button type="button" title="分隔线" onClick={()=>insert('\n---\n')}>—</Button>
+   {getTimestampText&&<Button type="button" aria-label="插入时间戳" title="插入时间戳" onClick={()=>insert(getTimestampText())}>🕒</Button>}
    </div>
   </div>
   <textarea ref={textareaRef} className="zing-mobile-md-textarea" aria-label="Markdown 正文" value={value} onChange={e=>handleInputChange(e.target.value)} spellCheck={false}/>

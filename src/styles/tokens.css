@@ -1,0 +1,43 @@
+/** Shared visual vocabulary. Data-owned tag colors and priority/mood meanings stay independent. */
+:root {
+  --color-canvas: #f5f7f4;
+  --color-surface: #fff;
+  --color-surface-soft: #f8faf8;
+  --color-surface-muted: #edf0ee;
+  --color-text: #202724;
+  --color-text-strong: #222b27;
+  --color-text-secondary: #56605b;
+  --color-text-muted: #8a918d;
+  --color-border: #dfe5e1;
+  --color-border-strong: #cbd2cd;
+  --color-accent: #39765d;
+  --color-accent-hover: #305f4c;
+  --color-accent-soft: #eaf4ec;
+  --color-on-accent: #fff;
+  --color-danger: #a34d4d;
+  --color-danger-soft: #fff4f4;
+  --color-focus-ring: #708f7f;
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-size-caption: 12px;
+  --font-size-small: 13px;
+  --font-size-body: 14px;
+  --font-size-input: 16px;
+  --font-size-title: 24px;
+  --line-height-body: 1.5;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 18px;
+  --radius-pill: 999px;
+  --shadow-card: 0 4px 20px rgb(34 43 39 / 5%);
+  --shadow-dialog: 0 16px 48px rgb(19 27 23 / 16%);
+  --control-height: 40px;
+  --touch-target: 44px;
+  --motion-fast: 140ms;
+}

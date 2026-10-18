@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 const navigation = fs.readFileSync('src/features/navigation/MobileNavigation.tsx', 'utf8')
-const css = fs.readFileSync('src/features/navigation/navigation.css', 'utf8')
+const css = readStylesheet('src/features/navigation/navigation.css')
 const settings = fs.readFileSync('src/features/navigation/MobileNavigationSettings.tsx', 'utf8')
 
 test('desktop navigation is a persistent sidebar with search and brand', () => {

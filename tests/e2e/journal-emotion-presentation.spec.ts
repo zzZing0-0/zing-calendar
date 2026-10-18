@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
-const app=fs.readFileSync(path.resolve('src/App.tsx'),'utf8')
+import { readApplicationSource } from '../helpers/applicationSource'
+const app=readApplicationSource()
 
 test('record editor order is title, score, emotions, body, images, audio, tags with no editable date/time',()=>{
   const start=app.indexOf('{journalEditorOpen &&')

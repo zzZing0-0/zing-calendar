@@ -1,10 +1,11 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
-const app = readFileSync('src/App.tsx', 'utf8')
-const appCss = readFileSync('src/App.css', 'utf8')
+const app = readApplicationSource()
+const appCss = readStylesheet('src/App.css')
 const habits = readFileSync('src/features/habits/HabitsPage.tsx', 'utf8')
-const habitsCss = readFileSync('src/features/habits/habits.css', 'utf8')
+const habitsCss = readStylesheet('src/features/habits/habits.css')
 
 test('mobile search moves to Settings while desktop search remains', () => {
   expect(app).toContain('settings-mobile-search-entry')

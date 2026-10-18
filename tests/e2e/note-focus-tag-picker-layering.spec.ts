@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
-import path from 'node:path'
+import { readStylesheet } from '../helpers/applicationSource'
 
 const root = process.cwd()
-const css = fs.readFileSync(path.join(root, 'src/App.css'), 'utf8')
+const css = readStylesheet('src/App.css')
 
 test('note focus tag picker is layered above the note editor overlay', () => {
   const picker = css.match(/\.focus-tag-select-layer\{[^}]*z-index:(\d+)/)

@@ -1,7 +1,8 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { readStylesheet } from '../helpers/applicationSource'
 
-const css = readFileSync('src/features/habits/habits.css', 'utf8')
+const css = readStylesheet('src/features/habits/habits.css')
 const source = readFileSync('src/features/habits/HabitsPage.tsx', 'utf8')
 
 test('tag precedes progress in the habit card markup', () => {
@@ -14,7 +15,7 @@ test('tag precedes progress in the habit card markup', () => {
 for (const width of [390, 320, 768]) {
   test(`tag, dot and progress share vertical center at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:844})
-    await page.setContent(`<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><main class="habits-page"><article class="habit-card"><button class="habit-card-main"><strong>听力练习</strong><small class="habit-card-metadata"><span class="habit-card-tag"><i style="background:#a2ca58"></i>听力</span><span class="habit-card-progress">每日 0/1 次 · 每次 30 分钟</span></small></button><div class="habit-card-actions"><button>＋ 打卡</button></div></article></main>`)
+    await page.setContent(`<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><main class="habits-page"><article class="habit-card"><Button class="habit-card-main"><strong>听力练习</strong><small class="habit-card-metadata"><span class="habit-card-tag"><i style="background:#a2ca58"></i>听力</span><span class="habit-card-progress">每日 0/1 次 · 每次 30 分钟</span></small></Button><div class="habit-card-actions"><Button>＋ 打卡</Button></div></article></main>`)
     const m = await page.evaluate(() => {
       const rect = (s:string) => document.querySelector(s)!.getBoundingClientRect()
       const mid = (r:DOMRect) => (r.top+r.bottom)/2

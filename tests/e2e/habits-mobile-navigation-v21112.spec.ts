@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
 import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav, selectMobileNav } from '../../src/features/navigation/navigationConfig'
 import { initialMobileNavigation, loadLocalNavigation, saveLocalNavigation } from '../../src/features/navigation/navigationStorage'
+import { readApplicationSource } from '../helpers/applicationSource'
 
 test('fresh installation defaults to calendar, notes, habits, settings', () => {
   expect(BUILTIN_MOBILE_NAV).toEqual({ itemCount: 4, middleItems: ['notes', 'habits'], hiddenItems: ['anniversaries', 'statistics'] })
@@ -37,8 +37,8 @@ test('saved user navigation takes priority over code default', () => {
 
 // Regression: Settings shortcuts use the same label helper as the mobile navigation.
 test('settings shortcut labels are imported from the shared navigation component', () => {
-  const app = fs.readFileSync('src/App.tsx', 'utf8')
-  expect(app).toContain("import { mobileNavLabel, mobileNavIcon } from './features/navigation/MobileNavigation'")
+  const app = readApplicationSource()
+  expect(app).toContain("from '../navigation/MobileNavigation'")
 })
 
 test('replacing the habits slot exposes habits as a missing destination', () => {

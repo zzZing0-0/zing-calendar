@@ -1,291 +1,133 @@
-import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav } from './features/navigation/navigationConfig'
-import { mobileNavLabel, mobileNavIcon } from './features/navigation/MobileNavigation'
-import type { MobileNavConfig } from './features/navigation/navigationConfig'
-import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
-import { MobileNavigation } from './features/navigation/MobileNavigation'
-import { DesktopNavigationDrawer } from './features/navigation/DesktopNavigationDrawer'
-import { DEFAULT_DAY_SECTION_ORDER, DEFAULT_SETTINGS_GROUP_ORDER, normalizeDaySectionOrder, normalizeSettingsGroupOrder, syncPreviewRowsByModule } from './domain/layoutPreferences'
-import type { DaySectionKey, SettingsGroupKey } from './domain/layoutPreferences'
-import { LayoutOrderEditor } from './features/layout/LayoutOrderEditor'
-import { DEFAULT_MODULE_ORDER, normalizeModuleOrder, moveModule, orderedCategories } from './domain/modulePriority'
-import type { ModuleKey } from './domain/modulePriority'
-import { MobileNavigationSettings } from './features/navigation/MobileNavigationSettings'
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import type { CSSProperties, KeyboardEvent } from 'react'
-import { appendSyncChange, cleanupOrphanAttachmentBlobs, getAttachmentBlob, getOrCreateDeviceId, getStorageStats, replaceZingData, clearZingUserDataWithSync, loadAnniversaries, loadDailyMoods, loadDailyEnergy, loadDailyEnvironment, loadMenstrualPeriods, loadJournalEntries, loadNotes, loadNotebooks, loadHabits, loadHabitCheckIns, saveHabits, saveHabitCheckIns, loadTasks, loadTags, loadFocusSessions, loadUserSettings, saveUserSettings, putAttachmentBlob, saveAnniversaries, saveDailyMoods, saveDailyEnergy, saveDailyEnvironment, saveMenstrualPeriods, saveJournalEntries, saveNotes, saveNotebooks, saveTags, saveTasks, saveFocusSessions, saveSyncTombstone, syncWithGitHub, previewGitHubSync, loadGitHubDeviceCredential, saveGitHubDeviceCredential, clearGitHubDeviceCredential } from './db/calendar'
-import type { SyncEntityType } from './db/calendar'
+import type { CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import { Field } from './components/ui/Field'
+import type { SyncEntityType } from './db/calendar'
+import { cleanupOrphanAttachmentBlobs, clearZingUserDataWithSync, getAttachmentBlob, getStorageStats, loadAnniversaries, loadDailyEnergy, loadDailyEnvironment, loadDailyMoods, loadFocusSessions, loadGitHubDeviceCredential, loadHabitCheckIns, loadHabits, loadJournalEntries, loadMenstrualPeriods, loadNotebooks, loadNotes, loadTags, loadTasks, loadUserSettings, previewGitHubSync, putAttachmentBlob, replaceZingData, saveAnniversaries, saveDailyEnergy, saveDailyEnvironment, saveDailyMoods, saveFocusSessions, saveGitHubDeviceCredential, saveHabitCheckIns, saveHabits, saveJournalEntries, saveMenstrualPeriods, saveNotebooks, saveNotes, saveTags, saveTasks, saveUserSettings, syncWithGitHub } from './db/calendar'
+import type { DaySectionKey, SettingsGroupKey } from './domain/layoutPreferences'
+import { DEFAULT_DAY_SECTION_ORDER, DEFAULT_SETTINGS_GROUP_ORDER, normalizeDaySectionOrder, normalizeSettingsGroupOrder } from './domain/layoutPreferences'
+import type { ModuleKey } from './domain/modulePriority'
+import { DEFAULT_MODULE_ORDER, normalizeModuleOrder } from './domain/modulePriority'
+import { AnniversariesPage } from './features/anniversaries/AnniversariesPage'
+import { AnniversaryEditor } from './features/anniversaries/AnniversaryEditor'
+import { ApplicationHeader } from './features/application/ApplicationHeader'
+import { APP_VERSION } from './features/application/version'
+import { compressImage } from './features/attachments/AttachmentMedia'
+import { MediaDialogs } from './features/attachments/MediaDialogs'
+import { StorageDialogs } from './features/attachments/StorageDialogs'
+import { BackupDialogs } from './features/backup/BackupDialogs'
+import { createCsvExports } from './features/backup/createCsvExports'
+import { CalendarPage } from './features/calendar/CalendarPage'
+import { DayDetail } from './features/calendar/DayDetail'
+import { MonthPicker } from './features/calendar/MonthPicker'
+import { MONTHS, WEEKDAYS } from './features/calendar/calendarLabels'
+import { createCalendarRenderers } from './features/calendar/createCalendarRenderers'
+import { EnvironmentManager } from './features/environment/EnvironmentManager'
+import { loadEnvironmentOptions } from './features/environment/environmentPreferences'
+import { FocusDialogs } from './features/focus/FocusDialogs'
+import { useFocusHistoryEditor } from './features/focus/useFocusHistoryEditor'
+import { useFocusRuntime } from './features/focus/useFocusRuntime'
+import { HabitWorkspace } from './features/habits/HabitWorkspace'
+import { InboxDialogs } from './features/inbox/InboxDialogs'
+import { EmotionDialogs } from './features/journal/EmotionDialogs'
+import { JournalDialogs } from './features/journal/JournalDialogs'
+import { MobileNavigation } from './features/navigation/MobileNavigation'
+import { NavigationSettingsDialogs } from './features/navigation/NavigationSettingsDialogs'
 import './features/navigation/navigation.css'
+import { normalizeMobileNav } from './features/navigation/navigationConfig'
+import { saveLocalNavigation } from './features/navigation/navigationStorage'
+import type { MainView } from './features/navigation/navigationTypes'
+import { useMobileNavigationPreferences } from './features/navigation/useMobileNavigationPreferences'
+import { NotesWorkspace } from './features/notes/NotesWorkspace'
+import { RandomWorkspace } from './features/random-wheel/RandomWorkspace'
+import { useGlobalSearch } from './features/search/useGlobalSearch'
+import { EncouragementManager } from './features/settings/EncouragementManager'
+import { SettingsPage } from './features/settings/SettingsPage'
+import { StatisticsPage } from './features/statistics/StatisticsPage'
+import { WordIgnoreManager } from './features/statistics/WordIgnoreManager'
+import { SyncDialogs } from './features/sync/SyncDialogs'
+import { recordSyncDiff } from './features/sync/recordSyncDiff'
+import { TagDialogs } from './features/tags/TagDialogs'
+import { useTagManagement } from './features/tags/useTagManagement'
+import { TaskDetails } from './features/tasks/TaskDetails'
+import { TaskEditor } from './features/tasks/TaskEditor'
+import { useTaskNotesEditor } from './features/tasks/useTaskNotesEditor'
+import { TrashDialog } from './features/trash/TrashDialog'
+import type { TrashItem } from './features/trash/trashTypes'
 
-const APP_VERSION = '2.15.2'
-
-import type {
-  Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
-  CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EmotionGroup, EmotionOption, EnergyLevel, EnvironmentOption, FocusSession,
-  JournalDraft, JournalEntry, JournalImpact, JournalMessage, Note, Notebook, MenstrualDayLog, MenstrualPeriod, MoodLevel, PostponeEvent,
-  RecurrenceException, SyncedUserSettings, Tag, TagScope, Task, TaskDraft,
-  TaskPriority, TaskStatus, RandomPoolGroup, RandomPoolItem,
-} from './types'
+import { buildAttachmentLifecycle, referencedAttachmentKeys, renameAttachment, sortAttachmentsNewestFirst } from './domain/attachments'
+import type { ZipEntry } from './domain/backup'
+import { attachmentExtension, makeZip, parseBackupEntries, readZingZip, safeBackupFilename } from './domain/backup'
 import {
-  PRIORITIES, addDaysKey, applyRecurringDisplayMode, buildMonth, buildMultiDaySegments, combinedFocusSecondsByDate,
-  dayDiff, deadlineStage, draftRepeat, emptyDraft, expandTasks, formatDate,
-  formatFocusDuration, formatTaskRange, fromDateKey, isMultiDayTask, isTaskOverdue,
-  compactCount, materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
-  recurrenceFromDraft, sameDay, taskCoversDate, taskEndDate,
-  taskSort, toDateKey,
-} from './domain/task'
+  anniversaryIcon,
+  anniversaryOccurrence, buildAnniversaryPageRows,
+  emptyAnniversaryDraft
+} from './domain/calendar'
+import { EMOTION_GROUP_LABEL, createEmotionOption, deleteEmotionOption, emotionNameTaken, normalizeEmotionOptions, sanitizeEmotionIds, updateEmotionOption } from './domain/emotions'
+import { environmentByDate as buildEnvironmentByDate, createEnvironmentOption, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, deleteEnvironmentOption as markEnvironmentOptionDeleted, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, updateEnvironmentOption as patchEnvironmentOption, moveEnvironmentOption as reorderEnvironmentOption } from './domain/environment'
+import { focusHistoryForDate, permanentlyDeleteFocusSession, restoreFocusSession } from './domain/focus'
+import { focusHistoryForNote, focusHistoryForTask } from './domain/focusHistorySelectors'
+import { cascadeRestoreHabitFocus, permanentlyDeleteHabitFocus, purgeTrashWithHabitFocus } from './domain/habitFocusLifecycle'
+import type { InboxSortKey } from './domain/inbox'
+import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
+import {
+  appendJournalMessage,
+  emptyJournalDraft,
+  energyMap,
+  activeJournalEntries as filterActiveJournalEntries,
+  journalEntriesForDate, moodMap, normalizeJournalMessages, toggleDailyEnergy, toggleDailyMood
+} from './domain/journal'
+import { calculateMenstrualPrediction, periodForDate as findPeriodForDate, menstrualVisualForDate as getMenstrualVisualForDate, patchPeriodDayLog } from './domain/menstrual'
+import { cascadeRestoreNoteFocus, permanentlyDeleteNoteFocus, purgeTrashWithNoteFocus } from './domain/noteFocusLifecycle'
+import { ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
 import {
   DEFAULT_TAG, DEFAULT_TAG_ID, DEFAULT_THERMAL_OPTIONS, DEFAULT_WEATHER_OPTIONS,
-  REQUIRED_SYSTEM_TAGS, TAG_COLORS, ensureRequiredSystemTags,
-  isImportSourceTag, isImportSourceTagId, normalizeEnvironmentOptions, normalizeTags,
+  REQUIRED_SYSTEM_TAGS,
+  ensureRequiredSystemTags,
+  normalizeEnvironmentOptions, normalizeTags
 } from './domain/preferences'
+import type { SearchResult } from './domain/search'
+import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
 import {
-  ANNIVERSARY_TYPES, anniversaryDayLimit, anniversaryDistanceLabel, anniversaryIcon, anniversaryMeta, anniversaryOccurrence, buildAnniversaryPageRows, calendarAnnotation,
-  emptyAnniversaryDraft, lunarCalendarLabel, lunarFullLabel,
-} from './domain/calendar'
-import { attachmentExtension, csvCell, makeZip, parseBackupEntries, readZingZip, safeBackupFilename } from './domain/backup'
-import type { ZipEntry } from './domain/backup'
-import {
-  cleanupJournalTagIdsAfterDelete, cleanupNoteTagIdsAfterDelete, cleanupTaskTagIdsAfterDelete, focusSelectableTags, managedTagRows,
-  normalizedTagName, singleOrdinaryTagIds, sortTagsByColor, tagDateFromKey, tagNameTaken, tagScopeLabel,
-  tagsFor, toggleJournalTagIds, toggleTaskTagIds,
+  singleOrdinaryTagIds,
+  toggleJournalTagIds, toggleTaskTagIds
 } from './domain/tags'
 import {
-  ENERGIES, IMPACTS, MOODS, activeJournalEntries as filterActiveJournalEntries, emptyJournalDraft,
-  appendJournalMessage, energyMap, journalEntriesForDate, moodMap, normalizeJournalMessages, toggleDailyEnergy, toggleDailyMood,
-} from './domain/journal'
-import { EMOTION_GROUP_LABEL, createEmotionOption, deleteEmotionOption, emotionGroupOrder, emotionNameTaken, sortEmotionOptionsBuiltinsFirst, normalizeEmotionOptions, sanitizeEmotionIds, toggleEmotionId, updateEmotionOption } from './domain/emotions'
-import { calculateMenstrualPrediction, menstrualVisualForDate as getMenstrualVisualForDate, patchPeriodDayLog, periodForDate as findPeriodForDate } from './domain/menstrual'
-import { buildStatistics } from './domain/statistics'
-import { buildSearchResults, matchingTagSuggestions, normalizeSearchQuery, parseTagSearch } from './domain/search'
-import type { SearchFilter, SearchResult } from './domain/search'
+  addDaysKey, applyRecurringDisplayMode, buildMonth,
+  combinedFocusSecondsByDate,
+  dayDiff,
+  draftRepeat, emptyDraft, expandTasks, formatDate,
+  fromDateKey,
+  isTaskOverdue,
+  materializeOccurrence, normalizeSingleOccurrenceSeries, normalizeTaskScheduling,
+  recurrenceFromDraft,
+  taskCoversDate, taskEndDate,
+  taskSort, toDateKey
+} from './domain/task'
 import { cascadeRestoreTaskFocus, cascadeTrashTaskFocus, permanentlyDeleteTaskFocus, purgeTrashWithTaskFocus } from './domain/taskFocusLifecycle'
-import { activeFocusSession as findActiveFocusSession, activeFocusSessions, countdownMinutes, focusHistoryForDate, focusSessionDurationSeconds, focusTiming, formatFocusClock, noteFocusSeconds, permanentlyDeleteFocusSession, restoreFocusSession, trashFocusSession } from './domain/focus'
-import { createDirectFocusSession, createHabitFocusSession, createNoteFocusSession, createTaskFocusSession, lastSelectableFocusTagId } from './domain/focusRuntime'
-import { focusHistoryForNote, focusHistoryForTask, focusIsoToLocalInput, focusLocalInputToDate } from './domain/focusHistorySelectors'
-import { appendFocusSession, endFocusSession, editFinishedFocusSession } from './domain/focusSessionActions'
-import { createEnvironmentOption, deleteEnvironmentOption as markEnvironmentOptionDeleted, environmentByDate as buildEnvironmentByDate, environmentOptionNameTaken, environmentOptionUsed as isEnvironmentOptionUsed, moveEnvironmentOption as reorderEnvironmentOption, setEnvironmentChoice as patchEnvironmentChoice, setEnvironmentLocation as patchEnvironmentLocation, sortEnvironmentOptionsBuiltinsFirst, updateEnvironmentOption as patchEnvironmentOption } from './domain/environment'
-import { useAppPreferences } from './hooks/useAppPreferences'
-import { useFocusWakeLock } from './hooks/useFocusWakeLock'
-import { planSyncDiff, syncEntityKey } from './domain/sync'
-import { advanceWordClock, buildSyncedSettings, hydrateWordClock, normalizedIncomingSettings, settingsEqualIgnoringUpdatedAt } from './domain/settings'
-import { buildAttachmentLifecycle, referencedAttachmentKeys, renameAttachment, sortAttachmentsNewestFirst } from './domain/attachments'
-import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxActivityKind, inboxOrdinaryTaskTagId, moveInboxSortKey, normalizeInboxSortOrder, sortCompletedInboxTasks } from './domain/inbox'
-import type { InboxSortKey } from './domain/inbox'
-import { ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
-import { cascadeRestoreNoteFocus, cascadeTrashNoteFocus, permanentlyDeleteNoteFocus, purgeTrashWithNoteFocus } from './domain/noteFocusLifecycle'
-import { cascadeTrashHabitFocus, cascadeRestoreHabitFocus, permanentlyDeleteHabitFocus, purgeTrashWithHabitFocus } from './domain/habitFocusLifecycle'
-import { HabitsPage } from './features/habits/HabitsPage'
-import { HabitIcon } from './features/habits/HabitIcons'
-import { orderedDailyHabits, liveCheckIns, progressForDate } from './features/habits/habitDomain'
-import type { Habit, HabitCheckIn } from './features/habits/habitDomain'
-import { NotesPage } from './features/notes/NotesPage'
-import { RandomWheelPage } from './features/random-wheel/RandomWheelPage'
-import { RandomPoolManager } from './features/random-wheel/RandomPoolManager'
-import { useExternalImport } from './features/external-import/useExternalImport'
 import { ExternalImportModal } from './features/external-import/ExternalImportModal'
-import { MarkdownRenderer } from './components/markdown/MarkdownRenderer'
-
-function loadEnvironmentOptions(key:string, defaults:EnvironmentOption[]) {
-  try {
-    const rows=JSON.parse(localStorage.getItem(key)||'[]')
-    if(Array.isArray(rows)) return normalizeEnvironmentOptions(rows as EnvironmentOption[],defaults)
-  } catch {}
-  return normalizeEnvironmentOptions(undefined,defaults)
-}
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const SYNC_ENTITY_LABELS: Record<SyncEntityType | 'trash', string> = {
-  task:'任务', journal:'日记', note:'笔记', notebook:'笔记本', mood:'心情', energy:'能量', environment:'天气/体感', period:'月经', tag:'标签', anniversary:'纪念日', focus:'专注', habit:'习惯', habitCheckIn:'习惯打卡', settings:'设置', trash:'回收站',
-}
-function syncEntityLabel(entityType: string) {
-  return Object.prototype.hasOwnProperty.call(SYNC_ENTITY_LABELS, entityType)
-    ? SYNC_ENTITY_LABELS[entityType as SyncEntityType | 'trash']
-    : '其他'
-}
-function MoodFace({ level }: { level: MoodLevel }) {
-  const common = { viewBox: '0 0 64 64', className: `mood-face-svg mood-face-${level}`, 'aria-hidden': true } as const
-
-  if (level === 1) return (
-    <svg {...common}>
-      <circle className="mood-ring" cx="32" cy="32" r="26" />
-      <path className="mood-line" d="M15.5 21.5l10 10M25.5 21.5l-10 10" />
-      <path className="mood-line" d="M38.5 21.5l10 10M48.5 21.5l-10 10" />
-      <path className="mood-line" d="M19 45c3-4 6 4 9 0s6-4 9 0 6 4 9 0" />
-    </svg>
-  )
-  if (level === 2) return (
-    <svg {...common}>
-      <circle className="mood-ring" cx="32" cy="32" r="26" />
-      <path className="mood-thin" d="M16.5 24.5c3.1-2.2 6.6-2.2 9.7 0M37.8 24.5c3.1-2.2 6.6-2.2 9.7 0" />
-      <circle className="mood-fill" cx="21.5" cy="28.5" r="2.1" />
-      <circle className="mood-fill" cx="42.5" cy="28.5" r="2.1" />
-      <path className="mood-line" d="M21 45c5.7-5.6 16.3-5.6 22 0" />
-    </svg>
-  )
-  if (level === 3) return (
-    <svg {...common}>
-      <circle className="mood-ring" cx="32" cy="32" r="26" />
-      <circle className="mood-fill" cx="22" cy="26" r="2.4" />
-      <circle className="mood-fill" cx="42" cy="26" r="2.4" />
-      <path className="mood-line" d="M23 43h18" />
-    </svg>
-  )
-  if (level === 4) return (
-    <svg {...common}>
-      <circle className="mood-ring" cx="32" cy="32" r="26" />
-      <circle className="mood-fill" cx="21.5" cy="27" r="2.2" />
-      <path className="mood-thin" d="M38 27c2.7-1.6 5.5-1.6 8.2 0" />
-      <path className="mood-line" d="M20.5 39.5c5.7 4.4 15.5 5.1 23.5-.8" />
-    </svg>
-  )
-
-
-
-  return (
-    <svg {...common}>
-      <circle className="mood-ring" cx="32" cy="32" r="26" />
-      <path className="mood-line" d="M15.5 28c3-4 8-4 11 0" />
-      <path className="mood-line" d="M37.5 28c3-4 8-4 11 0" />
-      <path className="mood-line" d="M18.5 37c5.5 10.5 21.5 10.5 27 0" />
-    </svg>
-  )
-}
-
-function EnergyBattery({ level }: { level: EnergyLevel }) {
-  return <span className={`energy-battery energy-${level}`} aria-hidden="true">
-    <span className="battery-cap" />
-    <span className="battery-body">{[5,4,3,2,1].map(cell => <span key={cell} className={`battery-cell${cell <= level ? ' filled' : ''}`} />)}</span>
-  </span>
-}
-
-
-async function compressImage(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file)
-  const targetBytes = 1024 * 1024
-  let width = bitmap.width
-  let height = bitmap.height
-  const initialScale = Math.min(1, 1800 / Math.max(width, height))
-  width = Math.max(1, Math.round(width * initialScale))
-  height = Math.max(1, Math.round(height * initialScale))
-
-  const render = (w: number, h: number, quality: number) => new Promise<Blob>((resolve, reject) => {
-    const canvas = document.createElement('canvas')
-    canvas.width = w; canvas.height = h
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h)
-    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('图片压缩失败')), 'image/webp', quality)
-  })
-
-  let blob: Blob | null = null
-  // Mobile photos can remain several MB after one quality pass. Reduce quality first,
-  // then dimensions, and validate the final stored blob rather than trusting one pass.
-  for (let resizeRound = 0; resizeRound < 6; resizeRound += 1) {
-    for (const quality of [0.82, 0.72, 0.62, 0.52, 0.42]) {
-      blob = await render(width, height, quality)
-      if (blob.size <= targetBytes) { bitmap.close(); return blob }
-    }
-    width = Math.max(640, Math.round(width * 0.82))
-    height = Math.max(640, Math.round(height * 0.82))
-  }
-  bitmap.close()
-  if (!blob || blob.size > targetBytes) throw new Error('这张图片压缩后仍超过 1 MB，请选择分辨率更低的图片')
-  return blob
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-function AttachmentThumb({ attachment, onRemove, onPreview }: { attachment: Attachment; onRemove?: () => void; onPreview: (attachment: Attachment) => void }) {
-  const [url, setUrl] = useState<string>('')
-  useEffect(() => {
-    let active = true
-    let objectUrl = ''
-    getAttachmentBlob(attachment.storageKey).then(blob => {
-      if (!active || !blob) return
-      objectUrl = URL.createObjectURL(blob)
-      setUrl(objectUrl)
-    })
-    return () => {
-      active = false
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [attachment.storageKey])
-
-  return <div className="attachment-card">
-    <button className="attachment-image-button" type="button" onClick={() => onPreview(attachment)} disabled={!url} aria-label={`预览 ${attachment.filename}`}>
-      {url ? <img src={url} alt="" /> : <span className="attachment-loading">加载中…</span>}
-    </button>
-    <div className="attachment-card-info">
-      <span className="attachment-card-name" title={attachment.filename}>{attachment.filename}</span>
-      <span className="attachment-card-size">压缩后 {formatFileSize(attachment.size)}</span>
-    </div>
-    {onRemove && <button className="attachment-remove-button" type="button" onClick={onRemove} aria-label={`删除 ${attachment.filename}`}>×</button>}
-  </div>
-}
-
-function StorageImage({ attachment, onPreview }: { attachment: Attachment; onPreview:(attachment:Attachment)=>void }) {
-  const [url,setUrl]=useState('')
-  useEffect(() => {
-    let active=true, objectUrl=''
-    getAttachmentBlob(attachment.storageKey).then(blob => { if (!active || !blob) return; objectUrl=URL.createObjectURL(blob); setUrl(objectUrl) })
-    return () => { active=false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  },[attachment.storageKey])
-  return <button type="button" className="storage-image-item" onClick={()=>onPreview(attachment)}>{url ? <img src={url} alt={attachment.filename}/> : <span>加载中…</span>}<small>{attachment.filename}</small></button>
-}
-
-function AudioAttachment({ attachment }: { attachment: Attachment }) {
-  const [url, setUrl] = useState('')
-  useEffect(() => {
-    let active = true, objectUrl = ''
-    getAttachmentBlob(attachment.storageKey).then(blob => {
-      if (!active || !blob) return
-      objectUrl = URL.createObjectURL(blob); setUrl(objectUrl)
-    })
-    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [attachment.storageKey])
-  return url ? <audio className="journal-audio-player" controls src={url} /> : <span>录音加载中…</span>
-}
-
-function downloadTextFile(filename:string,text:string,mimeType:string) {
-  const blob=new Blob(['\ufeff',text],{type:mimeType}), url=URL.createObjectURL(blob), link=document.createElement('a')
-  link.href=url; link.download=filename; document.body.appendChild(link); link.click(); link.remove()
-  setTimeout(()=>URL.revokeObjectURL(url),1000)
-}
-
-
-async function recordSyncDiff(entityType: SyncEntityType, previousRows: any[], nextRows: any[]) {
-  const operations = planSyncDiff(entityType, previousRows, nextRows)
-  if (!operations.length) return false
-  const deviceId = getOrCreateDeviceId()
-  const now = new Date().toISOString()
-  for (const operation of operations) {
-    if (operation.operation === 'delete') {
-      await saveSyncTombstone({ key: syncEntityKey(entityType, operation.entityId), entityType, entityId: operation.entityId, deletedAt: now, deviceId })
-    }
-    await appendSyncChange({ ...operation, changedAt: now, deviceId })
-  }
-  return true
-}
+import { useExternalImport } from './features/external-import/useExternalImport'
+import type { Habit, HabitCheckIn } from './features/habits/habitDomain'
+import { useAppPreferences } from './hooks/useAppPreferences'
+import type {
+  Anniversary, AnniversaryDraft,
+  Attachment, BackupPreview,
+  CalendarDay, DailyEnergy, DailyEnvironment, DailyMood, EmotionGroup, EmotionOption,
+  EncouragementMessage, EncouragementStyle,
+  EnergyLevel, EnvironmentOption, FocusSession,
+  JournalDraft, JournalEntry,
+  JournalMessage,
+  MenstrualDayLog, MenstrualPeriod, MoodLevel,
+  Note, Notebook,
+  PostponeEvent,
+  RandomPoolGroup, RandomPoolItem,
+  RecurrenceException, SyncedUserSettings, Tag,
+  Task, TaskDraft,
+  TaskPriority, TaskStatus
+} from './types'
 
 function App() {
-  const [mobileNav, setMobileNav] = useState<MobileNavConfig>(initialMobileNavigation)
-  const [mobileNavConfigured, setMobileNavConfigured] = useState(() => localStorage.getItem('zing:mobileNavigation') !== null)
-  const [syncedDefaultMobileNav, setSyncedDefaultMobileNav] = useState<MobileNavConfig | undefined>(loadDefaultNavigation)
-  const [mobileNavSettingsOpen, setMobileNavSettingsOpen] = useState(false)
-  const [mobileNavToast, setMobileNavToast] = useState('')
-  const updateMobileNav = (value: MobileNavConfig) => { setMobileNavConfigured(true); setMobileNav(value); saveLocalNavigation(value); setMobileNavToast('') }
-  const receiveDefaultMobileNav = (value: MobileNavConfig) => {
-    const saved = normalizeMobileNav(value)
-    setSyncedDefaultMobileNav(saved)
-    saveDefaultNavigation(saved)
-    const initialized = initializeFromSyncedDefault(saved)
-    if (initialized) { setMobileNav(initialized); setMobileNavConfigured(true) }
-  }
+  const { mobileNav, mobileNavConfigured, mobileNavSettingsOpen, mobileNavToast, receiveDefaultMobileNav, setMobileNavSettingsOpen, setMobileNavToast, setSyncedDefaultMobileNav, syncedDefaultMobileNav, updateMobileNav } = useMobileNavigationPreferences()
 
   // v1.1.6: keep the current-day object stable across ordinary UI renders.
   // A fresh Date here invalidated the entire continuous-calendar memo on every
@@ -326,8 +168,7 @@ function App() {
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [dayDetailOpen, setDayDetailOpen] = useState(false)
-  const [mainView, setMainView] = useState<'calendar' | 'notes' | 'habits' | 'statistics' | 'anniversaries' | 'settings'>('calendar')
-  const [statsRange, setStatsRange] = useState<'week'|'month'|'30d'|'year'|'all'>('30d')
+  const [mainView, setMainView] = useState<MainView>('calendar')
   const [weatherOptions, setWeatherOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:weatherOptions', DEFAULT_WEATHER_OPTIONS))
   const [thermalOptions, setThermalOptions] = useState<EnvironmentOption[]>(() => loadEnvironmentOptions('zing:thermalOptions', DEFAULT_THERMAL_OPTIONS))
   const [environmentManagerKind, setEnvironmentManagerKind] = useState<'weather'|'thermal'|null>(null)
@@ -335,7 +176,6 @@ function App() {
   const [emotionManagerOpen, setEmotionManagerOpen] = useState(false)
   const [emotionPickerOpen, setEmotionPickerOpen] = useState(false)
   const [emotionManagerExpanded, setEmotionManagerExpanded] = useState<EmotionGroup | null>(null)
-  const [moodHeatmapYear, setMoodHeatmapYear] = useState<number>(() => today.getFullYear())
   const [wordCloudIgnored, setWordCloudIgnored] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('zing:wordCloudIgnored') || '[]') } catch { return [] }
   })
@@ -386,11 +226,6 @@ function App() {
   const [resettingData, setResettingData] = useState(false)
   const backupInputRef = useRef<HTMLInputElement|null>(null)
   const [plainExportOpen, setPlainExportOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchFilter, setSearchFilter] = useState<SearchFilter>('all')
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [mobileSearchVisible, setMobileSearchVisible] = useState(false)
-  const searchWrapRef = useRef<HTMLDivElement | null>(null)
   const selectedIsFuture = Boolean(selectedDate && toDateKey(selectedDate) > toDateKey(today))
 
   const {
@@ -406,74 +241,7 @@ function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [editingOccurrenceDate, setEditingOccurrenceDate] = useState<string | null>(null)
   const [draft, setDraft] = useState<TaskDraft>(() => emptyDraft(today, defaultPriority))
-  const taskNotesRef = useRef<HTMLTextAreaElement | null>(null)
-  const insertTaskNoteChecklist = () => {
-    const textarea = taskNotesRef.current
-    const value = draft.notes
-    const start = textarea?.selectionStart ?? value.length
-    const end = textarea?.selectionEnd ?? start
-    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1
-    const prefix = value.slice(lineStart, start)
-    const insertion = prefix.trim().length === 0 ? '☐ ' : `\n☐ `
-    const next = value.slice(0, start) + insertion + value.slice(end)
-    const cursor = start + insertion.length
-    setDraft(current => ({ ...current, notes: next }))
-    requestAnimationFrame(() => {
-      textarea?.focus()
-      textarea?.setSelectionRange(cursor, cursor)
-    })
-  }
-
-  const handleTaskNotesKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return
-    const textarea = event.currentTarget
-    const value = draft.notes
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    if (start !== end) return
-    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1
-    const line = value.slice(lineStart, start)
-    const match = line.match(/^(☐|☑)\s?(.*)$/)
-    if (!match) return
-    event.preventDefault()
-    if (!match[2].trim()) {
-      const next = value.slice(0, lineStart) + value.slice(start)
-      const cursor = lineStart
-      setDraft(current => ({ ...current, notes: next }))
-      requestAnimationFrame(() => {
-        textarea.focus()
-        textarea.setSelectionRange(cursor, cursor)
-      })
-      return
-    }
-    const insertion = `\n${match[1]} `
-    const next = value.slice(0, start) + insertion + value.slice(start)
-    const cursor = start + insertion.length
-    setDraft(current => ({ ...current, notes: next }))
-    requestAnimationFrame(() => {
-      textarea.focus()
-      textarea.setSelectionRange(cursor, cursor)
-    })
-  }
-
-  const toggleTaskNoteChecklistLine = () => {
-    const textarea = taskNotesRef.current
-    if (!textarea) return
-    const value = draft.notes
-    const start = textarea.selectionStart
-    const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1
-    const lineEndRaw = value.indexOf('\n', start)
-    const lineEnd = lineEndRaw === -1 ? value.length : lineEndRaw
-    const line = value.slice(lineStart, lineEnd)
-    if (!/^[☐☑]\s?/.test(line)) return
-    const nextMark = line.startsWith('☐') ? '☑' : '☐'
-    const next = value.slice(0, lineStart) + nextMark + value.slice(lineStart + 1)
-    setDraft(current => ({ ...current, notes: next }))
-    requestAnimationFrame(() => {
-      textarea.focus()
-      textarea.setSelectionRange(start, start)
-    })
-  }
+  const { handleTaskNotesKeyDown, insertTaskNoteChecklist, taskNotesRef, toggleTaskNoteChecklistLine } = useTaskNotesEditor({ draft, setDraft })
 
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [dailyMoods, setDailyMoods] = useState<DailyMood[]>([])
@@ -520,21 +288,8 @@ function App() {
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([])
   const [focusHydrated, setFocusHydrated] = useState(false)
-  const routedFocusSessionIdRef = useRef<string | null>(null)
-  const [focusOpen, setFocusOpen] = useState(false)
-  const [focusMode, setFocusMode] = useState<'stopwatch'|'countdown'>('stopwatch')
-  const [focusMinutes, setFocusMinutes] = useState('15')
-  const [focusTagIds, setFocusTagIds] = useState<string[]>([DEFAULT_TAG_ID])
-  const [focusTagSelectOpen, setFocusTagSelectOpen] = useState(false)
-  const [pendingNoteFocusId, setPendingNoteFocusId] = useState<string | null>(null)
-  const [expandedFocusColor, setExpandedFocusColor] = useState<string | null>(null)
   const [focusHistoryDate, setFocusHistoryDate] = useState<string | null>(null)
   const [noteFocusHistoryId, setNoteFocusHistoryId] = useState<string | null>(null)
-  const [focusEditId, setFocusEditId] = useState<string | null>(null)
-  const [focusEditStartedAt, setFocusEditStartedAt] = useState('')
-  const [focusEditEndedAt, setFocusEditEndedAt] = useState('')
-  const [focusEditError, setFocusEditError] = useState('')
-  const [focusEditTagIds, setFocusEditTagIds] = useState<string[]>([])
   const [recording, setRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
@@ -548,19 +303,6 @@ function App() {
   const settingsSyncReadyRef = useRef(false)
   const suppressNextSettingsSyncRef = useRef(false)
   const settingsWordClockRef = useRef<{added:Record<string,string>;removed:Record<string,string>}>({added:{},removed:{}})
-  const [tagManagerOpen, setTagManagerOpen] = useState(false)
-  const [archivedTagsOpen, setArchivedTagsOpen] = useState(false)
-  const [newTagName, setNewTagName] = useState('')
-  const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0])
-  const [newTagScope, setNewTagScope] = useState<TagScope>('both')
-  const [selectedTagManageId, setSelectedTagManageId] = useState<string | null>(null)
-  const [tagEditDraft, setTagEditDraft] = useState<{name:string;color:string;scope:TagScope} | null>(null)
-
-  useEffect(() => {
-    if (!selectedTagManageId) { setTagEditDraft(null); return }
-    const tag = tags.find(item => item.id === selectedTagManageId)
-    if (tag) setTagEditDraft({ name: tag.name, color: tag.color, scope: tag.scope })
-  }, [selectedTagManageId])
   const [seriesAction, setSeriesAction] = useState<'save' | 'delete' | null>(null)
   const [confirmSingleTask, setConfirmSingleTask] = useState(false)
   const [imagePreview, setImagePreview] = useState<{ url: string; name: string; storageKey: string; galleryKeys?: string[] } | null>(null)
@@ -1090,7 +832,6 @@ function App() {
     setViewingJournalId(current => current === id ? null : current)
   }
 
-
   useEffect(() => {
     if (!tasksHydrated) return
     saveTasks(tasks).catch(error => console.error('Failed to save tasks to IndexedDB', error))
@@ -1355,13 +1096,7 @@ function App() {
   const inboxCompletedTasks = useMemo(() => sortCompletedInboxTasks(inboxTasks.filter(task => task.status !== 'todo')), [inboxTasks])
   const activeJournalEntries = useMemo(() => filterActiveJournalEntries(journalEntries), [journalEntries])
   const activeAnniversaries = useMemo(() => anniversaries.filter(anniversary => !anniversary.trashedAt), [anniversaries])
-  type TrashItem =
-    | { key:string; entity:'task'; kind:'series'|'occurrence'|'future'; task:Task; occurrenceDate?:string; trashedAt:string }
-    | { key:string; entity:'journal'; journal:JournalEntry; trashedAt:string }
-    | { key:string; entity:'anniversary'; anniversary:Anniversary; trashedAt:string }
-    | { key:string; entity:'note'; note:Note; trashedAt:string }
-    | { key:string; entity:'focus'; session:FocusSession; trashedAt:string }
-    | { key:string; entity:'habit'; habit:Habit; trashedAt:string }
+
   const trashItems = useMemo<TrashItem[]>(() => {
     const items:TrashItem[]=[]
     tasks.forEach(task => {
@@ -1436,40 +1171,7 @@ function App() {
   const taskFocusHistorySessions = taskFocusHistory.sessions
   const taskFocusHistorySeconds = taskFocusHistory.seconds
 
-  const toLocalDateTimeInput = focusIsoToLocalInput
-  const fromLocalDateTimeInput = focusLocalInputToDate
-  const beginEditFocusSession = (session:FocusSession) => {
-    if(!session.endedAt) return
-    setFocusEditId(session.id)
-    setFocusEditStartedAt(toLocalDateTimeInput(session.startedAt))
-    setFocusEditEndedAt(toLocalDateTimeInput(session.endedAt))
-    setFocusEditError('')
-    setFocusEditTagIds(session.tagIds)
-  }
-  const focusEditDurationSeconds = (() => {
-    const start=fromLocalDateTimeInput(focusEditStartedAt)?.getTime()
-    const end=fromLocalDateTimeInput(focusEditEndedAt)?.getTime()
-    return start!==undefined&&end!==undefined&&end>start ? Math.round((end-start)/1000) : 0
-  })()
-  const saveFocusSessionEdit = () => {
-    if (!focusEditId) return
-    const session = focusSessions.find(item => item.id === focusEditId)
-    if (!session) { setFocusEditError('专注记录不存在'); return }
-    const result = editFinishedFocusSession(session, {
-      startedAt: focusEditStartedAt, endedAt: focusEditEndedAt,
-      tagIds: singleOrdinaryTagIds(focusEditTagIds.length ? focusEditTagIds : session.tagIds),
-      maxFocusHours, updatedAt: new Date().toISOString(),
-    })
-    if (result.error) { setFocusEditError(result.error); return }
-    if (!result.session) return
-    setFocusSessions(current => current.map(item => item.id === focusEditId ? result.session : item))
-    setFocusEditId(null); setFocusEditError('')
-  }
-  const focusHistoryEditFields = <>
-    <div className="focus-history-edit-times"><label><span>开始</span><input type="datetime-local" value={focusEditStartedAt} onChange={e=>{setFocusEditStartedAt(e.target.value);setFocusEditError('')}} /></label><label><span>结束</span><input type="datetime-local" value={focusEditEndedAt} onChange={e=>{setFocusEditEndedAt(e.target.value);setFocusEditError('')}} /></label></div>
-    <div className="focus-history-derived-duration"><span>计算时长</span><strong>{focusEditDurationSeconds>0?formatFocusDuration(focusEditDurationSeconds):'—'}</strong></div>
-    {focusEditError&&<small className="focus-history-edit-error">{focusEditError}</small>}
-  </>
+  const { beginEditFocusSession, focusEditId, focusEditTagIds, focusHistoryEditFields, saveFocusSessionEdit, setFocusEditError, setFocusEditId, setFocusEditTagIds } = useFocusHistoryEditor({ focusSessions, maxFocusHours, setFocusSessions })
 
   const anniversaryOccurrencesByDate = useMemo(() => {
     const map = new Map<string, { anniversary: Anniversary; occurrence: Date }[]>()
@@ -1509,94 +1211,14 @@ function App() {
   const journalThreadDates = useMemo(() => new Set(activeJournalEntries.filter(entry => normalizeJournalMessages(entry.messages).length > 0).map(entry => entry.date)), [activeJournalEntries])
   const moodDays = useMemo(() => buildMonth(moodMonth.getFullYear(), moodMonth.getMonth(), weekStartsMonday), [moodMonth, weekStartsMonday])
 
-  const renderCalendarMonthGrid = (month: Date) => {
-    const monthDays = buildMonth(month.getFullYear(), month.getMonth(), weekStartsMonday)
-    const rangeStart = toDateKey(monthDays[0].date), rangeEnd = toDateKey(monthDays[monthDays.length-1].date)
-    const monthDisplayTasks = (() => {
-      const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks)
-      return showEndedTasks ? expanded : expanded.filter(task=>task.status==='todo')
-    })()
-    const monthTasksByDate = new Map<string,Task[]>()
-    monthDisplayTasks.filter(task=>!isMultiDayTask(task)).forEach(task=>{
-      if (!task.date) return; const current=monthTasksByDate.get(task.date)??[]; current.push(task); current.sort(taskSort); monthTasksByDate.set(task.date,current)
-    })
-    const monthSegments=buildMultiDaySegments(monthDisplayTasks,monthDays)
-    const monthOccupied=monthDays.map((_,dayIndex)=>{
-      const week=Math.floor(dayIndex/7), column=dayIndex%7
-      return new Set(monthSegments.filter(segment=>segment.week===week && column>=segment.startColumn && column<segment.startColumn+segment.span).map(segment=>segment.lane).filter(lane=>lane>=0&&lane<5))
-    })
-    const monthAnniversaries=new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
-    const years=Array.from(new Set(monthDays.map(day=>day.date.getFullYear())))
-    activeAnniversaries.forEach(anniversary=>years.forEach(year=>{
-      const occurrence=anniversaryOccurrence(anniversary,year); if(!occurrence)return
-      const key=toDateKey(occurrence), rows=monthAnniversaries.get(key)??[]; rows.push({anniversary,occurrence}); monthAnniversaries.set(key,rows)
-    }))
-    return <div className="calendar-grid">
-      {monthDays.map(({date,inCurrentMonth},dayIndex)=>{
-        const isToday=sameDay(date,today), isSelected=selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date)
-        const dayTasks=monthTasksByDate.get(key)??[], occupiedLanes=monthOccupied[dayIndex]
-        const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot))
-        const visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
-        const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length)
-        const hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
-        const anns=monthAnniversaries.get(key)??[]
-        return <button key={key} type="button" className={`day-cell${inCurrentMonth?'':' outside-month'}${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
-          <span className={`day-number${menstrualVisualForDate(key) ? ` menstrual-${menstrualVisualForDate(key)}` : ""}`} data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()}</span>
-          {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
-          {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
-          {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
-        </button>
-      })}
-      <div className="multi-day-layer">{monthSegments.map(segment=><button key={`${segment.task.id}-${segment.week}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:segment.week+1,'--lane-offset':`${segment.lane*26}px`} as CSSProperties} onClick={event=>{
-        event.stopPropagation(); const rect=event.currentTarget.getBoundingClientRect(); const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left)); const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span))); const dayIndex=segment.week*7+segment.startColumn+columnOffset; const clickedDay=monthDays[dayIndex]?.date; if(clickedDay)openDayRef.current(clickedDay)
-      }} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
-    </div>
-  }
-
-
-  // v1.2.0: mobile continuous calendar is a single stream of unique weeks.
-  // A cross-month week exists exactly once; month labels are markers, not separate grids.
-  const renderCalendarWeek = (weekDays: CalendarDay[], preparedTasks?: Task[], preparedAnniversaries?: Map<string,{anniversary:Anniversary;occurrence:Date}[]>) => {
-    const rangeStart=toDateKey(weekDays[0].date), rangeEnd=toDateKey(weekDays[6].date)
-    // The continuous mobile calendar prepares recurring tasks once for its whole
-    // loaded window. A single-week fallback is retained for non-prepared callers.
-    const displayTasks=preparedTasks
-      ? preparedTasks.filter(task=>Boolean(task.date)&&task.date!<=rangeEnd&&taskEndDate(task)>=rangeStart)
-      : (()=>{const expanded=applyRecurringDisplayMode(expandTasks(activeTasks,rangeStart,rangeEnd),activeTasks,showAllRecurringTasks);return showEndedTasks?expanded:expanded.filter(task=>task.status==='todo')})()
-    const tasksByDate=new Map<string,Task[]>()
-    displayTasks.filter(task=>Boolean(task.date)&&!isMultiDayTask(task)).forEach(task=>{const key=task.date!;const current=tasksByDate.get(key)??[];current.push(task);current.sort(taskSort);tasksByDate.set(key,current)})
-    const segments=buildMultiDaySegments(displayTasks,weekDays)
-    const occupied=weekDays.map((_,column)=>new Set(segments.filter(segment=>segment.week===0&&column>=segment.startColumn&&column<segment.startColumn+segment.span).map(segment=>segment.lane).filter(lane=>lane>=0&&lane<5)))
-    const anniversaryMap=preparedAnniversaries ?? new Map<string,{anniversary:Anniversary;occurrence:Date}[]>()
-    if (!preparedAnniversaries) {
-      const years=Array.from(new Set(weekDays.map(day=>day.date.getFullYear())))
-      activeAnniversaries.forEach(anniversary=>years.forEach(year=>{const occurrence=anniversaryOccurrence(anniversary,year);if(!occurrence)return;const key=toDateKey(occurrence);if(key<rangeStart||key>rangeEnd)return;const rows=anniversaryMap.get(key)??[];rows.push({anniversary,occurrence});anniversaryMap.set(key,rows)}))
-    }
-    return <div className="calendar-grid continuous-week-grid">
-      {weekDays.map(({date},dayIndex)=>{
-        const isToday=sameDay(date,today), isSelected=selectedDate?sameDay(date,selectedDate):false, key=toDateKey(date), dayTasks=tasksByDate.get(key)??[], occupiedLanes=occupied[dayIndex]
-        const freeSlots=[0,1,2,3,4].filter(slot=>!occupiedLanes.has(slot)), visibleCapacity=dayTasks.length<=freeSlots.length?freeSlots.length:Math.max(0,freeSlots.length-1)
-        const visibleDayTasks=dayTasks.slice(0,visibleCapacity), visibleTaskSlots=freeSlots.slice(0,visibleDayTasks.length), hiddenDayTaskCount=Math.max(0,dayTasks.length-visibleDayTasks.length), overflowSlot=hiddenDayTaskCount>0?freeSlots[visibleDayTasks.length]:undefined
-        const anns=anniversaryMap.get(key)??[]
-        return <button key={key} type="button" className={`day-cell${isToday?' today':''}${isSelected?' selected':''}`} aria-label={formatDate(date)} data-date-key={key} onClick={()=>openDay(date)}>
-          <span className={`day-number${menstrualVisualForDate(key) ? ` menstrual-${menstrualVisualForDate(key)}` : ""}`} data-month-key={date.getDate()===1?`${date.getFullYear()}-${date.getMonth()}`:undefined}>{date.getDate()===1?`${date.getMonth()+1}月`:date.getDate()}</span>
-          {(()=>{const annotation=calendarAnnotation(date,weekStartsMonday);return <span className={`lunar-day-label${annotation?` calendar-annotation annotation-${annotation.kind}`:''}`}>{annotation?.label??lunarCalendarLabel(date)}</span>})()}
-          {anns.length>0&&<span className="anniversary-cell-icons">{anns.slice(0,anns.length>3?2:3).map(({anniversary})=><span key={anniversary.id} title={anniversary.title}>{anniversaryIcon(anniversary.type)}</span>)}{anns.length>3&&<span className="anniversary-overflow">+{anns.length-2}</span>}</span>}
-          {dayTasks.length>0&&<span className="task-preview-list">{visibleDayTasks.map((task,visibleIndex)=><span key={task.id} className={`task-preview priority-${task.priority} status-${task.status}`} style={{'--calendar-slot':visibleTaskSlots[visibleIndex]} as any}>{task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={task.status==='completed'?'已完成':'已放弃'}>{task.status==='completed'?'✓':'×'}</span>}<span className="task-preview-title">{task.title}</span>{!task.allDay&&task.time&&<span className="task-preview-time">{task.time}</span>}</span>)}{hiddenDayTaskCount>0&&overflowSlot!==undefined&&<span className="more-tasks" style={{'--calendar-slot':overflowSlot} as any}>+{hiddenDayTaskCount}</span>}</span>}
-        </button>
-      })}
-      <div className="multi-day-layer">{segments.filter(segment=>segment.week===0).map(segment=><button key={`${segment.task.id}-${rangeStart}`} type="button" className={`multi-day-bar priority-${segment.task.priority} status-${segment.task.status}`} style={{gridColumn:`${segment.startColumn+1} / span ${segment.span}`,gridRow:1,'--lane-offset':`${segment.lane*19}px`} as CSSProperties} onClick={event=>{event.stopPropagation();const rect=event.currentTarget.getBoundingClientRect();const relativeX=Math.max(0,Math.min(rect.width-.001,event.clientX-rect.left));const columnOffset=Math.min(segment.span-1,Math.floor(relativeX/(rect.width/segment.span)));const clickedDay=weekDays[segment.startColumn+columnOffset]?.date;if(clickedDay)openDayRef.current(clickedDay)}} title={`${segment.task.title} · ${segment.task.date} → ${taskEndDate(segment.task)}`}>{segment.task.status==='todo'?<span className="priority-dot"/>:<span className="calendar-status-mark" aria-label={segment.task.status==='completed'?'已完成':'已放弃'}>{segment.task.status==='completed'?'✓':'×'}</span>}<span className="multi-day-title">{segment.task.title}</span></button>)}</div>
-    </div>
-  }
-
-
+  const { renderCalendarMonthGrid, renderCalendarWeek } = createCalendarRenderers({ activeAnniversaries, activeTasks, menstrualVisualForDate, openDay: date => openDay(date), openDayRef, selectedDate, showAllRecurringTasks, showEndedTasks, today, weekStartsMonday })
 
   const endedTasksViewToggle = (className='') => (
-    <label className={`ended-view-toggle ${className}`.trim()} title="显示或隐藏已完成和已放弃任务">
+    <Field className={`ended-view-toggle ${className}`.trim()} title="显示或隐藏已完成和已放弃任务">
       <span>已结束</span>
       <input type="checkbox" checked={showEndedTasks} onChange={event=>setShowEndedTasks(event.target.checked)} />
       <i aria-hidden="true" />
-    </label>
+    </Field>
   )
 
   const moveMonth = (offset: number) => {
@@ -1687,7 +1309,6 @@ function App() {
 
   openDayRef.current = openDay
 
-
   // v1.2.0: derive one unique week stream from the loaded month window.
   const continuousCalendarContent = useMemo(() => {
     if (!continuousMonths.length) return null
@@ -1751,197 +1372,7 @@ function App() {
     setAnniversaryEditorOpen(false); setEditingAnniversaryId(null)
   }
 
-
-  const activeFocusSession = useMemo(() => findActiveFocusSession(focusSessions), [focusSessions])
-  const maxFocusSeconds = maxFocusHours * 3600
-  const activeFocusTiming = focusTiming(activeFocusSession, timerNow, maxFocusSeconds)
-  const activeFocusElapsed = activeFocusTiming.elapsedSeconds
-  const activeFocusRemaining = activeFocusTiming.remainingSeconds
-  const formatClock = formatFocusClock
-  const startDirectFocus = () => {
-    if (activeTimerTask || activeFocusSession) return
-    const plannedMinutes=countdownMinutes(focusMinutes,15)
-    const now=new Date().toISOString()
-    setFocusSessions(current=>appendFocusSession(current,createDirectFocusSession({id:crypto.randomUUID(),tagIds:focusTagIds,mode:focusMode,plannedMinutes,startedAt:now})))
-    setTimerNow(Date.now())
-  }
-  const stopDirectFocus = (automatic=false) => {
-    if (!activeFocusSession || activeFocusSession.context) return
-    // Keep the just-finished focus tag selected when the panel returns to
-    // "Start focus", matching the tag restored after closing/reopening it.
-    setFocusTagIds([lastSelectableFocusTagId(activeFocusSession,tags)])
-    const nowMs=Date.now()
-    const timing=focusTiming(activeFocusSession,nowMs,maxFocusSeconds)
-    const dueAtMs=timing.dueAtMs??nowMs
-    const endMs=automatic ? dueAtMs : Math.min(nowMs,dueAtMs)
-    setFocusSessions(current=>endFocusSession(current,activeFocusSession.id,endMs))
-  }
-
-
-  const activeFocusNote = useMemo(() => {
-    const context = activeFocusSession?.context
-    if (context?.kind !== 'note') return null
-    return notes.find(note => note.id === context.noteId && !note.trashedAt) ?? null
-  }, [notes, activeFocusSession?.id])
-
-  const noteFocusSecondsById = useMemo(() => Object.fromEntries(notes.map(note => [note.id, noteFocusSeconds(note.id, focusSessions, timerNow)])), [notes, focusSessions, timerNow])
-
-  const startNoteFocus = (note: Note, tagId: string) => {
-    if (activeFocusSession || note.trashedAt) return
-    const eligible = focusSelectableTags(tags)
-    const selectedTagId = eligible.some(tag => tag.id === tagId) ? tagId : DEFAULT_TAG_ID
-    const startedAt = new Date().toISOString()
-    setFocusSessions(current => appendFocusSession(current, createNoteFocusSession({ id:crypto.randomUUID(), noteId:note.id, tagIds:[selectedTagId], startedAt })))
-    setPendingNoteFocusId(null)
-    setFocusOpen(false)
-    setMainView('notes')
-    setRequestedNoteId(note.id)
-    setTimerNow(Date.now())
-  }
-
-  const requestNoteFocus = (note: Note) => {
-    if (activeFocusSession || note.trashedAt) return
-    const last = [...activeFocusSessions(focusSessions)].filter(item => item.endedAt).sort((a,b) => b.startedAt.localeCompare(a.startedAt))[0]
-    setFocusTagIds([last ? lastSelectableFocusTagId(last,tags) : DEFAULT_TAG_ID])
-    setPendingNoteFocusId(note.id)
-  }
-
-  const stopNoteFocus = (note: Note, forcedEndMs?: number) => {
-    const session = activeFocusSession
-    if (!session || session.context?.kind !== 'note' || session.context.noteId !== note.id) return
-    const timing = focusTiming(session, Date.now(), maxFocusSeconds)
-    const endMs = Math.min(forcedEndMs ?? Date.now(), timing.dueAtMs ?? Date.now())
-    setFocusSessions(current => endFocusSession(current,session.id,endMs))
-    setFocusOpen(false)
-    setMainView('notes')
-    setRequestedNoteId(note.id)
-  }
-
-  const activeFocusHabit = useMemo(() => {
-    const context=activeFocusSession?.context
-    if (context?.kind !== 'habit') return null
-    return habits.find(habit=>habit.id===context.habitId && !habit.deletedAt) ?? null
-  }, [habits, activeFocusSession?.id])
-
-  const startHabitFocus = (habit: Habit) => {
-    if (activeFocusSession || habit.archivedAt || habit.deletedAt) return
-    const startedAt=new Date().toISOString()
-    const eligible=focusSelectableTags(tags)
-    const tagId=eligible.some(tag=>tag.id===habit.tagId)?habit.tagId!:DEFAULT_TAG_ID
-    setFocusSessions(current=>appendFocusSession(current,createHabitFocusSession({id:crypto.randomUUID(),habitId:habit.id,tagIds:[tagId],startedAt})))
-    setTimerNow(Date.now())
-  }
-  const stopHabitFocus = (habit: Habit) => {
-    const session=activeFocusSession
-    if (session?.context?.kind!=='habit' || session.context.habitId!==habit.id) return
-    setFocusSessions(current=>endFocusSession(current,session.id,Date.now()))
-    setTimerNow(Date.now())
-  }
-
-  const activeTimerTask = useMemo(() => {
-    const context = activeFocusSession?.context
-    if (context?.kind !== 'task') return null
-    return activeTasks.find(task => task.id === context.taskId) ?? null
-  }, [activeTasks, activeFocusSession?.id])
-
-  useEffect(() => {
-    if (!activeFocusSession) return
-    setTimerNow(Date.now())
-    const timer = window.setInterval(() => setTimerNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [activeFocusSession?.id])
-
-  useFocusWakeLock(keepScreenAwakeDuringFocus && Boolean(activeFocusSession))
-
-  useEffect(() => {
-    if (!activeFocusSession || activeFocusSession.context) return
-    const dueAtMs=focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
-    if(dueAtMs!==null&&timerNow>=dueAtMs) stopDirectFocus(true)
-  },[timerNow,activeFocusSession?.id,activeFocusSession?.plannedSeconds,maxFocusSeconds])
-
-  useEffect(() => {
-    if (!activeFocusNote || !activeFocusSession) return
-    const dueAtMs = focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
-    if (dueAtMs !== null && timerNow >= dueAtMs) stopNoteFocus(activeFocusNote,dueAtMs)
-  }, [timerNow,activeFocusNote?.id,activeFocusSession?.id,maxFocusSeconds])
-
-  useEffect(() => {
-    if (!focusHydrated || !activeFocusSession) return
-    // Restore a running session's panel once. Task/note mutations must never
-    // reopen it after the user has dismissed it to work elsewhere.
-    if (routedFocusSessionIdRef.current === activeFocusSession.id) return
-    const context = activeFocusSession.context
-    if (context?.kind === 'task') {
-      const task = activeTasks.find(item => item.id === context.taskId)
-      if (task) {
-        routedFocusSessionIdRef.current = activeFocusSession.id
-        setMainView('calendar')
-        setViewingTask(task)
-      }
-      return
-    }
-    if (context?.kind === 'habit') {
-      routedFocusSessionIdRef.current = activeFocusSession.id
-      setMainView('habits')
-      return
-    }
-    if (context?.kind === 'note') {
-      const note = notes.find(item => item.id === context.noteId && !item.trashedAt)
-      if (note) {
-        routedFocusSessionIdRef.current = activeFocusSession.id
-        setMainView('notes')
-        setRequestedNoteId(note.id)
-        setFocusOpen(true)
-      }
-      return
-    }
-    routedFocusSessionIdRef.current = activeFocusSession.id
-    setMainView('calendar')
-    setFocusOpen(true)
-  }, [focusHydrated, activeFocusSession?.id, activeTasks, notes])
-
-  useEffect(() => {
-    if (!viewingTask) return
-    const current = viewingTask.seriesId && viewingTask.occurrenceDate
-      ? tasks.find(item => item.id === viewingTask.seriesId)
-      : tasks.find(item => item.id === viewingTask.id)
-    const refreshed = current
-      ? (viewingTask.seriesId && viewingTask.occurrenceDate ? materializeOccurrence(current, viewingTask.occurrenceDate) : current)
-      : null
-    if (refreshed) setViewingTask(refreshed)
-  }, [tasks])
-
-  const startTaskTimer = (task: Task) => {
-    if (activeFocusSession || task.status !== 'todo' || task.recurrence || task.seriesId) return
-    const ordinaryId=(task.tagIds??[]).find(id=>id!==DEFAULT_TAG_ID&&!isImportSourceTagId(id))
-    const ordinaryTag=tags.find(tag=>tag.id===ordinaryId)
-    let focusTagIds=[ordinaryTag?.id??DEFAULT_TAG_ID]
-    if(ordinaryTag&&ordinaryTag.scope!=='both'&&ordinaryTag.scope!=='focus'){
-      const share=window.confirm(`#${ordinaryTag.name} 目前是「${tagScopeLabel(ordinaryTag.scope)}」，不能直接用于专注。\n\n确定：扩展为共享标签并用于本次专注\n取消：保持原标签，本次专注记入「默认」`)
-      if(share){ const now=new Date().toISOString(); setTags(current=>current.map(tag=>tag.id===ordinaryTag.id?{...tag,scope:'both',updatedAt:now}:tag)) }
-      else focusTagIds=[DEFAULT_TAG_ID]
-    }
-    const startedAt=new Date().toISOString()
-    setFocusSessions(current=>appendFocusSession(current,createTaskFocusSession({id:crypto.randomUUID(),taskId:task.id,tagIds:focusTagIds,startedAt})))
-    setTimerNow(Date.now())
-  }
-
-  const stopTaskTimer = (task: Task, complete = false, forcedEndMs?: number) => {
-    const session=activeFocusSession
-    if (!session || session.context?.kind!=='task' || session.context.taskId!==task.id) return
-    const timing=focusTiming(session,Date.now(),maxFocusSeconds)
-    const endMs=Math.min(forcedEndMs??Date.now(),timing.dueAtMs??Date.now())
-    setFocusSessions(current=>endFocusSession(current,session.id,endMs))
-    if (complete) setTaskStatus(task,'completed')
-  }
-
-  useEffect(() => {
-    if (!activeTimerTask || !activeFocusSession) return
-    const dueAtMs=focusTiming(activeFocusSession,timerNow,maxFocusSeconds).dueAtMs
-    if(dueAtMs!==null&&timerNow>=dueAtMs) stopTaskTimer(activeTimerTask,false,dueAtMs)
-  },[timerNow,activeTimerTask?.id,activeFocusSession?.id,maxFocusSeconds])
-
-  const formatRunningTimer = (_task: Task) => formatFocusClock(focusTiming(activeFocusSession,timerNow,maxFocusSeconds).elapsedSeconds)
+  const { focusOpen, setFocusOpen, focusMode, setFocusMode, focusMinutes, setFocusMinutes, focusTagIds, setFocusTagIds, focusTagSelectOpen, setFocusTagSelectOpen, pendingNoteFocusId, setPendingNoteFocusId, activeFocusElapsed, activeFocusHabit, activeFocusNote, activeFocusRemaining, activeFocusSession, activeTimerTask, formatClock, formatRunningTimer, noteFocusSecondsById, requestNoteFocus, startDirectFocus, startHabitFocus, startNoteFocus, startTaskTimer, stopDirectFocus, stopHabitFocus, stopNoteFocus, stopTaskTimer, openFocus } = useFocusRuntime({ setRequestedHabitId, activeTasks, focusHydrated, focusSessions, habits, keepScreenAwakeDuringFocus, maxFocusHours, notes, setFocusSessions, setMainView, setRequestedNoteId, setTags, setTaskStatus: (...args) => setTaskStatus(...args), setTimerNow, setViewingTask, tags, tasks, timerNow, viewingTask })
 
   const openTaskEditor = () => {
     const date = selectedDate ?? today
@@ -2312,145 +1743,7 @@ function App() {
     else setJournalDraft(current => ({ ...current, tagIds: toggleJournalTagIds(current.tagIds, id) }))
   }
 
-  const addTag = () => {
-    const name = newTagName.trim()
-    if (!name) return
-    const existing = tags.find(tag => normalizedTagName(tag.name) === normalizedTagName(name))
-    if (existing) {
-      if (!existing.system && existing.scope !== 'both' && existing.scope !== newTagScope) {
-        const upgrade = window.confirm(`#${existing.name} 已存在于「${tagScopeLabel(existing.scope)}」。\n\n是否更改为「共享标签」？`)
-        if (upgrade) {
-          setTags(current => current.map(tag => tag.id === existing.id ? { ...tag, scope: 'both', updatedAt: new Date().toISOString() } : tag))
-          setNewTagName('')
-          setNewTagScope('both')
-          setSelectedTagManageId(existing.id)
-          setAutoSyncToast(`✓ #${existing.name} 已改为共享标签`)
-        }
-        return
-      }
-      if (!existing.system && newTagScope === 'both' && existing.scope !== 'both') {
-        const upgrade = window.confirm(`#${existing.name} 已存在于「${tagScopeLabel(existing.scope)}」。\n\n是否更改为「共享标签」？`)
-        if (upgrade) {
-          setTags(current => current.map(tag => tag.id === existing.id ? { ...tag, scope: 'both', updatedAt: new Date().toISOString() } : tag))
-          setNewTagName('')
-          setSelectedTagManageId(existing.id)
-          setAutoSyncToast(`✓ #${existing.name} 已改为共享标签`)
-        }
-        return
-      }
-      setAutoSyncToast(`⚠ #${existing.name} 已存在于${existing.system ? '系统标签' : `「${tagScopeLabel(existing.scope)}」`}`)
-      return
-    }
-    const id = crypto.randomUUID()
-    setTags(current => [...current, { id, name, color: newTagColor, scope: newTagScope, sortOrder: Math.max(-1, ...current.filter(tag => !tag.system).map(tag => tag.sortOrder ?? 0)) + 1, updatedAt: new Date().toISOString() }])
-    setNewTagName('')
-  }
-
-  const closeTagEditor = () => {
-    setSelectedTagManageId(null)
-    setTagEditDraft(null)
-  }
-
-  const saveTagEdit = (tag: Tag) => {
-    if (!tagEditDraft) return
-    const blockedReason = tagScopeBlockedReason(tag.id, tagEditDraft.scope)
-    if (blockedReason) {
-      setAutoSyncToast(`⚠ ${blockedReason}`)
-      return
-    }
-    const name = tagEditDraft.name.trim()
-    if (!name) return
-    if (tagNameTaken(tags, name, tag.id)) {
-      setAutoSyncToast(`⚠ #${name} 已存在`)
-      return
-    }
-    const now = new Date().toISOString()
-    setTags(current => current.map(item => item.id === tag.id ? { ...item, name, color: tagEditDraft.color, scope: tagEditDraft.scope, updatedAt: now } : item))
-    setNewTagScope(tagEditDraft.scope)
-    setAutoSyncToast(`✓ #${name} 已保存`)
-    closeTagEditor()
-  }
-
-  const tagUsageAreas = (id: string) => {
-    const taskUsed = tasks.some(task => !task.trashedAt && ((task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => !exception.trashedAt && (exception.tagIds ?? []).includes(id))))
-    const focusUsed = focusSessions.some(session => !session.trashedAt && (session.tagIds ?? []).includes(id))
-    const journalUsed = journalEntries.some(entry => !entry.trashedAt && (entry.tagIds ?? []).includes(id))
-    const noteUsed = notes.some(note => !note.trashedAt && (note.tagIds ?? []).includes(id))
-    const habitUsed = habits.some(habit => !habit.deletedAt && habit.tagId===id)
-    return [taskUsed && '任务', focusUsed && '专注', journalUsed && '记录', noteUsed && '笔记',habitUsed && '习惯'].filter(Boolean) as string[]
-  }
-
-  const canSetTagScope = (tagId: string, nextScope: TagScope) => {
-    if (nextScope === 'both') return true
-    const usage = tagUsageAreas(tagId)
-    if (usage.length === 0) return true
-    if (usage.length > 1) return false
-    const scopeForUsage: Record<string, TagScope> = { '任务': 'task', '专注': 'focus', '记录': 'journal', '笔记': 'note', '习惯': 'habit' }
-    return scopeForUsage[usage[0]] === nextScope
-  }
-
-  const tagScopeBlockedReason = (tagId: string, nextScope: TagScope) => {
-    if (canSetTagScope(tagId, nextScope)) return ''
-    const usage = tagUsageAreas(tagId)
-    return usage.length > 1
-      ? `当前引用：${usage.join(' · ')}，跨多个分类使用时必须保持共享`
-      : `当前仅实际用于${usage[0]}，不能缩小到其他分类`
-  }
-
-  const setTagArchived = (id: string, archived: boolean) => {
-    const archivedAt = archived ? toDateKey(new Date()) : undefined
-    setTags(current => current.map(tag => tag.id === id ? { ...tag, archived, archivedAt, updatedAt: new Date().toISOString() } : tag))
-  }
-
-  const deleteTag = (id: string) => {
-    const tag = tags.find(item=>item.id===id)
-    if (id === DEFAULT_TAG_ID || tag?.system) return
-    const taskCount = tasks.filter(task => (task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => (exception.tagIds ?? []).includes(id))).length
-    const focusCount = focusSessions.filter(session => (session.tagIds ?? []).includes(id)).length
-    const journalCount = journalEntries.filter(entry => (entry.tagIds ?? []).includes(id)).length
-    const noteCount = notes.filter(note => !note.trashedAt && (note.tagIds ?? []).includes(id)).length
-    const habitCount=habits.filter(h=>h.tagId===id).length
-    const linked = taskCount + focusCount + journalCount + noteCount + habitCount
-    if (linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？\n\n关联任务 ${taskCount} 条 · 专注 ${focusCount} 条 · 记录 ${journalCount} 条 · 笔记 ${noteCount} 条 · 习惯 ${habitCount} 条\n关联内容会保留。`)) return
-    if (!linked && !window.confirm(`删除「${tag?.name ?? '该标签'}」？`)) return
-    const now = new Date().toISOString()
-    setTags(current => current.filter(item => item.id !== id))
-    setTasks(current => current.map(task => ({
-      ...task,
-      tagIds: (task.tagIds ?? []).includes(id) ? cleanupTaskTagIdsAfterDelete(task.tagIds, id) : task.tagIds,
-      recurrenceExceptions: task.recurrenceExceptions ? Object.fromEntries(Object.entries(task.recurrenceExceptions).map(([key,exception]) => [key, (exception.tagIds ?? []).includes(id) ? {...exception,tagIds:cleanupTaskTagIdsAfterDelete(exception.tagIds,id),updatedAt:now} : exception])) : task.recurrenceExceptions,
-      updatedAt: (task.tagIds ?? []).includes(id) || Object.values(task.recurrenceExceptions ?? {}).some(exception => (exception.tagIds ?? []).includes(id)) ? now : task.updatedAt
-    })))
-    setFocusSessions(current => current.map(session => (session.tagIds ?? []).includes(id) ? {...session,tagIds:cleanupTaskTagIdsAfterDelete(session.tagIds,id),updatedAt:now} : session))
-    setJournalEntries(current => current.map(entry => (entry.tagIds ?? []).includes(id) ? {...entry,tagIds:cleanupJournalTagIdsAfterDelete(entry.tagIds,id),updatedAt:now} : entry))
-    setNotes(current => current.map(note => (note.tagIds ?? []).includes(id) ? {...note,tagIds:cleanupNoteTagIdsAfterDelete(note.tagIds,id),updatedAt:now} : note))
-    setHabits(current=>current.map(h=>h.tagId===id?{...h,tagId:undefined,updatedAt:now}:h))
-    setSelectedTagManageId(null)
-    setAutoSyncToast(`✓ #${tag?.name ?? '标签'} 已删除`)
-  }
-
-  const managedTags = useMemo(() => managedTagRows(tags), [tags])
-
-  const activeManagedTags = useMemo(() => managedTags.filter(tag => !tag.archived), [managedTags])
-  const archivedTags = useMemo(() => sortTagsByColor(tags.filter(tag => tag.id !== DEFAULT_TAG_ID && !isImportSourceTag(tag) && tag.archived), tags), [tags])
-
-  const tagUsage = useMemo(() => {
-    const usage = new Map<string,{tasks:number;journals:number;days:number}>()
-    managedTags.forEach(tag => {
-      const taskRows = activeTasks.filter(task => (task.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
-      const journalRows = activeJournalEntries.filter(entry => (entry.tagIds ?? [DEFAULT_TAG_ID]).includes(tag.id))
-      const days = new Set<string>()
-      taskRows.forEach(task => {
-        if (!task.date) return
-        const start = tagDateFromKey(task.date), end = tagDateFromKey(taskEndDate(task))
-        if (!start || !end) { days.add(task.date); return }
-        for (let cursor=new Date(start); cursor<=end; cursor.setDate(cursor.getDate()+1)) days.add(toDateKey(cursor))
-      })
-      journalRows.forEach(entry => days.add(entry.date))
-      usage.set(tag.id,{tasks:taskRows.length,journals:journalRows.length,days:days.size})
-    })
-    return usage
-  },[managedTags,activeTasks,activeJournalEntries])
+  const { activeManagedTags, addTag, archivedTags, archivedTagsOpen, canSetTagScope, closeTagEditor, deleteTag, managedTags, newTagColor, newTagName, newTagScope, saveTagEdit, selectedTagManageId, setArchivedTagsOpen, setNewTagColor, setNewTagName, setNewTagScope, setSelectedTagManageId, setTagArchived, setTagEditDraft, setTagManagerOpen, tagEditDraft, tagManagerOpen, tagScopeBlockedReason, tagUsage, tagUsageAreas } = useTagManagement({ activeJournalEntries, activeTasks, focusSessions, habits, journalEntries, notes, setAutoSyncToast, setFocusSessions, setHabits, setJournalEntries, setNotes, setTags, setTasks, tags, tasks })
 
   useEffect(() => {
     if (sessionStorage.getItem('zing-program-refresh-pending') !== '1') return
@@ -2480,55 +1773,7 @@ function App() {
     }
   }
 
-  const normalizedSearch = normalizeSearchQuery(searchQuery)
-
-  const highlightSearch = (text: string) => {
-    if (!normalizedSearch) return text
-    const lower = text.toLocaleLowerCase()
-    const nodes: React.ReactNode[] = []
-    let cursor = 0
-    let index = lower.indexOf(normalizedSearch)
-    let key = 0
-    while (index >= 0) {
-      if (index > cursor) nodes.push(text.slice(cursor, index))
-      nodes.push(<mark key={key++}>{text.slice(index, index + normalizedSearch.length)}</mark>)
-      cursor = index + normalizedSearch.length
-      index = lower.indexOf(normalizedSearch, cursor)
-    }
-    if (cursor < text.length) nodes.push(text.slice(cursor))
-    return nodes
-  }
-
-  const { tagSearchMode, tagSearchTerm, keyword: tagKeyword } = parseTagSearch(normalizedSearch)
-  const tagSuggestions = useMemo(() => matchingTagSuggestions(searchQuery, managedTags), [searchQuery, managedTags])
-  const selectedSearchTag = tagSearchMode ? managedTags.find(tag => tag.name.toLocaleLowerCase() === tagSearchTerm) : undefined
-
-  const searchResults = useMemo<SearchResult[]>(() => buildSearchResults({
-    normalizedSearch,
-    searchFilter,
-    activeTasks,
-    activeJournalEntries,
-    activeAnniversaries,
-    activeNotes: notes.filter(note=>!note.trashedAt),
-    activeHabits: habits.filter(h=>!h.deletedAt),
-    managedTags,
-    tagUsage,
-    today,
-  }), [normalizedSearch, searchFilter, activeTasks, activeJournalEntries, activeAnniversaries, notes, habits, managedTags, tagUsage])
-
-  const searchDateLabel = (result: SearchResult) => {
-    if (result.kind === 'anniversary') {
-      const anniversary = result.item
-      const ownDate = anniversary.calendar === 'lunar'
-        ? `农历 ${anniversary.isLeapMonth ? '闰' : ''}${anniversary.month}月${anniversary.day}日`
-        : `${anniversary.month}月${anniversary.day}日`
-      return result.nextOccurrence ? `${ownDate} · 下次 ${formatUiDate(result.nextOccurrence)}` : ownDate
-    }
-    const [year, month, day] = result.date.split('-').map(Number)
-    const label = year && month && day ? formatUiDate(new Date(year, month - 1, day)) : result.date
-    if (result.kind === 'journal') return result.item.time ? `${label} · ${result.item.time}` : label
-    return label
-  }
+  const { highlightSearch, mobileSearchVisible, normalizedSearch, searchDateLabel, searchFilter, searchOpen, searchQuery, searchResults, searchWrapRef, selectedSearchTag, setMobileSearchVisible, setSearchFilter, setSearchOpen, setSearchQuery, tagKeyword, tagSearchMode, tagSuggestions } = useGlobalSearch({ activeAnniversaries, activeJournalEntries, activeTasks, formatUiDate, habits, managedTags, notes, tagUsage, today })
 
   const inboxTaskMeta = (task: Task) => {
     const tagId = inboxOrdinaryTaskTagId(task)
@@ -2595,36 +1840,6 @@ function App() {
     }
     openAnniversaryEditor(result.item)
   }
-
-  useEffect(() => {
-    const onPointerDown = (event: MouseEvent) => {
-      if (searchWrapRef.current && !searchWrapRef.current.contains(event.target as Node)) {
-        setSearchOpen(false)
-        setMobileSearchVisible(false)
-      }
-    }
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSearchOpen(false)
-        setMobileSearchVisible(false)
-      }
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [])
-
-  const statistics = useMemo(() => buildStatistics({
-    today, statsRange, weekStartsMonday, activeTasks, activeJournalEntries, dailyMoods, dailyEnergy, managedTags, tags,
-    focusSessions, notes, wordCloudIgnored, timerNow, excludeDefaultFocusStats,
-  }),[activeTasks,activeJournalEntries,dailyMoods,dailyEnergy,managedTags,tags,focusSessions,notes,statsRange,weekStartsMonday,wordCloudIgnored,timerNow,excludeDefaultFocusStats])
-
-  const statsPercent = (value:number) => `${Math.round(value*100)}%`
-  const impactLabel = (value:JournalImpact) => value>0 ? `+${value}` : String(value)
-  const moodStatLabels = ['','特别差','有点差','一般','还可以','很高兴']
 
   const anniversaryPageRows = useMemo(() => buildAnniversaryPageRows(activeAnniversaries, today), [activeAnniversaries])
 
@@ -2714,66 +1929,7 @@ function App() {
     } finally { setResettingData(false) }
   }
 
-  const exportTasksCsv = () => {
-    const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
-    const rows=[
-      ['id','title','start_date','end_date','all_day','time','priority','status','deadline','completed_at','original_date','postpone_count','repeat_rule','tags','notes','attachment_count','created_at','updated_at'],
-      ...activeTasks.map(task=>[
-        task.id,task.title,task.date,task.endDate??'',task.allDay,task.time??'',`P${task.priority}`,task.status,task.deadline??'',task.completedAt??'',task.originalDate??'',
-        task.postponeHistory?.length??0,task.recurrence?JSON.stringify(task.recurrence):'',(task.tagIds??[]).map(tagName).join(' | '),task.notes??'',task.attachments?.length??0,task.createdAt,task.updatedAt
-      ])
-    ]
-    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
-    downloadTextFile(`zing-tasks-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
-    setBackupMessage(`任务 CSV 已导出 · ${activeTasks.length} 条`)
-  }
-
-  const exportJournalsCsv = () => {
-    const tagName=(id:string)=>tags.find(tag=>tag.id===id)?.name ?? id
-    const rows=[
-      ['id','date','title','event_impact','emotions','tags','body_markdown','message_count','messages','image_count','audio_count','created_at','updated_at'],
-      ...activeJournalEntries.map(entry=>[
-        entry.id,entry.date,entry.title,entry.impact,(entry.emotionIds??[]).map(id=>emotionOptions.find(item=>item.id===id)?.name??id).join(' | '),(entry.tagIds??[]).map(tagName).join(' | '),entry.content??'',(entry.messages??[]).length,(entry.messages??[]).map(message=>`[${message.createdAt}] ${message.content}`).join('\n\n'),
-        (entry.attachments??[]).filter(item=>item.type==='image').length,(entry.attachments??[]).filter(item=>item.type==='audio').length,entry.createdAt,entry.updatedAt
-      ])
-    ]
-    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
-    downloadTextFile(`zing-journals-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
-    setBackupMessage(`记录 CSV 已导出 · ${activeJournalEntries.length} 条`)
-  }
-
-  const exportFocusCsv = () => {
-    const tagById=(id:string)=>tags.find(tag=>tag.id===id)
-    const rows=[
-      ['id','start_time','end_time','duration_minutes','mode','planned_minutes','tag','source','created_at','updated_at'],
-      ...focusSessions.map(session=>{
-        const ordinaryTagId=(session.tagIds??[]).find(id=>id===DEFAULT_TAG_ID||!isImportSourceTagId(id)) ?? DEFAULT_TAG_ID
-        const ordinaryTag=tagById(ordinaryTagId)
-        const sources=(session.tagIds??[]).map(tagById).filter((tag): tag is Tag=>Boolean(tag&&isImportSourceTag(tag))).map(tag=>tag.name)
-        return [
-          session.id,session.startedAt,session.endedAt??'',Math.round(((session.durationSeconds??0)/60)*100)/100,session.mode,
-          session.plannedSeconds==null?'':Math.round((session.plannedSeconds/60)*100)/100,ordinaryTag?.name??ordinaryTagId,sources.length?sources.join(' | '):'Zing',session.createdAt,session.updatedAt
-        ]
-      })
-    ]
-    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
-    downloadTextFile(`zing-focus-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
-    setBackupMessage(`专注 CSV 已导出 · ${focusSessions.length} 条`)
-  }
-
-  const exportAnniversariesCsv = () => {
-    const typeLabel=(value:AnniversaryType)=>ANNIVERSARY_TYPES.find(item=>item.value===value)?.label ?? value
-    const rows=[
-      ['id','title','type','calendar','year','month','day','leap_month','repeat_yearly','notes','created_at','updated_at'],
-      ...activeAnniversaries.map(anniversary=>[
-        anniversary.id,anniversary.title,typeLabel(anniversary.type),anniversary.calendar,anniversary.year??'',anniversary.month,anniversary.day,
-        anniversary.isLeapMonth??false,anniversary.repeatYearly,anniversary.notes??'',anniversary.createdAt,anniversary.updatedAt
-      ])
-    ]
-    const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
-    downloadTextFile(`zing-anniversaries-${toDateKey(new Date())}.csv`,csv,'text/csv;charset=utf-8')
-    setBackupMessage(`纪念日 CSV 已导出 · ${activeAnniversaries.length} 条`)
-  }
+  const { exportAnniversariesCsv, exportFocusCsv, exportJournalsCsv, exportTasksCsv } = createCsvExports({ activeAnniversaries, activeJournalEntries, activeTasks, emotionOptions, focusSessions, setBackupMessage, tags })
 
   const exportFullBackup = async () => {
     if (backupExporting) return
@@ -2824,7 +1980,6 @@ function App() {
       setBackupMessage(error instanceof Error ? `备份失败：${error.message}` : '备份失败')
     } finally { setBackupExporting(false) }
   }
-
 
   const inspectBackupFile = async (file:File) => {
     setBackupMessage('正在验证备份…')
@@ -2928,7 +2083,6 @@ function App() {
     } finally { setBackupRestoring(false) }
   }
 
-
   const executeGithubSync = async (automatic = false) => {
     if (!githubSyncOwner.trim() || !githubSyncRepo.trim() || !githubSyncBranch.trim()) {
       setGithubSyncMessageKind('error')
@@ -3031,7 +2185,7 @@ function App() {
     }
   }
 
-  const switchMainView = (view: 'calendar' | 'notes' | 'habits' | 'statistics' | 'anniversaries' | 'settings') => {
+  const switchMainView = (view: MainView) => {
     if (view === 'calendar' && isMobileCalendar) {
       // A calendar entry is a fresh navigation to Today. Reset the finite month
       // window before mounting the page so the IntersectionObserver cannot inherit
@@ -3106,743 +2260,109 @@ function App() {
   return (
     <main className={`app-shell${desktopSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
 
-      <header className={`topbar${mainView==='calendar'?' calendar-topbar':''}`}>
-        <div className={`brand-block${mainView==='settings' ? ' settings-brand' : ''}${mobileSearchVisible ? " search-open" : ""}`}>
-          <button className="brand-mark" type="button" aria-label="打开或收起搜索" aria-expanded={mobileSearchVisible} onClick={()=>{setMobileSearchVisible(current=>!current);setSearchOpen(false)}}><span className="brand-mark-desktop">Z</span><span className="brand-mark-mobile" aria-hidden="true">🔍</span></button>
-          <div className="brand-copy">
-            <p>{greeting}</p>
-          </div>
-        </div>
+      <ApplicationHeader {...{
+        desktopSidebarCollapsed, greeting, highlightSearch, mainView, mobileSearchVisible, moduleOrder,
+        normalizedSearch, openSearchResult, searchDateLabel, searchFilter, searchMarker, searchOpen,
+        searchQuery, searchResults, searchWrapRef, selectedSearchTag, setMobileSearchVisible,
+        setSearchFilter, setSearchOpen, setSearchQuery, switchMainView, tagKeyword, tagSearchMode,
+        tagSuggestions, toggleDesktopSidebar
+      }} />
 
-        <button type="button" className="desktop-sidebar-toggle" onClick={toggleDesktopSidebar}
-          aria-label={desktopSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-          aria-expanded={!desktopSidebarCollapsed} title={desktopSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}>
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3.5" width="18" height="17" rx="3" />
-            <path d="M9 3.5v17" />
-            <path d={desktopSidebarCollapsed ? 'm14 10 2 2-2 2' : 'm16 10-2 2 2 2'} />
-          </svg>
-        </button>
+      <CalendarPage {...{
+        openFocus, activeFocusElapsed, activeFocusHabit, activeFocusNote, activeFocusRemaining,
+        activeFocusSession, activeTimerTask, continuousCalendarContent, continuousCalendarRef,
+        dayDetailOpen, displayWeekdays, endedTasksViewToggle, formatClock, goToday,
+        inboxCount: inboxTasks.length, isMobileCalendar, mainView, mobileActiveMonth, moveMonth,
+        openMonthPicker, overdueCount: overdueTasks.length, programRefreshBusy, refreshProgram,
+        renderCalendarMonthGrid, setInboxOpen, setOverdueInboxOpen, setTrashOpen,
+        trashCount: trashItems.length, visibleMonth
+      }} />
 
-        {mobileSearchVisible && <button className="mobile-search-backdrop" type="button" aria-label="关闭搜索" onClick={()=>{setMobileSearchVisible(false);setSearchOpen(false)}} />}
-        <div className={`global-search-wrap${mobileSearchVisible ? ' mobile-open' : ''}`} ref={searchWrapRef}>
-          <span className="global-search-icon">⌕</span>
-          <input value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true) }} placeholder="搜索内容，或输入 #标签 筛选" aria-label="全局搜索" />
-          {searchQuery && <button type="button" className="search-clear" onClick={() => setSearchQuery('')} aria-label="清空搜索">×</button>}
-          {searchOpen && normalizedSearch && (
-            <div className="search-panel">
-              <div className="search-filters">
-                {orderedCategories([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['habit','习惯']] as const,moduleOrder).map(([value,label]) => <button key={value} type="button" className={searchFilter===value?'active':''} onClick={() => setSearchFilter(value)}>{label}</button>)}
-              </div>
-              {tagSearchMode && <div className="search-tag-suggestions" aria-label="标签建议">
-                {tagSuggestions.map(tag => <button key={tag.id} type="button" className={selectedSearchTag?.id===tag.id?'active':''}
-                  onClick={() => { setSearchQuery(`#${tag.name}${tagKeyword ? ` ${tagKeyword}` : ''}`); setSearchOpen(true) }}>
-                  <span className="tag-color-dot" style={{backgroundColor:tag.color}} />#{tag.name}
-                </button>)}
-              </div>}
-              <div className="search-results">
-                {searchResults.length === 0 ? <p className="search-empty">{tagSearchMode && !selectedSearchTag ? '请选择完整标签以查看关联内容。' : '没有找到结果。'}</p> : searchResults.map(result => (
-                  <button key={`${result.kind}-${result.id}`} type="button" className="search-result" onClick={() => openSearchResult(result)}>
-                    <span className={`search-kind kind-${result.kind}`}>{searchMarker(result)}</span>
-                    <span className="search-result-main"><strong>{tagSearchMode ? result.title : highlightSearch(result.title)}</strong>{result.snippet && <small>{tagSearchMode ? result.snippet : highlightSearch(result.snippet)}</small>}</span>
-                    <time>{searchDateLabel(result)}</time>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-        <DesktopNavigationDrawer active={mainView} onNavigate={switchMainView} collapsed={desktopSidebarCollapsed} />
-      </header>
+      <StatisticsPage {...{
+        today, weekStartsMonday, activeTasks, activeJournalEntries, dailyMoods, dailyEnergy, managedTags,
+        tags, focusSessions, notes, wordCloudIgnored, timerNow, excludeDefaultFocusStats, mainView,
+        setExcludeDefaultFocusStats, setWordCloudIgnored
+      }} />
 
-      {mainView === 'calendar' && <section className={`calendar-card${isMobileCalendar && dayDetailOpen ? ' day-detail-open' : ''}`} aria-label="月历">
-        <div className="calendar-sticky-header">
-        <div className="calendar-toolbar">
-          <div className="month-navigation">
-            <button className="nav-button" type="button" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
-            <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
-            <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
-            <button className="today-button" type="button" onClick={goToday}>今天</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusHabit){setFocusOpen(false);setRequestedHabitId(previous=>({id:activeFocusHabit.id,request:(previous?.request??0)+1}));setMainView('habits');return}if(activeFocusNote){setFocusOpen(false);setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusHabit?`习惯专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
-          </div>
-          <div className="calendar-status-controls">
-            <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
-            <button className="trash-inbox-trigger" type="button" onClick={()=>setTrashOpen(true)} aria-label={trashItems.length?`打开回收站，共 ${trashItems.length} 条`:'打开回收站，当前为空'}><svg className="trash-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg><span>回收站</span></button>
-            {overdueTasks.length>0 && <button className={`overdue-inbox-trigger${overdueTasks.length>=5?' urgent':''}`} type="button" onClick={()=>setOverdueInboxOpen(true)} aria-label={`打开已逾期任务，共 ${overdueTasks.length} 条`}><span>⚠</span> 已逾期 {compactCount(overdueTasks.length)}</button>}
-            {endedTasksViewToggle('calendar-ended-toggle')}
-            <button className="program-refresh-button" type="button" onClick={()=>void refreshProgram()} disabled={programRefreshBusy} aria-label="检查并刷新程序" title="检查并刷新程序">{programRefreshBusy?'…':'↻'}</button>
-          </div>
-        </div>
+      <HabitWorkspace {...{
+        activeFocusHabit, activeFocusSession, beginEditFocusSession, focusEditId, focusHistoryEditFields,
+        focusSessions, formatUiDate, habitCheckIns, habits, mainView, quickHabitCheckIn,
+        requestedHabitId, saveFocusSessionEdit, setFocusEditId, setFocusSessions, setHabitCheckIns,
+        setHabits, startHabitFocus, stopHabitFocus, tags, timerNow, undoHabitCheckIn
+      }} />
 
-        <div className="weekday-row">
-          {displayWeekdays.map(day => <div key={day}>{day}</div>)}
-        </div>
-        </div>
+      <NotesWorkspace {...{
+        activeFocusElapsed, activeFocusNote, activeFocusSession, addNoteImages, formatUiDate, mainView,
+        noteFocusSecondsById, notebooks, notes, openImagePreview, requestNoteFocus, requestedNoteId,
+        setFocusEditId, setFocusSessions, setImageLibraryNoteId, setImageLibraryTarget,
+        setNoteFocusHistoryId, setNotebooks, setNotes, setRequestedNoteId, stopNoteFocus, tags
+      }} />
 
-        {isMobileCalendar ? <>
-          <div className="continuous-calendar" ref={continuousCalendarRef}>
-            {continuousCalendarContent}
-          </div>
-        </> : renderCalendarMonthGrid(visibleMonth)}
-      </section>}
+      <AnniversariesPage {...{
+        anniversaryPageRows, mainView, openAnniversaryEditor, today
+      }} />
 
-      {mainView === 'statistics' && (
-        <section className="statistics-page">
-          <div className="page-heading stats-heading">
-            <div><span className="eyebrow">STATISTICS</span><h2>统计</h2></div>
-          </div>
-          <div className="stats-range" role="group" aria-label="统计时间范围">
-            {([['week','本周'],['month','本月'],['30d','近30天'],['year','今年'],['all','全部']] as const).map(([value,label])=>
-              <button type="button" key={value} className={statsRange===value?'active':''} onClick={()=>setStatsRange(value)}>{label}</button>
-            )}
-          </div>
+      <SettingsPage {...{
+        allStoredAttachments, archivedTags, backupExporting, backupInputRef, backupMessage, dateFormat,
+        defaultPriority, effectiveAttachmentBytes, effectiveAudioBytes, effectiveImageBytes,
+        encouragementMessages, encouragementStyle, exportFullBackup, formatBytes, greeting,
+        inspectB2Orphans, inspectBackupFile, keepScreenAwakeDuringFocus, lastGithubSyncAt, mainView,
+        maxFocusHours, mobileNav, openExternalImport, orphanCleanupBusy, randomPoolGroups,
+        randomPoolItems, setArchivedTagsOpen, setDateFormat, setDefaultPriority, setEmotionManagerOpen,
+        setEncouragementManagerOpen, setEncouragementStyle, setEnvironmentManagerKind, setGithubSyncOpen,
+        setGreeting, setKeepScreenAwakeDuringFocus, setLayoutEditor, setMaxFocusHours,
+        setMobileNavSettingsOpen, setMobileNavToast, setMobileSearchVisible, setModulePriorityOpen,
+        setPlainExportOpen, setRandomPoolOpen, setRandomWheelOpen, setResetDataConfirm, setSearchOpen,
+        setShowAllRecurringTasks, setStorageBrowser, setTagManagerOpen, setWeekStartsMonday,
+        setWordIgnoreManagerOpen, settingsGroupStyle, showAllRecurringTasks, storageStats,
+        switchMainView, weekStartsMonday, wordCloudIgnored
+      }} />
 
-          <div className="stats-overview">
-            <div className="stat-number-card"><span>完成任务</span><strong>{statistics.completed}</strong><small>{statistics.eligibleTasks.length} 个已进入执行期</small></div>
-            <div className="stat-number-card"><span>完成率</span><strong>{statistics.eligibleTasks.length?statsPercent(statistics.completionRate):'—'}</strong><small>{statistics.eligibleTasks.length?`${statistics.completed} / ${statistics.eligibleTasks.length}`:'暂无可统计任务'}</small></div>
-            <div className="stat-number-card"><span>记录</span><strong>{statistics.journals.length}</strong><small>{statistics.journalDays} 天写过 Journal</small></div>
-            <div className="stat-number-card"><span>心情记录</span><strong>{statistics.moodDays}</strong><small>记录天数</small></div>
-          </div>
+      <SyncDialogs {...{
+        executeGithubSync, githubSyncBranch, githubSyncBusy, githubSyncMessage, githubSyncMessageKind,
+        githubSyncOpen, githubSyncOwner, githubSyncPreview, githubSyncRepo, githubSyncToken,
+        githubTokenSaved, lastGithubSyncAt, moduleOrder, runGithubSync, setGithubSyncBranch,
+        setGithubSyncMessage, setGithubSyncMessageKind, setGithubSyncOpen, setGithubSyncOwner,
+        setGithubSyncPreview, setGithubSyncRepo, setGithubSyncToken, setGithubTokenSaved
+      }} />
 
-          <section className="stats-section">
-            <div className="stats-section-title"><div><span className="eyebrow">TASKS</span><h3>任务</h3></div></div>
-            <div className="stats-inline-cards">
-              <div><span>完成</span><strong>{statistics.completed}</strong></div>
-              <div><span>放弃</span><strong>{statistics.abandoned}</strong></div>
-              <div><span>逾期待办</span><strong>{statistics.overdue}</strong></div>
-            </div>
-            {statistics.eligibleTasks.length ? <>
-              <div className="stats-subblock"><h4>优先级分布</h4>
-                <div className="stat-bars">{statistics.priorityCounts.map(row=><div className={`stat-bar-row priority-stat-${row.value}`} key={row.value}><span>P{row.value}</span><div><i style={{width:`${row.count/statistics.eligibleTasks.length*100}%`}} /></div><strong>{row.count}</strong></div>)}</div>
-              </div>
-              <div className="postpone-summary">
-                <div><span>延期率</span><strong>{statsPercent(statistics.postponeRate)}</strong><small>{statistics.postponedTasks} / {statistics.eligibleTasks.length} 个任务</small></div>
-                <div><span>延期总次数</span><strong>{statistics.postponeEvents}</strong></div>
-                <div><span>单任务最多</span><strong>{statistics.maxPostponeCount} 次</strong></div>
-                <div><span>最长累计延期</span><strong>{statistics.maxPostponeDays} 天</strong></div>
-              </div>
-            </> : <p className="page-empty compact">这个时间范围还没有进入执行期的任务，暂不统计优先级与延期。</p>}
-            {statistics.mostPostponedTag && <div className="most-postponed-tag">
-              <span>最常延期标签</span><strong>#{statistics.mostPostponedTag.tag.name}</strong>
-              <small>{statsPercent(statistics.mostPostponedTag.postponeRate)} · {statistics.mostPostponedTag.postponeTasks}/{statistics.mostPostponedTag.tasks}个任务</small>
-            </div>}
-            {(statistics.maxPostponeCount>0||statistics.maxPostponeDays>0) && <div className="postpone-extremes">
-              {statistics.maxPostponeCount>0 && statistics.mostPostponedTask && <span>延期次数最多：<strong>{statistics.mostPostponedTask.title}</strong> · {statistics.maxPostponeCount}次</span>}
-              {statistics.maxPostponeDays>0 && statistics.longestPostponedTask && <span>累计延期最长：<strong>{statistics.longestPostponedTask.title}</strong> · {statistics.maxPostponeDays}天</span>}
-            </div>}
-            <div className="stats-subblock">
-              <h4>完成趋势</h4>
-              {statistics.completionTrend.length ? <div className="completion-chart-wrap">
-                <div className="completion-trend">
-                  {statistics.completionTrend.map((item,index)=>{
-                    const max=Math.max(...statistics.completionTrend.map(x=>x.count),1)
-                    const labelEvery=Math.max(1,Math.ceil(statistics.completionTrend.length/8))
-                    const showLabel=index===0||index===statistics.completionTrend.length-1||index%labelEvery===0
-                    return <div key={item.key} title={`${item.key} · 完成 ${item.count}`}>
-                      <span className={`completion-count${showLabel?' show-mobile-count':''}`}>{item.count}</span>
-                      <i style={{height:`${Math.max(8,item.count/max*100)}%`}} />
-                      <span className="completion-date">{showLabel?item.label:''}</span>
-                    </div>
-                  })}
-                </div>
-              </div> : <p className="page-empty compact">这个时间范围还没有完成记录。</p>}
-            </div>
+      <EnvironmentManager {...{
+        addEnvironmentOption, deleteEnvironmentOption, editEnvironmentEmoji, environmentManagerKind,
+        environmentOptionUsed, moveEnvironmentOption, renameEnvironmentOption, setEnvironmentManagerKind,
+        thermalOptions, toggleArchiveEnvironmentOption, weatherOptions
+      }} />
 
-          </section>
+      <EmotionDialogs {...{
+        addEmotionOption, changeEmotionGroup, emotionManagerExpanded, emotionManagerOpen, emotionOptions,
+        emotionPickerOpen, journalDraft, journalEntries, removeEmotionOption, renameEmotionOption,
+        setEmotionManagerExpanded, setEmotionManagerOpen, setEmotionPickerOpen, setJournalDraft,
+        toggleArchiveEmotionOption
+      }} />
 
+      <EncouragementManager {...{
+        encouragementDraft, encouragementEditingId, encouragementManagerOpen, encouragementMessages,
+        setEncouragementDraft, setEncouragementEditingId, setEncouragementManagerOpen,
+        setEncouragementMessages
+      }} />
 
-          <section className="stats-section focus-section">
-            <div className="stats-section-title"><div><span className="eyebrow">FOCUS</span><h3>专注</h3></div><small>{formatFocusDuration(statistics.focusSeconds)}</small></div>
-            <div className="stats-subblock focus-stats-block">
-              <div className="focus-stats-heading"><h4>专注时间</h4><div className="focus-stats-heading-actions"><label className="ended-view-toggle focus-default-toggle"><input type="checkbox" checked={excludeDefaultFocusStats} onChange={event=>setExcludeDefaultFocusStats(event.target.checked)} /><i /><span>排除默认标签</span></label><strong>{formatFocusDuration(statistics.focusSeconds)}</strong></div></div>
-              {statistics.focusTrend.length ? <div className="completion-chart-wrap">
-                <div className="completion-trend focus-trend">
-                  {statistics.focusTrend.map((item,index)=>{
-                    const max=Math.max(...statistics.focusTrend.map(x=>x.seconds),1)
-                    const labelEvery=Math.max(1,Math.ceil(statistics.focusTrend.length/8))
-                    const showLabel=index===0||index===statistics.focusTrend.length-1||index%labelEvery===0
-                    return <div key={item.key} title={`${item.key} · 专注 ${formatFocusDuration(item.seconds)}`}>
-                      <span className={`completion-count${showLabel?' show-mobile-count':''}`}>{item.seconds >= 60 ? `${Math.floor(item.seconds/60)}m` : item.seconds > 0 ? '<1m' : '0'}</span>
-                      <i style={{height:`${Math.max(8,item.seconds/max*100)}%`}} />
-                      <span className="completion-date">{showLabel?item.label:''}</span>
-                    </div>
-                  })}
-                </div>
-              </div> : <p className="page-empty compact">这个时间范围还没有专注记录。</p>}
-              {statistics.focusColorRows.length>0 && <div className="focus-distribution">
-                <div className="focus-pie-wrap"><div className="focus-pie" style={{background:statistics.focusPieGradient}} aria-label="按标签颜色汇总的专注时间分布"><i><b>{formatFocusDuration(statistics.focusSeconds)}</b><small>总专注</small></i>{statistics.focusPieLabels.map(row=><span key={row.color} className="focus-pie-percent" style={{left:`${row.x}%`,top:`${row.y}%`}}>{Math.round(row.percent)}%</span>)}</div></div>
-                <div className="focus-color-stats">
-                {statistics.focusColorRows.map(row=><div className="focus-color-block" key={row.color}><button type="button" onClick={()=>setExpandedFocusColor(current=>current===row.color?null:row.color)}><span><i style={{background:row.color}} />{formatFocusDuration(row.seconds)}</span><strong>{row.percent.toFixed(row.percent>=10?0:1)}%</strong><b>{expandedFocusColor===row.color?'⌃':'›'}</b></button>{expandedFocusColor===row.color&&<div className="focus-color-detail">{row.tags.sort((a,b)=>b.seconds-a.seconds).map(tagRow=><div key={tagRow.tag.id}><span><i style={{background:tagRow.tag.color}} />{tagRow.tag.name}</span><strong>{formatFocusDuration(tagRow.seconds)}</strong><small>{row.seconds?`${(tagRow.seconds/row.seconds*100).toFixed(1)}%`:''}</small></div>)}</div>}</div>)}
-                </div>
-              </div>}
-            </div>
-          </section>
-          <section className="stats-section">
-            <div className="stats-section-title"><div><span className="eyebrow">JOURNAL</span><h3>记录与事件影响</h3></div><small>{statistics.journals.length} 篇 · {statistics.journalDays} 天</small></div>
-            <div className="impact-distribution">
-              {statistics.journals.length ? statistics.impactCounts.map(row=><div key={row.value} className={`impact-stat impact-${row.value<0?'negative':row.value>0?'positive':'neutral'}`}><span>{impactLabel(row.value)}</span><strong>{row.count}</strong></div>) : <p className="page-empty compact">这个时间范围还没有 Journal，暂不统计 Event Impact。</p>}
-            </div>
-            <div className="stats-subblock"><h4>词云</h4><p className="stats-note">来自当前时间范围内 Journal 的标题、正文与后续消息；字体越大，出现越频繁。点击词语可屏蔽。</p>
-              {statistics.words.length ? <div className="journal-word-cloud">{statistics.words.map(({word,count},index)=>{
-                const max=statistics.words[0]?.count||1
-                const frequencyScale=Math.sqrt(count/max)
-                const rankScale=Math.max(.46,1-index/70)
-                const size=12+Math.round(26*frequencyScale*rankScale)
-                if(index===0) return <button type="button" className="word-cloud-center word-cloud-word" key={word} style={{fontSize:`${Math.max(38,size)}px`}} title={`${count} 次 · 点击屏蔽`} onClick={()=>setWordCloudIgnored(list=>list.includes(word)?list:[...list,word])}>{word}</button>
-                const angle=index*2.399963229728653
-                const radius=Math.min(43,10+Math.sqrt(index)*7.2)
-                const left=50+Math.cos(angle)*radius
-                const top=50+Math.sin(angle)*radius*.78
-                return <button type="button" className="word-cloud-word" key={word} style={{fontSize:`${size}px`,left:`${left}%`,top:`${top}%`}} title={`${count} 次 · 点击屏蔽`} onClick={()=>setWordCloudIgnored(list=>list.includes(word)?list:[...list,word])}>{word}</button>
-              })}</div> : <p className="page-empty compact">还没有足够的文字。</p>}
-            </div>
-          </section>
+      <WordIgnoreManager {...{
+        setWordCloudIgnored, setWordIgnoreDraft, setWordIgnoreManagerOpen, wordCloudIgnored,
+        wordIgnoreDraft, wordIgnoreManagerOpen
+      }} />
 
-          <section className="stats-section">
-            <div className="stats-section-title"><div><span className="eyebrow">STATUS</span><h3>状态</h3></div><small>{statistics.statusDays} 天</small></div>
-            {(statsRange==='year'||statsRange==='all') && (
-              <div className="status-summary-groups">
-                <div className="status-summary-group"><strong className="status-summary-label">心情</strong><div className="mood-stat-list">{statistics.moodCounts.map(row=><div key={`mood-${row.value}`}><span className="mood-stat-face"><MoodFace level={row.value} /></span><span>{moodStatLabels[row.value]}</span><strong>{row.count}</strong></div>)}</div></div>
-                <div className="status-summary-group"><strong className="status-summary-label">能量</strong><div className="mood-stat-list energy-stat-list">{statistics.energyCounts.map(row=><div key={`energy-${row.value}`}><span className="energy-stat-icon"><EnergyBattery level={row.value} /></span><span>{ENERGIES.find(item=>item.value===row.value)?.label}</span><strong>{row.count}</strong></div>)}</div></div>
-              </div>
-            )}
-            {(statsRange==='year'||statsRange==='all') ? (
-              <div className="mood-heatmap-wrap status-heatmaps">
-                {(() => {
-                  const years=statistics.allHeatmapYears
-                  const selected=years.find(group=>group.year===moodHeatmapYear) ?? years[years.length-1]
-                  if(!selected) return <p className="page-empty compact">还没有状态记录。</p>
-                  const index=Math.max(0,years.findIndex(group=>group.year===selected.year))
-                  const heatmap=(kind:'mood'|'energy') => <div className="status-heatmap-block">
-                    <strong>{kind==='mood'?'心情':'能量'}</strong>
-                    <div className="mood-year-heatmap status-year-heatmap" ref={element=>{if(element && window.innerWidth<=620) requestAnimationFrame(()=>{element.scrollLeft=element.scrollWidth})}}>
-                      {Array.from({length:selected.leading}).map((_,i)=><i key={`${kind}-blank-${selected.year}-${i}`} className="heatmap-blank" />)}
-                      {selected.days.map(day=>{
-                        const level=kind==='mood'?day.level:day.energyLevel
-                        const label=kind==='mood'?(level?moodStatLabels[level]:'未记录'):(level?ENERGIES.find(item=>item.value===level)?.label:'未记录')
-                        return <i key={`${kind}-${day.key}`} title={`${day.key} · ${label}`} className={`${level?`mood-${level}`:''}${day.future?' future':''}`} />
-                      })}
-                    </div>
-                  </div>
-                  return <div className="mood-single-year-wrap">
-                    <div className="mood-heatmap-year status-heatmap-year">
-                      <span>{selected.year}</span>
-                      {heatmap('mood')}
-                      {heatmap('energy')}
-                    </div>
-                    {years.length>1&&<div className="mood-year-navigator" onWheel={event=>{
-                      if(Math.abs(event.deltaY)+Math.abs(event.deltaX)<8) return
-                      const direction=(Math.abs(event.deltaX)>Math.abs(event.deltaY)?event.deltaX:event.deltaY)>0?1:-1
-                      const next=Math.max(0,Math.min(years.length-1,index+direction))
-                      if(next!==index)setMoodHeatmapYear(years[next].year)
-                    }}>
-                      <button type="button" disabled={index<=0} onClick={()=>index>0&&setMoodHeatmapYear(years[index-1].year)} aria-label="上一年">‹</button>
-                      <strong>{selected.year}年</strong>
-                      <button type="button" disabled={index>=years.length-1} onClick={()=>index<years.length-1&&setMoodHeatmapYear(years[index+1].year)} aria-label="下一年">›</button>
-                    </div>}
-                  </div>
-                })()}
-              </div>
-            ) : (statsRange==='week'||statsRange==='month'||statsRange==='30d') && (
-              <div className="mood-trend-wrap status-trend-wrap">
-                <div className="status-trend-heading"><h4>状态变化</h4><div className="status-trend-legend"><span><i className="legend-mood-line" />心情</span><span><i className="legend-energy-line" />能量</span></div></div>
-                {(statistics.moodLinePoints.length || statistics.energyLinePoints.length) ? <div className="mood-trend-layout status-trend-layout">
-                  <div className="mood-chart-area">
-                    <svg className="mood-trend-chart status-trend-chart" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="心情与能量状态变化对比">
-                      {[4,12,20,28,36].map(y=><line key={y} x1="0" x2="100" y1={y} y2={y} className="mood-grid-line" />)}
-                      {statistics.moodLinePoints.length>1 && <polyline points={statistics.moodLinePoints.map(p=>`${p.x},${p.y}`).join(' ')} className="status-mood-line" />}
-                      {statistics.energyLinePoints.length>1 && <polyline points={statistics.energyLinePoints.map(p=>`${p.x},${p.y}`).join(' ')} className="status-energy-line" />}
-                    </svg>
-                    <div className="mood-x-axis">
-                      <span className="mood-x-start">{statistics.rangeStart.slice(5).replace('-','/')}</span>
-                      <span className="mood-x-end">{statistics.todayKey.slice(5).replace('-','/')}</span>
-                    </div>
-                  </div>
-                </div> : <p className="page-empty compact">这个时间范围还没有心情或能量记录。</p>}
-              </div>
-            )}
-          </section>
-
-          <section className="stats-section">
-            <div className="stats-section-title"><div><span className="eyebrow">TAGS</span><h3>标签分析</h3></div></div>
-            <div className="tag-subsection">
-              <div className="tag-subsection-heading"><h4>标签与任务的联系</h4><small>{statistics.tagTimelineAll?'完整生命周期 · 完成量与实际执行频率':'当前时间范围 · 完成量与实际执行频率'} · 未来任务不计</small></div>
-              {statistics.tagTaskTimelines.length ? <div className="tag-task-timelines">
-                <div className="tag-timeline-axis"><span>{statistics.timelineStart}</span><span>今天</span></div>
-                {[...statistics.tagTaskTimelines].sort((a,b)=>b.completed-a.completed||(a.firstDate ?? '').localeCompare(b.firstDate ?? '')).map(row=>{
-                  const firstDate = row.firstDate ?? statistics.timelineStart
-                  const startPct=Math.max(0,dayDiff(statistics.timelineStart,firstDate)/statistics.timelineSpan*100)
-                  const endPct=Math.min(100,dayDiff(statistics.timelineStart,row.endKey)/statistics.timelineSpan*100)
-                  return <div className={`tag-timeline-row${row.tag.archived?' archived':''}`} key={row.tag.id}>
-                    <div className="tag-timeline-meta"><strong>#{row.tag.name}</strong><span>完成 {row.completed}</span>{row.tag.archived&&<em>已归档</em>}</div>
-                    <div className="tag-timeline-track" title={`${firstDate} → ${row.endKey}`}>
-                      <i className="tag-lifecycle" style={{left:`${startPct}%`,width:`${Math.max(.4,endPct-startPct)}%`}} />
-                      {statistics.tagTimelineAll&&<span className="tag-start-date" style={{left:`${startPct}%`}}>{firstDate}</span>}
-                      {row.days.map(day=>{const x=dayDiff(statistics.timelineStart,day.date)/statistics.timelineSpan*100;return <b key={day.date} title={`${day.date} · ${day.count} 个任务`} style={{left:`${x}%`,background:row.tag.color,opacity:Math.min(1,.42+day.count*.18)}} />})}
-                      {row.tag.archived&&<span className="tag-archive-end" style={{left:`${endPct}%`}} title={`归档于 ${row.endKey}`} />}
-                    </div>
-                  </div>
-                })}
-              </div> : <p className="page-empty compact">还没有带标签的历史任务。</p>}
-            </div>
-            <div className="tag-subsection">
-              <div className="tag-subsection-heading"><h4>标签与心情的联系</h4><small>Event Impact · 具体 Journal 事件对你的影响</small></div>
-              <p className="stats-note tag-matrix-note">颜色深浅表示该标签内部这一档所占比例。</p>
-            <div className="tag-impact-matrix-wrap">
-              <table className="tag-impact-matrix">
-                <thead>
-                  <tr>
-                    <th>标签</th>
-                    {([-2,-1,0,1,2] as JournalImpact[]).map(value=><th key={value} title={`Event Impact ${impactLabel(value)}`}><MoodFace level={(value+3) as MoodLevel} /></th>)}
-                    <th>Journal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {statistics.defaultTagImpactRow.journals>0 && <tr key={DEFAULT_TAG_ID}>
-                    <th scope="row">#默认</th>
-                    {statistics.defaultTagImpactRow.impacts.map(item=>{
-                      const ratio=statistics.defaultTagImpactRow.journals ? item.count/statistics.defaultTagImpactRow.journals : 0
-                      return <td key={item.value} title={`${impactLabel(item.value)} · ${item.count}篇 · ${statsPercent(ratio)}`}>
-                        {item.count>0 ? <span className={`impact-cell impact-cell-${item.value<0?'negative':item.value>0?'positive':'neutral'}`} style={{'--impact-alpha':Math.max(.10,ratio*.78)} as any}>{item.count}</span> : <span className="impact-cell-zero">—</span>}
-                      </td>
-                    })}
-                    <td className="tag-journal-total"><strong>{statistics.defaultTagImpactRow.journals}</strong><small>篇</small></td>
-                  </tr>}
-                  {[...statistics.tagRows].filter(row=>row.journals>0).sort((a,b)=>b.journals-a.journals||a.tag.name.localeCompare(b.tag.name)).map(row=><tr key={row.tag.id}>
-                    <th scope="row">#{row.tag.name}</th>
-                    {row.impacts.map(item=>{
-                      const ratio=row.journals ? item.count/row.journals : 0
-                      return <td key={item.value} title={`${impactLabel(item.value)} · ${item.count}篇 · ${statsPercent(ratio)}`}>
-                        {item.count>0 ? <span className={`impact-cell impact-cell-${item.value<0?'negative':item.value>0?'positive':'neutral'}`} style={{'--impact-alpha':Math.max(.10,ratio*.78)} as any}>{item.count}</span> : <span className="impact-cell-zero">—</span>}
-                      </td>
-                    })}
-                    <td className="tag-journal-total"><strong>{row.journals}</strong><small>篇</small></td>
-                  </tr>)}
-                  {statistics.journals.length>0&&<tr className="tag-impact-total-row">
-                    <th scope="row">总计</th>
-                    {statistics.impactCounts.map(item=><td key={item.value}>
-                      {item.count>0?<span className={`impact-cell impact-cell-${item.value<0?'negative':item.value>0?'positive':'neutral'}`} style={{'--impact-alpha':Math.max(.10,(item.count/statistics.journals.length)*.78)} as any}>{item.count}</span>:<span className="impact-cell-zero">—</span>}
-                    </td>)}
-                    <td className="tag-journal-total"><strong>{statistics.journals.length}</strong><small>篇</small></td>
-                  </tr>}
-                </tbody>
-              </table>
-              {statistics.defaultTagImpactRow.journals===0 && statistics.tagRows.every(row=>row.journals===0) && <p className="page-empty compact">当前时间范围还没有带标签的 Journal。</p>}
-            </div>
-            </div>
-          </section>
-        </section>
-      )}
-
-      {mainView === 'habits' && <HabitsPage formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onDeleteHabit={habitId=>{const now=new Date().toISOString();setHabits(current=>current.map(h=>h.id===habitId?{...h,deletedAt:now,updatedAt:now}:h));setFocusSessions(current=>cascadeTrashHabitFocus(current,habitId,now))}} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} focusSessions={focusSessions} focusNow={timerNow} activeFocusHabitId={activeFocusHabit?.id??null} requestedHabitId={requestedHabitId} focusBusy={Boolean(activeFocusSession)} onStartHabitFocus={startHabitFocus} onStopHabitFocus={stopHabitFocus} onEditFocusSession={session=>beginEditFocusSession(session)} onTrashFocusSession={session=>{if(!window.confirm('确定删除这条习惯专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item))}} />}
-
-      {mainView === 'habits' && focusEditId && focusSessions.some(session=>session.id===focusEditId && session.context?.kind==='habit') && (
-        <div className="habit-modal-backdrop" role="presentation">
-          <section className="habit-modal" role="dialog" aria-modal="true" aria-label="修改习惯专注记录">
-            <header><h3>修改习惯专注记录</h3><button type="button" aria-label="关闭专注编辑" onClick={()=>setFocusEditId(null)}>×</button></header>
-            {focusHistoryEditFields}
-            <footer><button type="button" onClick={()=>setFocusEditId(null)}>取消</button><button className="primary-button" type="button" onClick={saveFocusSessionEdit}>保存修改</button></footer>
-          </section>
-        </div>
-      )}
-      {mainView === 'notes' && <NotesPage notes={notes} notebooks={notebooks} tags={tags} setNotes={setNotes} setNotebooks={setNotebooks} requestedNoteId={requestedNoteId} onRequestedNoteHandled={()=>setRequestedNoteId(null)} onAddImages={addNoteImages} onOpenImageLibrary={noteId=>{setImageLibraryNoteId(noteId);setImageLibraryTarget('note')}} putAttachmentBlob={putAttachmentBlob} getAttachmentBlob={getAttachmentBlob} onPreviewImage={attachment=>void openImagePreview(attachment)} formatUiDate={formatUiDate} focusSecondsByNoteId={noteFocusSecondsById} activeFocusNoteId={activeFocusNote?.id} focusBusy={Boolean(activeFocusSession)} activeFocusElapsed={activeFocusElapsed} onStartNoteFocus={requestNoteFocus} onStopNoteFocus={stopNoteFocus} onOpenFocusHistory={note=>{setFocusEditId(null);setNoteFocusHistoryId(note.id)}} onTrashNote={note=>{const now=new Date().toISOString();setNotes(current=>current.map(row=>row.id===note.id?{...row,trashedAt:now,updatedAt:now}:row));setFocusSessions(current=>cascadeTrashNoteFocus(current,note.id,now))}} />}
-
-      {mainView === 'anniversaries' && (
-        <section className="anniversary-page">
-          <div className="page-heading">
-            <div><span className="eyebrow">ANNIVERSARIES</span><h2>纪念日</h2></div>
-            <button className="page-add-button" type="button" onClick={() => openAnniversaryEditor()}>＋</button>
-          </div>
-          {anniversaryPageRows.length === 0 ? <p className="page-empty">还没有纪念日。</p> : (
-            <div className="anniversary-page-list">
-              {anniversaryPageRows.map(({anniversary, occurrence}) => (
-                <button key={anniversary.id} className="anniversary-page-row" type="button" onClick={() => openAnniversaryEditor(anniversary)}>
-                  <span className="anniversary-page-icon">{anniversaryIcon(anniversary.type)}</span>
-                  <span className="anniversary-page-main"><strong>{anniversary.title}</strong><small>{anniversary.calendar==='lunar' ? `农历 ${anniversary.isLeapMonth?'闰':''}${anniversary.month}月${anniversary.day}日` : `${anniversary.month}月${anniversary.day}日`}</small></span>
-                  <span className="anniversary-page-next">
-                    {anniversary.repeatYearly && occurrence && anniversary.year && occurrence.getFullYear() >= anniversary.year && anniversary.type === 'birthday' && (
-                      <strong>{occurrence.getFullYear() === anniversary.year ? '出生日' : `${occurrence.getFullYear() - anniversary.year}岁生日`}</strong>
-                    )}
-                    {anniversary.repeatYearly && occurrence && anniversary.year && occurrence.getFullYear() >= anniversary.year && anniversary.type === 'anniversary' && (
-                      <strong>{occurrence.getFullYear() === anniversary.year ? '纪念日当天' : `${occurrence.getFullYear() - anniversary.year}周年`}</strong>
-                    )}
-                    <small>{anniversaryDistanceLabel(anniversary, occurrence, today)}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {mainView === 'settings' && (
-        <section className="settings-page">
-          <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
-          <button className="settings-mobile-search-entry" type="button" aria-label="打开全局搜索" onClick={() => { setMobileSearchVisible(true); setSearchOpen(true); window.setTimeout(() => document.querySelector<HTMLInputElement>('.global-search-wrap input')?.focus(), 0) }}><span aria-hidden="true">⌕</span><span>搜索任务、笔记、习惯等内容</span><span aria-hidden="true">›</span></button>
-          <div className="settings-group layout-settings-group" style={settingsGroupStyle('layout')}>
-            <div className="settings-group-title"><h3>排序与布局</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>{setMobileNavToast('');setMobileNavSettingsOpen(true)}}><span><strong>底部导航</strong><small>选择与排列底部入口</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setModulePriorityOpen(true)}><span><strong>模块优先级</strong><small>跨模块分类和同步预览顺序</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setLayoutEditor('day')}><span><strong>今日详情排序</strong><small>任务固定第一，其余区块可调整</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setLayoutEditor('settings')}><span><strong>设置页面排序</strong><small>仅调整一级功能区块</small></span><b>›</b></button>
-          </div>
-          <div className="settings-group mobile-nav-settings-group" style={settingsGroupStyle('navigation')}>
-            <div className="settings-group-title"><h3>导航</h3></div>
-            {missingMobileNav(mobileNav).map(page => <button key={page} className="settings-link-row settings-destination-link" type="button" aria-label={mobileNavLabel(page)} onClick={() => switchMainView(page)}><span className="settings-nav-link-label">{mobileNavIcon(page)}<strong>{mobileNavLabel(page)}</strong></span><b>›</b></button>)}
-          </div>
-
-
-          <div className="settings-group calendar-task-settings" style={settingsGroupStyle('tasks')}>
-            <div className="settings-group-title"><h3>日历任务</h3></div>
-            <label className="setting-row personalization-settings">
-              <span><strong>顶部问候语</strong><small>显示在左上角品牌标记旁。</small></span>
-              <input className="setting-text-input" value={greeting} onChange={e => setGreeting(e.target.value)} onBlur={() => { if (!greeting.trim()) setGreeting('Hello, Zing') }} />
-            </label>
-
-            <div className="setting-row"><span><strong>每周开始日</strong></span><div className="setting-segment"><button className={weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(true)}>周一</button><button className={!weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(false)}>周日</button></div></div>
-            <div className="setting-row"><span><strong>日期格式</strong></span><div className="setting-segment"><button className={dateFormat==='dmy'?'active':''} onClick={()=>setDateFormat('dmy')}>22 Sep 2026</button><button className={dateFormat==='mdy'?'active':''} onClick={()=>setDateFormat('mdy')}>Sep 22, 2026</button></div></div>
-            <div className="setting-row">
-              <span><strong>重复任务显示</strong><small>“逐个显示”会保留已完成/已放弃的历史记录，未完成的重复序列只显示最早一个；完成或放弃后再显示下一个。</small></span>
-              <div className="setting-segment"><button className={showAllRecurringTasks?'active':''} onClick={()=>setShowAllRecurringTasks(true)}>显示全部</button><button className={!showAllRecurringTasks?'active':''} onClick={()=>setShowAllRecurringTasks(false)}>逐个显示</button></div>
-            </div>
-            <div className="setting-row">
-              <span><strong>新任务默认优先级</strong><small>只影响以后新建的任务，不修改已有任务。</small></span>
-              <div className="default-priority-setting">{PRIORITIES.map(priority=><button key={priority.value} type="button" className={`default-priority-button priority-${priority.value}${defaultPriority===priority.value?' active':''}`} onClick={()=>setDefaultPriority(priority.value)}><i />{priority.label}</button>)}</div>
-            </div>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('focus')}>
-            <div className="settings-group-title"><h3>专注</h3></div>
-            <div className="encouragement-style-setting max-focus-setting">
-              <div className="max-focus-setting-line"><strong>最长专注时长（小时）</strong><label className="max-focus-hours-control"><input aria-label="最长专注时长（小时）" type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /></label></div>
-              <small>达到上限后自动结束并保存，避免忘记停止计时。</small>
-            </div>
-            <label className="setting-row focus-wake-lock-setting">
-              <input type="checkbox" checked={keepScreenAwakeDuringFocus} onChange={event=>setKeepScreenAwakeDuringFocus(event.target.checked)} />
-              <span><strong>专注时保持屏幕常亮</strong><small>仅在任务计时或自由专注正在运行时请求常亮；结束计时后立即恢复系统锁屏规则。</small></span>
-            </label>
-          </div>
-
-          <div className="settings-group random-wheel-settings" style={settingsGroupStyle('random')}>
-            <div className="settings-group-title"><h3>随机选择</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setRandomWheelOpen(true)}><span><strong>抽奖大转盘</strong><small>转一下，看看这次的奇遇。结果不是任务，也不是命令。</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setRandomPoolOpen(true)}><span><strong>幸运池</strong><small>{randomPoolGroups.length?`${randomPoolGroups.length} 个分组 · ${randomPoolItems.length} 个项目`:'创建分组、项目、数量/单位、权重与参与状态。'}</small></span><b>›</b></button>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('tags')}>
-            <div className="settings-group-title"><h3>标签</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务、记录与专注共用的标签。</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setArchivedTagsOpen(true)}><span><strong>已归档</strong><small>{archivedTags.length ? `${archivedTags.length} 个已归档标签` : '暂无已归档标签'}</small></span><b>›</b></button>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('weather')}>
-            <div className="settings-group-title"><h3>天气与情绪</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('weather')}><span><strong>管理天气</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('thermal')}><span><strong>管理体感</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={()=>setEmotionManagerOpen(true)}><span><strong>管理具体感受</strong><small>管理 Record 使用的情绪词库与分组。</small></span><b>›</b></button>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('encouragement')}>
-            <div className="settings-group-title"><h3>鼓励语</h3></div>
-            <div className="encouragement-style-setting">
-              <span><strong>样式</strong><small>选择任务完成时鼓励卡的显示样式。</small></span>
-              <div className="setting-segment"><button type="button" className={encouragementStyle==='dark'?'active':''} onClick={()=>setEncouragementStyle('dark')}>Dark</button><button type="button" className={encouragementStyle==='light'?'active':''} onClick={()=>setEncouragementStyle('light')}>Light</button><button type="button" className={encouragementStyle==='random'?'active':''} onClick={()=>setEncouragementStyle('random')}>随机</button></div>
-            </div>
-            <button className="settings-link-row" type="button" onClick={()=>setEncouragementManagerOpen(true)}>
-              <span><strong>管理鼓励语</strong><small>{encouragementMessages.filter(item=>!item.deletedAt).length ? `已有 ${encouragementMessages.filter(item=>!item.deletedAt).length} 句话 · 完成任务时随机出现一句` : '写一些真正对自己有意义的话，完成任务时随机出现一句。'}</small></span><b>›</b>
-            </button>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('wordcloud')}>
-            <div className="settings-group-title"><h3>词云</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setWordIgnoreManagerOpen(true)}>
-              <span><strong>管理屏蔽词</strong><small>{wordCloudIgnored.length ? `已屏蔽 ${wordCloudIgnored.length} 个词` : '添加或恢复不参与词云统计的词。'}</small></span><b>›</b>
-            </button>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('sync')}>
-            <div className="settings-group-title"><h3>云同步</h3></div>
-            <button className="settings-link-row" type="button" onClick={()=>setGithubSyncOpen(true)}>
-              <span><strong>GitHub Sync</strong><small>{lastGithubSyncAt ? `上次同步 ${new Date(lastGithubSyncAt).toLocaleString()}` : 'GitHub 同步结构化数据；B2 同步图片与录音。'}</small></span><b>›</b>
-            </button>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('data')}>
-            <div className="settings-group-title"><h3>数据</h3></div>
-            <div className="storage-card">
-              <div className="storage-total"><span>当前有效数据</span><strong>{formatBytes(storageStats.data + effectiveAttachmentBytes)}</strong></div>
-              <div className="storage-breakdown">
-                <span><i>结构化数据（GitHub）</i><b>{formatBytes(storageStats.data)}</b></span>
-                <button type="button" onClick={()=>setStorageBrowser('image')}><i>图片（{allStoredAttachments.filter(item=>item.type==='image').length} 个 · B2）</i><b>{formatBytes(effectiveImageBytes)}</b></button>
-                <button type="button" onClick={()=>setStorageBrowser('audio')}><i>录音（{allStoredAttachments.filter(item=>item.type==='audio').length} 个 · B2）</i><b>{formatBytes(effectiveAudioBytes)}</b></button>
-              </div>
-              <small>本设备同时在 IndexedDB 保留数据与附件缓存，用于离线使用；这里显示的是当前有效内容，不代表 GitHub 仓库或 B2 桶的实际总占用。</small>
-            </div>
-            <div className="backup-settings-block">
-              <button className="settings-link-row external-import-row" type="button" onClick={openExternalImport}>
-                <span><strong>从外部导入</strong><small>通用 CSV 或已支持来源；导入任务统一标记为“从外部导入”。</small></span><b>›</b>
-              </button>
-              <button className="settings-link-row plain-export-row" type="button" onClick={()=>setPlainExportOpen(true)}>
-                <span><strong>通用导出</strong><small>CSV 可直接用 Numbers、Excel 或其他软件打开，不用于 Zing 完整恢复。</small></span><b>›</b>
-              </button>
-              <button className="settings-link-row backup-export-row" type="button" onClick={()=>void exportFullBackup()} disabled={backupExporting}>
-                <span><strong>备份</strong><small>任务、记录、心情、精力、经期、标签、纪念日、专注记录、设置与所有附件打包为 ZIP。</small></span>
-                <b>{backupExporting?'…':'↓'}</b>
-              </button>
-              <button className="settings-link-row backup-import-row" type="button" onClick={()=>backupInputRef.current?.click()}>
-                <span><strong>恢复数据</strong><small>从 Zing 完整备份 ZIP 恢复；确认后替换当前设备数据。</small></span><b>↑</b>
-              </button>
-              <input ref={backupInputRef} className="backup-file-input" type="file" accept=".zip,application/zip" onChange={event=>{ const file=event.target.files?.[0]; if(file) void inspectBackupFile(file) }} />
-              <button className="settings-link-row orphan-cleanup-row" type="button" onClick={()=>void inspectB2Orphans()} disabled={orphanCleanupBusy}>
-                <span><strong>清理 B2 孤儿附件</strong><small>先查看当前无任何任务或记录引用的 B2 文件，确认内容后再决定是否永久删除。</small></span><b>{orphanCleanupBusy?'…':'›'}</b>
-              </button>
-              <button className="settings-link-row danger-data-row" type="button" onClick={()=>setResetDataConfirm(true)}>
-                <span><strong>清空所有数据</strong><small>清空任务、记录、心情、精力、经期、纪念日、专注记录、自建标签与附件；保留应用设置。删除会在下次 GitHub 同步传播。</small></span><b>×</b>
-              </button>
-              {backupMessage && <div className="backup-status" role="status">{backupMessage}</div>}
-            </div>
-          </div>
-
-          <div className="settings-group" style={settingsGroupStyle('links')}>
-            <div className="settings-group-title"><h3>友情链接</h3></div>
-            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('https://zzzing0-0.github.io/audio-vocabulary-sprint/index.html','_blank','noopener,noreferrer')}>
-              <span><strong>Zing 背单词</strong><small>Audio Vocabulary Sprint · 背单词与学习统计</small></span><b>↗</b>
-            </button>
-            <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('http://www.yunshangxiezuo.com/home','_blank','noopener,noreferrer')}>
-              <span><strong>云上写作</strong><small>小说写作与作品数据</small></span><b>↗</b>
-            </button>
-          </div>
-        </section>
-      )}
-
-      {githubSyncOpen && (
-        <div className="modal-layer github-sync-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭 GitHub Sync" onClick={()=>setGithubSyncOpen(false)} />
-          <section className="task-editor github-sync-modal" role="dialog" aria-modal="true" aria-label="GitHub Sync">
-            <div className="editor-header">
-              <div><span className="eyebrow">SYNC</span><h2>GitHub Sync</h2></div>
-              <button className="close-button" type="button" onClick={()=>setGithubSyncOpen(false)}>×</button>
-            </div>
-            <div className="editor-body github-sync-body">
-              <p className="github-sync-intro">Zing 仍以本地数据为主。同步时会先合并 Private Repository 中的数据，再写回云端。</p>
-              <label><span>GitHub 用户名</span><input value={githubSyncOwner} onChange={e=>setGithubSyncOwner(e.target.value)} autoCapitalize="none" /></label>
-              <label><span>数据仓库</span><input value={githubSyncRepo} onChange={e=>setGithubSyncRepo(e.target.value)} autoCapitalize="none" /></label>
-              <label><span>分支</span><input value={githubSyncBranch} onChange={e=>setGithubSyncBranch(e.target.value)} autoCapitalize="none" /></label>
-              <label><span>Fine-grained Token</span><input type="password" value={githubSyncToken} onChange={e=>{setGithubSyncToken(e.target.value);setGithubTokenSaved(false)}} autoComplete="off" placeholder="github_pat_…" /></label>
-              <div className="github-sync-security">🔐 {githubTokenSaved?'此设备已保存 Token。它只保存在本设备 IndexedDB 的同步凭据区，不进入备份或 GitHub 数据仓库。':'同步成功后会将 Token 保存到本设备，下次打开无需重新输入。'}</div>
-              {githubTokenSaved && <button className="github-sync-credential-remove" type="button" onClick={()=>void clearGitHubDeviceCredential().then(()=>{setGithubSyncToken('');setGithubTokenSaved(false);setGithubSyncMessage('已移除此设备保存的 Token');setGithubSyncMessageKind('idle')})}>移除此设备 Token</button>}
-              {githubSyncMessage && <div className={`github-sync-status ${githubSyncMessageKind}`} role="status" aria-live="polite">{githubSyncMessage}</div>}
-              <button className="github-sync-now" type="button" disabled={githubSyncBusy} onClick={()=>void runGithubSync()}>{githubSyncBusy?'正在同步…':'立即同步'}</button>
-              {lastGithubSyncAt && <small className="github-sync-last">上次成功：{new Date(lastGithubSyncAt).toLocaleString()}</small>}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {githubSyncPreview && (
-        <div className="modal-layer github-sync-summary-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="取消同步" onClick={()=>setGithubSyncPreview(null)} />
-          <section className="task-editor github-sync-summary-modal" role="dialog" aria-modal="true" aria-label="确认同步">
-            <div className="editor-header">
-              <div><span className="eyebrow">SYNC PREVIEW</span><h2>确认同步</h2></div>
-              <button className="close-button" type="button" onClick={()=>setGithubSyncPreview(null)}>×</button>
-            </div>
-            <div className="editor-body">
-              <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
-              {(() => {
-                const changedRows=syncPreviewRowsByModule(githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount),moduleOrder)
-                return changedRows.length ? <>
-                  <div className="sync-summary-grid">
-                    {changedRows.map(row=><div className="sync-summary-row sync-preview-count-row" key={row.entityType}><b>{syncEntityLabel(row.entityType)}</b><span>本机 {row.localCount}</span><span>服务器 {row.remoteCount}</span><span>合并后 {row.mergedCount}</span></div>)}
-                  </div>
-                  <div className="sync-change-summary">
-                    <b>本次变化</b>
-                    {changedRows.map(row=>{
-                      const changes=[row.added?`增加 ${row.added}`:'',row.updated?`更新 ${row.updated}`:'',row.deleted?`删除 ${row.deleted}`:''].filter(Boolean)
-                      return changes.length?<div className="sync-change-row" key={row.entityType}><span>{syncEntityLabel(row.entityType)}</span><span>{changes.join('　')}</span></div>:null
-                    })}
-                  </div>
-                </> : <div className="sync-summary-empty"><b>两端数据一致，无需合并</b></div>
-              })()}
-              <div className="editor-actions sync-preview-actions">
-                <button type="button" className="secondary-button" onClick={()=>setGithubSyncPreview(null)}>取消</button>
-                <button type="button" className="github-sync-now" onClick={()=>{setGithubSyncPreview(null);void executeGithubSync(false)}}>确认同步</button>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {environmentManagerKind && (()=> {
-        const kind=environmentManagerKind
-        const label=kind==='weather'?'天气':'体感'
-        const rows=kind==='weather'?weatherOptions:thermalOptions
-        return <div className="modal-layer environment-manager-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label={`关闭${label}管理`} onClick={()=>setEnvironmentManagerKind(null)} />
-          <section className="task-editor environment-manager" role="dialog" aria-modal="true" aria-label={`管理${label}`}>
-            <div className="editor-header"><div><span className="eyebrow">ENVIRONMENT</span><h2>管理{label}</h2></div><button className="close-button" type="button" onClick={()=>setEnvironmentManagerKind(null)}>×</button></div>
-            <div className="editor-body environment-manager-body">
-              <section className="environment-option-group">
-                <div className="environment-option-heading"><div><strong>{label}</strong><small>每日单选 · 可不记录</small></div><button type="button" className="save-button compact" onClick={()=>addEnvironmentOption(kind)}>＋ 添加</button></div>
-                <div className="environment-option-list">
-                  {sortEnvironmentOptionsBuiltinsFirst(rows.filter(item=>!item.deletedAt)).map((item,index,shown)=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}>
-                    {item.builtin
-                      ? <><span className="environment-option-emoji readonly">{item.emoji||'—'}</span><span className="environment-option-name readonly">{item.name}</span></>
-                      : <>
-                          <button type="button" className="environment-option-emoji editable" title="修改 Emoji" onClick={()=>editEnvironmentEmoji(kind,item)}>{item.emoji||'＋'}</button>
-                          <button type="button" className="environment-option-name editable" title="修改名称" onClick={()=>renameEnvironmentOption(kind,item)}>{item.name}</button>
-                          <div className="environment-option-actions compact">
-                            <button type="button" disabled={index===0} onClick={()=>moveEnvironmentOption(kind,item,-1)} aria-label="上移">↑</button>
-                            <button type="button" disabled={index===shown.length-1} onClick={()=>moveEnvironmentOption(kind,item,1)} aria-label="下移">↓</button>
-                            <button type="button" onClick={()=>toggleArchiveEnvironmentOption(kind,item)}>{item.archived?'恢复':'归档'}</button>
-                            {!environmentOptionUsed(kind,item.id)&&<button type="button" className="danger-text" onClick={()=>deleteEnvironmentOption(kind,item)}>删除</button>}
-                          </div>
-                        </>
-                    }
-                  </div>)}
-                </div>
-              </section>
-            </div>
-          </section>
-        </div>
-      })()}
-
-      {emotionPickerOpen && (
-        <div className="modal-layer emotion-picker-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭具体感受选择" onClick={()=>setEmotionPickerOpen(false)} />
-          <section className="task-editor emotion-picker-modal" role="dialog" aria-modal="true" aria-label="选择具体感受">
-            <div className="editor-header"><div><span className="eyebrow">EMOTIONS</span><h2>选择具体感受</h2></div><button className="close-button" type="button" onClick={()=>setEmotionPickerOpen(false)}>×</button></div>
-            <div className="editor-body emotion-picker-body"><div className="emotion-picker-status"><span>已选择 {journalDraft.emotionIds.length}/3</span><button type="button" onClick={()=>setJournalDraft(current=>({...current,emotionIds:[]}))} disabled={!journalDraft.emotionIds.length}>清空</button></div><div className="emotion-groups">{emotionGroupOrder(journalDraft.impact).map(group=>{const rows=sortEmotionOptionsBuiltinsFirst(emotionOptions.filter(item=>item.group===group&&!item.deletedAt&&(!item.archived||journalDraft.emotionIds.includes(item.id))));return rows.length?<section className={`emotion-group emotion-${group}`} key={group}><small>{EMOTION_GROUP_LABEL[group]}</small><div className="emotion-picker">{rows.map(item=><button key={item.id} type="button" className={`emotion-choice${journalDraft.emotionIds.includes(item.id)?' active':''}`} disabled={!journalDraft.emotionIds.includes(item.id)&&journalDraft.emotionIds.length>=3} onClick={()=>setJournalDraft(current=>({...current,emotionIds:toggleEmotionId(current.emotionIds,item.id)}))}>{item.name}</button>)}</div></section>:null})}</div></div>
-            <div className="editor-footer emotion-picker-footer"><button type="button" className="save-button" onClick={()=>setEmotionPickerOpen(false)}>完成</button></div>
-          </section>
-        </div>
-      )}
-
-      {emotionManagerOpen && (
-        <div className="modal-layer environment-manager-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭具体感受管理" onClick={()=>setEmotionManagerOpen(false)} />
-          <section className="task-editor environment-manager emotion-manager" role="dialog" aria-modal="true" aria-label="管理具体感受">
-            <div className="editor-header"><div><span className="eyebrow">EMOTIONS</span><h2>具体感受</h2></div><button className="close-button" type="button" onClick={()=>setEmotionManagerOpen(false)}>×</button></div>
-            <div className="editor-body environment-manager-body">
-              <div className="environment-option-heading"><div><strong>Emotion Vocabulary</strong><small>按分组管理 · Record 最多选择 3 个</small></div></div>
-              {(['positive','neutral','negative'] as EmotionGroup[]).map(group=>{const rows=sortEmotionOptionsBuiltinsFirst(emotionOptions.filter(item=>item.group===group&&!item.deletedAt));const expanded=emotionManagerExpanded===group;return <section className={`emotion-manager-group emotion-${group}${expanded?' expanded':''}`} key={group}><div className="emotion-manager-group-heading"><button type="button" className="emotion-manager-toggle" onClick={()=>setEmotionManagerExpanded(current=>current===group?null:group)}><span className="emotion-manager-dot"/><strong>{EMOTION_GROUP_LABEL[group]}</strong><small>{rows.length}</small><b>{expanded?'⌃':'⌄'}</b></button><button type="button" className="emotion-manager-add" aria-label={`添加${EMOTION_GROUP_LABEL[group]}感受`} onClick={()=>addEmotionOption(group)}>＋</button></div>{expanded&&<div className="environment-option-list">{rows.map(item=><div className={`environment-option-row${item.archived?' archived':''}${item.builtin?' builtin':''}`} key={item.id}><span className="emotion-manager-dot"/><button type="button" className={`environment-option-name ${item.builtin?'readonly':'editable'}`} onClick={()=>renameEmotionOption(item)}>{item.name}</button><div className="environment-option-actions compact">{!item.builtin&&<select aria-label={`${item.name}分组`} value={item.group} onChange={event=>changeEmotionGroup(item,event.target.value as EmotionGroup)}><option value="positive">正向</option><option value="neutral">中性</option><option value="negative">负向</option></select>}<button type="button" onClick={()=>toggleArchiveEmotionOption(item)}>{item.archived?'恢复':'归档'}</button>{!item.builtin&&!journalEntries.some(entry=>(entry.emotionIds??[]).includes(item.id))&&<button type="button" className="danger-text" onClick={()=>removeEmotionOption(item)}>删除</button>}</div></div>)}</div>}</section>})}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {encouragementManagerOpen && (
-        <div className="modal-layer encouragement-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭鼓励语管理" onClick={()=>{setEncouragementManagerOpen(false);setEncouragementEditingId(null);setEncouragementDraft('')}} />
-          <section className="task-editor encouragement-modal" role="dialog" aria-modal="true" aria-label="管理鼓励语">
-            <div className="editor-header">
-              <div><span className="eyebrow">ENCOURAGEMENT</span><h2>鼓励语</h2></div>
-              <button className="close-button" type="button" onClick={()=>{setEncouragementManagerOpen(false);setEncouragementEditingId(null);setEncouragementDraft('')}}>×</button>
-            </div>
-            <div className="editor-body">
-              <p className="encouragement-intro">只放你自己真正喜欢的话。完成任务时会随机出现一句；两句以上时不会连续重复。</p>
-              <div className="encouragement-add">
-                <textarea value={encouragementDraft} onChange={e=>setEncouragementDraft(e.target.value)} placeholder="写一句鼓励自己的话" rows={3} />
-                <button type="button" disabled={!encouragementDraft.trim()} onClick={()=>{const text=encouragementDraft.trim();if(!text)return;const now=new Date().toISOString();if(encouragementEditingId){setEncouragementMessages(rows=>rows.map(item=>item.id===encouragementEditingId?{...item,text,updatedAt:now,deletedAt:undefined}:item))}else{setEncouragementMessages(rows=>[...rows,{id:crypto.randomUUID(),text,updatedAt:now}])}setEncouragementDraft('');setEncouragementEditingId(null)}}>{encouragementEditingId?'保存':'添加'}</button>
-              </div>
-              <div className="encouragement-list">
-                {encouragementMessages.filter(item=>!item.deletedAt).length ? encouragementMessages.filter(item=>!item.deletedAt).map(item=><div className="encouragement-item" key={item.id}><p>{item.text}</p><div><button type="button" onClick={()=>{setEncouragementEditingId(item.id);setEncouragementDraft(item.text)}}>编辑</button><button type="button" className="danger-text" onClick={()=>{const now=new Date().toISOString();setEncouragementMessages(rows=>rows.map(row=>row.id===item.id?{...row,deletedAt:now,updatedAt:now}:row));if(encouragementEditingId===item.id){setEncouragementEditingId(null);setEncouragementDraft('')}}}>删除</button></div></div>) : <p className="page-empty compact">还没有鼓励语。</p>}
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {wordIgnoreManagerOpen && (
-        <div className="modal-layer word-ignore-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭屏蔽词管理" onClick={()=>setWordIgnoreManagerOpen(false)} />
-          <section className="task-editor word-ignore-modal" role="dialog" aria-modal="true" aria-label="管理屏蔽词">
-            <div className="editor-header">
-              <div><span className="eyebrow">WORD CLOUD</span><h2>管理屏蔽词</h2></div>
-              <button className="close-button" type="button" onClick={()=>setWordIgnoreManagerOpen(false)}>×</button>
-            </div>
-            <div className="editor-body">
-              <p className="word-ignore-intro">这些词不会进入 Journal 词云。词云中点击词语也可以直接加入这里。</p>
-              <div className="word-ignore-add">
-                <input value={wordIgnoreDraft} onChange={e=>setWordIgnoreDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();const word=wordIgnoreDraft.trim().toLowerCase();if(word){setWordCloudIgnored(list=>list.includes(word)?list:[...list,word]);setWordIgnoreDraft('')}}}} placeholder="添加屏蔽词" />
-                <button type="button" onClick={()=>{const word=wordIgnoreDraft.trim().toLowerCase();if(word){setWordCloudIgnored(list=>list.includes(word)?list:[...list,word]);setWordIgnoreDraft('')}}}>添加</button>
-              </div>
-              <div className="word-ignore-panel-list">
-                {wordCloudIgnored.length ? wordCloudIgnored.map(word=><button type="button" key={word} title="点击恢复到词云" onClick={()=>setWordCloudIgnored(list=>list.filter(item=>item!==word))}><span>{word}</span><b>×</b></button>) : <p className="page-empty compact">还没有手动屏蔽的词。</p>}
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {plainExportOpen && (
-        <div className="modal-layer plain-export-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭通用导出" onClick={()=>setPlainExportOpen(false)} />
-          <section className="task-editor plain-export-modal" role="dialog" aria-modal="true" aria-label="通用导出">
-            <div className="editor-header">
-              <div><span className="eyebrow">EXPORT</span><h2>通用导出</h2></div>
-              <button className="close-button" type="button" onClick={()=>setPlainExportOpen(false)}>×</button>
-            </div>
-            <div className="editor-body">
-              <p className="external-import-intro">选择要单独导出的重要数据。CSV 便于用 Numbers、Excel 等查看；完整保存与恢复仍请使用“备份”。</p>
-              <div className="plain-export-actions plain-export-modal-actions">
-                <button type="button" onClick={exportTasksCsv}><span>任务 CSV</span><b>↓</b></button>
-                <button type="button" onClick={exportJournalsCsv}><span>记录 CSV</span><b>↓</b></button>
-                <button type="button" onClick={exportFocusCsv}><span>专注 CSV</span><b>↓</b></button>
-                <button type="button" onClick={exportAnniversariesCsv}><span>纪念日 CSV</span><b>↓</b></button>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
+      <BackupDialogs {...{
+        backupPreview, backupRestoring, exportAnniversariesCsv, exportFocusCsv, exportJournalsCsv,
+        exportTasksCsv, plainExportOpen, resetAllUserData, resetDataConfirm, resettingData,
+        restoreBackup, setBackupPreview, setPlainExportOpen, setResetDataConfirm
+      }} />
 
       <ExternalImportModal controller={externalImport} />
 
-      {resetDataConfirm && (
-        <div className="backup-restore-backdrop" role="presentation">
-          <section className="backup-restore-modal reset-data-modal" role="dialog" aria-modal="true" aria-label="确认清空所有数据">
-            <span className="eyebrow">RESET DATA</span><h2>清空所有数据？</h2>
-            <p className="backup-restore-warning">任务、记录、笔记、Daily Mood、精力、经期、纪念日、专注记录、自建标签和附件都会被永久清空；应用设置与系统默认标签保留。删除会在下次 GitHub 同步传播到其他设备。此操作不可撤销，建议先导出完整备份。</p>
-            <div className="backup-restore-actions">
-              <button type="button" onClick={()=>setResetDataConfirm(false)} disabled={resettingData}>取消</button>
-              <button className="danger-confirm" type="button" onClick={()=>void resetAllUserData()} disabled={resettingData}>{resettingData?'正在清空…':'确认清空'}</button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {backupPreview && (
-        <div className="backup-restore-backdrop" role="presentation">
-          <section className="backup-restore-modal" role="dialog" aria-modal="true" aria-label="确认恢复备份">
-            <h2>Zing Backup</h2>
-            <p className="backup-restore-date">{new Date(backupPreview.manifest.exportedAt).toLocaleString()}</p>
-            <div className="backup-summary-grid">
-              <span>任务 <b>{backupPreview.tasks.length}</b></span><span>记录 <b>{backupPreview.journals.length}</b></span>
-              <span>心情 <b>{backupPreview.moods.length}</b></span><span>精力 <b>{backupPreview.energies.length}</b></span><span>天气/体感 <b>{backupPreview.environments.length}</b></span>
-              <span>经期 <b>{backupPreview.periods.length}</b></span><span>标签 <b>{backupPreview.tags.length}</b></span>
-              <span>纪念日 <b>{backupPreview.anniversaries.length}</b></span><span>专注 <b>{backupPreview.focusSessions.length}</b></span>
-              <span>附件 <b>{backupPreview.attachments.length}</b></span>
-            </div>
-            <p className="backup-restore-warning">恢复后将替换当前设备中的 Zing Calendar 数据。请确认当前数据已经另行备份。</p>
-            <div className="backup-restore-actions">
-              <button type="button" onClick={()=>setBackupPreview(null)} disabled={backupRestoring}>取消</button>
-              <button className="primary" type="button" onClick={()=>void restoreBackup()} disabled={backupRestoring}>{backupRestoring?'正在恢复…':'恢复此备份'}</button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {randomWheelOpen && (
-        <div className="random-feature-overlay">
-          <RandomWheelPage groups={randomPoolGroups} items={randomPoolItems} mixedPoolItemIds={mixedPoolItemIds} onClose={()=>setRandomWheelOpen(false)} />
-        </div>
-      )}
-
-      {randomPoolOpen && (
-        <div className="random-feature-overlay">
-          <RandomPoolManager groups={randomPoolGroups} items={randomPoolItems} onGroups={setRandomPoolGroups} onItems={setRandomPoolItems} mixedPoolItemIds={mixedPoolItemIds} onMixedPoolItemIds={setMixedPoolItemIds} onClose={()=>setRandomPoolOpen(false)} />
-        </div>
-      )}
+      <RandomWorkspace {...{
+        mixedPoolItemIds, randomPoolGroups, randomPoolItems, randomPoolOpen, randomWheelOpen,
+        setMixedPoolItemIds, setRandomPoolGroups, setRandomPoolItems, setRandomPoolOpen,
+        setRandomWheelOpen
+      }} />
 
       {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !noteFocusHistoryId && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && (
       <>
@@ -3850,66 +2370,19 @@ function App() {
       </>
       )}
 
-      {layoutEditor && mainView === 'settings' && <LayoutOrderEditor kind={layoutEditor} order={layoutEditor==='day'?daySectionOrder:settingsGroupOrder} onChange={items=>{if(layoutEditor==='day')setDaySectionOrder(normalizeDaySectionOrder(items));else setSettingsGroupOrder(normalizeSettingsGroupOrder(items))}} onClose={()=>setLayoutEditor(null)} />}
-      {modulePriorityOpen && mainView === 'settings' && <div className="modal-layer" role="presentation">
-        <button className="modal-backdrop" type="button" aria-label="关闭模块优先级" onClick={() => setModulePriorityOpen(false)} />
-        <section className="task-editor module-priority-dialog" role="dialog" aria-modal="true" aria-label="模块优先级">
-          <div className="editor-header"><div><span className="eyebrow">MODULE PRIORITY</span><h2>模块优先级</h2></div><button className="close-button" type="button" onClick={() => setModulePriorityOpen(false)}>×</button></div>
-          <div className="editor-body"><p className="module-priority-hint">拖动调整顺序，或使用上下按钮。只改变跨模块分类入口的顺序，不影响内容排序和导航栏。</p>
-            <div className="module-priority-list">{moduleOrder.map((key,index) => <div key={key} className="module-priority-item" draggable onDragStart={event => {moduleDragRef.current=key;event.dataTransfer.effectAllowed='move'}} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();if(moduleDragRef.current)setModuleOrder(current=>moveModule(current,moduleDragRef.current!,key));moduleDragRef.current=null}} onDragEnd={()=>{moduleDragRef.current=null}}>
-              <span className="module-priority-handle" aria-hidden="true">☰</span><strong>{({task:'任务',note:'笔记',habit:'习惯',journal:'记录',anniversary:'纪念日',focus:'专注'} as const)[key]}</strong>
-              <button type="button" aria-label={`上移${key}`} disabled={index===0} onClick={()=>setModuleOrder(current=>moveModule(current,key,current[index-1]))}>↑</button><button type="button" aria-label={`下移${key}`} disabled={index===moduleOrder.length-1} onClick={()=>setModuleOrder(current=>moveModule(current,key,current[index+1],true))}>↓</button>
-            </div>)}</div>
-            <button type="button" className="ghost-button" onClick={()=>setModuleOrder([...DEFAULT_MODULE_ORDER])}>恢复默认</button>
-          </div>
-        </section>
-      </div>}
-      {mobileNavSettingsOpen && mainView === 'settings' && <MobileNavigationSettings
-        config={mobileNav} onChange={updateMobileNav} onClose={() => setMobileNavSettingsOpen(false)} status={mobileNavToast}
-        onSaveDefault={() => { const saved = normalizeMobileNav(mobileNav); setSyncedDefaultMobileNav(saved); saveDefaultNavigation(saved); setMobileNavToast('✓ 已设为默认导航，下次云同步时保存') }}
-        onRestoreDefault={() => { updateMobileNav(syncedDefaultMobileNav ?? BUILTIN_MOBILE_NAV); setMobileNavToast('✓ 已恢复默认导航') }}
-      />}
+      <NavigationSettingsDialogs {...{
+        daySectionOrder, layoutEditor, mainView, mobileNav, mobileNavSettingsOpen, mobileNavToast,
+        moduleDragRef, moduleOrder, modulePriorityOpen, setDaySectionOrder, setLayoutEditor,
+        setMobileNavSettingsOpen, setMobileNavToast, setModuleOrder, setModulePriorityOpen,
+        setSettingsGroupOrder, setSyncedDefaultMobileNav, settingsGroupOrder, syncedDefaultMobileNav,
+        updateMobileNav
+      }} />
 
-      {orphanCleanupOpen && (
-        <div className="modal-layer storage-browser-layer orphan-cleanup-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭孤儿附件检查" onClick={()=>setOrphanCleanupOpen(false)} />
-          <section className="storage-browser orphan-cleanup-modal" role="dialog" aria-modal="true" aria-label="孤儿附件检查">
-            <div className="storage-browser-header">
-              <div><span className="eyebrow">B2 CLEANUP</span><h2>孤儿附件</h2><small>{orphanAttachments.length} 个文件 · 删除前可以逐个查看</small></div>
-              <button className="close-button" type="button" onClick={()=>setOrphanCleanupOpen(false)}>×</button>
-            </div>
-            {orphanAttachments.length===0 ? <p className="page-empty">没有发现孤儿附件，B2 很干净。</p> : <>
-              <p className="orphan-cleanup-note">这些文件当前没有任何任务、记录或回收站内容引用。图片可直接查看，录音可直接试听；无法识别的文件仍会显示 B2 storage key。</p>
-              <div className="orphan-preview-list">{orphanAttachments.map(item=>{const image=item.contentType.startsWith('image/'),audio=item.contentType.startsWith('audio/');return <article className="orphan-preview-item" key={item.key}>
-                <div className="orphan-preview-media">{image&&item.url?<img src={item.url} alt="孤儿附件"/>:audio&&item.url?<audio controls src={item.url}/>:<span>{item.url?'无法预览此文件':'预览链接获取失败'}</span>}</div>
-                <div className="orphan-preview-meta"><code>{item.key}</code><small>{item.contentType||'未知类型'}{item.size?` · ${formatBytes(item.size)}`:''}</small></div>
-              </article>})}</div>
-              <div className="orphan-cleanup-actions"><button type="button" onClick={()=>setOrphanCleanupOpen(false)} disabled={orphanCleanupBusy}>暂不清理</button><button className="danger" type="button" onClick={()=>void cleanupB2Orphans()} disabled={orphanCleanupBusy}>{orphanCleanupBusy?'正在清理…':`永久删除 ${orphanAttachments.length} 个`}</button></div>
-            </>}
-          </section>
-        </div>
-      )}
-
-      {storageBrowser && (
-        <div className="modal-layer storage-browser-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭附件浏览" onClick={()=>setStorageBrowser(null)} />
-          <section className="storage-browser">
-            <div className="storage-browser-header">
-              <div><span className="eyebrow">STORAGE</span><h2>{storageBrowser==='image'?'所有图片':'所有录音'}</h2><small>{browsedAttachments.length} 个附件 · {formatBytes(storageBrowser==='image'?storageStats.images:storageStats.audio)}</small></div>
-              <button className="close-button" type="button" onClick={()=>setStorageBrowser(null)}>×</button>
-            </div>
-            {browsedAttachments.length===0 ? <p className="page-empty">还没有{storageBrowser==='image'?'图片':'录音'}。</p> : <>
-              {storageBrowser==='image' ? <div className="storage-image-grid">{browsedActiveAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={item=>void openImagePreview(item,browsedAttachments)} />)}</div>
-                : <div className="storage-audio-list">{browsedActiveAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>}
-              {browsedTrashedAttachments.length>0 && <section className="storage-trash-section"><div className="storage-trash-divider"><span>回收站 · {browsedTrashedAttachments.length}</span><small>所有引用它的内容都已进入回收站</small></div>
-                {storageBrowser==='image' ? <div className="storage-image-grid">{browsedTrashedAttachments.map(attachment => <StorageImage key={attachment.storageKey} attachment={attachment} onPreview={item=>void openImagePreview(item,browsedAttachments)} />)}</div>
-                  : <div className="storage-audio-list">{browsedTrashedAttachments.map(attachment => <div className="storage-audio-row" key={attachment.storageKey}><span><strong>{attachment.filename}</strong><small>{formatBytes(attachment.size)}</small></span><AudioAttachment attachment={attachment}/></div>)}</div>}
-              </section>}
-            </>}
-
-          </section>
-        </div>
-      )}
+      <StorageDialogs {...{
+        browsedActiveAttachments, browsedAttachments, browsedTrashedAttachments, cleanupB2Orphans,
+        formatBytes, openImagePreview, orphanAttachments, orphanCleanupBusy, orphanCleanupOpen,
+        setOrphanCleanupOpen, setStorageBrowser, storageBrowser, storageStats
+      }} />
 
       {autoSyncToast && <div className="auto-sync-toast" role="status" aria-live="polite">{autoSyncToast}</div>}
       {encouragementReward && <div className={`encouragement-reward ${encouragementRewardStyle}`} role="status" aria-live="polite"><span>✓ 任务完成</span><strong>{encouragementReward}</strong></div>}
@@ -3923,952 +2396,99 @@ function App() {
         <span className="status-version">Zing Calendar · v{APP_VERSION}</span>
       </footer>
 
-      {selectedDate && dayDetailOpen && (
-        <>
-          <button className="drawer-backdrop" type="button" aria-label="关闭日期详情" onClick={closeDayDetail} />
-          <aside className={`day-drawer${dayDetailClosing?' closing':''}`} aria-label={`${formatUiDate(selectedDate)} 日期详情`}>
-            <div className="drawer-header">
-              <div className="drawer-header-main">
-                <div className="drawer-header-top">
-                  <div>
-                    <span className="eyebrow">DAY DETAIL</span>
-                    <div className="drawer-date-line">
-                      <h2>{formatUiDate(selectedDate)}</h2>
-                      <button className="date-action-button" type="button" onClick={() => openAnniversaryEditor()} aria-label="添加纪念日" title="添加纪念日">＋</button>
-                    </div>
-                  </div>
-                  <button className="close-button" type="button" onClick={closeDayDetail} aria-label="关闭">×</button>
-                </div>
-                <div className="drawer-date-meta-row">
-                <span className="drawer-lunar-date">
-                  农历 {lunarFullLabel(selectedDate)}
-                  {(()=>{
-                    const annotation=calendarAnnotation(selectedDate,weekStartsMonday)
-                    return annotation && annotation.kind!=='week'
-                      ? <><span className="drawer-date-separator"> · </span><span className={`drawer-calendar-annotation annotation-${annotation.kind}`}>{annotation.label}</span></>
-                      : null
-                  })()}
-                </span>
-                {!selectedIsFuture && <div className="journal-environment-strip drawer-environment-strip">
-                  <button type="button" className={`journal-location-choice${selectedEnvironment?.locationCity?' selected':''}`} onClick={handleEnvironmentLocation}>
-                    {selectedEnvironment?.locationCity ? `📍 ${selectedEnvironment.locationCity}` : '地点'}
-                  </button>
-                  <span className="journal-environment-separator" aria-hidden="true">｜</span>
-                  <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.weatherOptionId?' selected':''}`}>
-                    <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.weatherOptionId ? (()=>{const item=weatherOptions.find(row=>row.id===selectedEnvironment.weatherOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'天气'})() : '天气'}</span>
-                    <select aria-label="天气" value={selectedEnvironment?.weatherOptionId??''} onChange={event=>setEnvironmentChoice('weather',event.target.value)}>
-                      <option value="">天气</option>
-                      {sortEnvironmentOptionsBuiltinsFirst(weatherOptions.filter(item=>!item.deletedAt)).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.weatherOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
-                    </select>
-                  </label>
-                  <span className="journal-environment-separator" aria-hidden="true">｜</span>
-                  <label className={`journal-environment-choice journal-environment-text-select${selectedEnvironment?.thermalOptionId?' selected':''}`}>
-                    <span className="journal-environment-visible" aria-hidden="true">{selectedEnvironment?.thermalOptionId ? (()=>{const item=thermalOptions.find(row=>row.id===selectedEnvironment.thermalOptionId);return item?`${item.emoji?`${item.emoji} `:''}${item.name}`:'体感'})() : '体感'}</span>
-                    <select aria-label="体感" value={selectedEnvironment?.thermalOptionId??''} onChange={event=>setEnvironmentChoice('thermal',event.target.value)}>
-                      <option value="">体感</option>
-                      {sortEnvironmentOptionsBuiltinsFirst(thermalOptions.filter(item=>!item.deletedAt)).map(item=><option key={item.id} value={item.id} disabled={Boolean(item.archived)&&selectedEnvironment?.thermalOptionId!==item.id}>{item.emoji?`${item.emoji} `:''}{item.name}{item.archived?'（已归档）':''}</option>)}
-                    </select>
-                  </label>
-                </div>}
-              </div>
-              </div>
-            </div>
+      <DayDetail {...{
+        cancelDayDetailCloseTimer, closeDayDetail, dayDetailClosing, dayDetailOpen, daySectionStyle,
+        deletePeriod, displayWeekdays, endPeriod, endedTasksViewToggle, energyByDate, formatUiDate,
+        habitCheckIns, habits, handleEnvironmentLocation, journalDates, journalThreadDates,
+        menstrualPrediction, moodDays, moodMonth, moodsByDate, openAnniversaryEditor, openJournalEditor,
+        openTaskDetail, openTaskEditor, periodForDate, quickHabitCheckIn, selectedAnniversaries,
+        selectedDate, selectedEnergy, selectedEnvironment, selectedFocusSeconds, selectedImpactTotal,
+        selectedIsFuture, selectedJournalEntries, selectedMood, selectedTasks, setDayDetailClosing,
+        setDayDetailOpen, setEnergy, setEnvironmentChoice, setFocusHistoryDate, setMood, setMoodMonth,
+        setSelectedDate, setStatusCalendarMode, setTaskStatus, setViewingJournalId, setVisibleMonth,
+        startPeriod, statusCalendarMode, tags, thermalOptions, today, undoHabitCheckIn,
+        updatePeriodDayLog, weatherOptions, weekStartsMonday
+      }} />
 
-            {selectedAnniversaries.length > 0 && (
-              <section className="detail-section anniversary-section" style={{order:2}}>
-                <div className="section-heading"><h3>纪念日</h3><span>{selectedAnniversaries.length}</span></div>
-                <div className="anniversary-list">{selectedAnniversaries.map(({anniversary, occurrence}) => (
-                  <button key={anniversary.id} type="button" className="anniversary-row" onClick={() => openAnniversaryEditor(anniversary)}>
-                    <span className="anniversary-row-icon">{anniversaryIcon(anniversary.type)}</span>
-                    <span className="anniversary-row-title">{anniversary.title}</span>
-                    <span className="anniversary-row-meta">{anniversaryMeta(anniversary, occurrence)}</span>
-                  </button>
-                ))}</div>
-              </section>
-            )}
+      <FocusDialogs {...{
+        activeFocusElapsed, activeFocusHabit, activeFocusNote, activeFocusRemaining, activeFocusSession,
+        activeTasks, activeTimerTask, beginEditFocusSession, closeDayDetailImmediately, focusEditId,
+        focusEditTagIds, focusHistoryDate, focusHistoryEditFields, focusHistoryRecords, focusMinutes,
+        focusMode, focusOpen, focusSessions, focusTagIds, focusTagSelectOpen, formatClock, formatUiDate,
+        noteFocusHistoryId, noteFocusHistoryNote, noteFocusHistorySeconds, noteFocusHistorySessions,
+        notes, pendingNoteFocusId, saveFocusSessionEdit, setAutoSyncToast, setFocusEditError,
+        setFocusEditId, setFocusEditTagIds, setFocusHistoryDate, setFocusMinutes, setFocusMode,
+        setFocusOpen, setFocusSessions, setFocusTagIds, setFocusTagSelectOpen, setMainView,
+        setNoteFocusHistoryId, setPendingNoteFocusId, setRequestedNoteId, setViewingTask,
+        startDirectFocus, startNoteFocus, stopDirectFocus, stopHabitFocus, stopNoteFocus, stopTaskTimer,
+        tags, timerNow
+      }} />
 
-            <section className="detail-section task-section" style={{order:1}}>
-              <div className="section-heading task-section-heading">
-                <div className="task-heading-title"><h3>任务</h3>{selectedTasks.length > 0 && <span>{selectedTasks.length}</span>}</div>
-                {endedTasksViewToggle('detail-ended-toggle')}
-              </div>
+      <TrashDialog {...{
+        clearTrash, moduleOrder, notebooks, permanentlyDeleteTrashItem, restoreTrashItem, setTrashFilter,
+        setTrashOpen, showEndedTasks, tags, trashFilter, trashItems, trashOpen, trashTaskGroups,
+        trashTaskStatus, visibleTrashItems
+      }} />
 
-              {selectedTasks.length === 0 ? (
-                <p className="empty-state">这一天还没有任务。</p>
-              ) : (
-                <div className="task-list">
-                  {selectedTasks.map(task => (
-                    <article
-                      key={task.id}
-                      className={`task-item priority-${task.priority} status-${task.status} ${deadlineStage(task)}${isTaskOverdue(task) ? ' task-overdue' : ''}`}
-                      onClick={() => openTaskDetail(task)}
-                    >
-                      <span className="task-priority-bar" />
-                      <button
-                        type="button"
-                        className="task-checkbox"
-                        aria-label={task.status === 'completed' ? `取消完成 ${task.title}` : task.status === 'abandoned' ? `恢复 ${task.title}` : `完成 ${task.title}`}
-                        onClick={event => {
-                          event.stopPropagation()
-                          setTaskStatus(task, task.status === 'todo' ? 'completed' : 'todo')
-                        }}
-                      >
-                        {task.status === 'completed' ? '✓' : task.status === 'abandoned' ? '×' : ''}
-                      </button>
-                      <strong className="task-title">{task.title}</strong>
-                      {isMultiDayTask(task) && <span className="task-range">{formatTaskRange(task)}</span>}
-                      {!task.allDay && task.time && <span className="task-card-time">{task.time}</span>}
-                    </article>
-                  ))}
-                </div>
-              )}
+      <InboxDialogs {...{
+        inboxCompletedTasks, inboxOpen, inboxSortDragRef, inboxSortDropTarget, inboxSortOrder,
+        inboxTaskMeta, inboxTasks, inboxTodoGroups, openInboxTaskEditor, openTaskAtItsDay,
+        openTaskDetail, overdueInboxOpen, overdueTasks, postponeTask, setInboxOpen,
+        setInboxSortDropTarget, setInboxSortOrder, setOverdueInboxOpen, setTaskStatus, showEndedTasks,
+        today
+      }} />
 
-              <button className="add-button" type="button" onClick={openTaskEditor}>＋ 添加任务</button>
-              {selectedDate && toDateKey(selectedDate) <= toDateKey(today) && <button className="day-focus-time day-focus-button" type="button" onClick={()=>setFocusHistoryDate(toDateKey(selectedDate))}>{sameDay(selectedDate,today) ? '今日专注' : '当日专注'} · {formatFocusDuration(selectedFocusSeconds)}<span>›</span></button>}
-            </section>
+      <MonthPicker {...{
+        chooseMonth, isMobileCalendar, mobileActiveMonth, monthPickerTarget, monthPickerYear, moodMonth,
+        setMonthPickerTarget, setMonthPickerYear, today, visibleMonth
+      }} />
 
-            {!selectedIsFuture && <>
-            <section className="detail-section mood-section" style={daySectionStyle("mood")}>
-              <div className="section-heading"><h3>今日心情</h3></div>
-              <div className="mood-picker" aria-label="今日心情">
-                {MOODS.slice().reverse().map(mood => (
-                  <button key={mood.value} type="button" className={`mood-choice mood-${mood.value}${selectedMood?.level === mood.value ? ' active' : ''}`} onClick={() => setMood(mood.value)}>
-                    <MoodFace level={mood.value} />
-                    <span>{mood.label}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
+      <AnniversaryEditor {...{
+        anniversaryDraft, anniversaryEditorOpen, deleteAnniversary, editingAnniversaryId,
+        saveAnniversary, setAnniversaryDraft, setAnniversaryEditorOpen, today
+      }} />
 
-            <section className="detail-section energy-section" style={daySectionStyle("energy")}>
-              <div className="section-heading"><h3>身体能量</h3></div>
-              <div className="energy-picker" aria-label="今日身体能量">
-                {ENERGIES.slice().reverse().map(item => (
-                  <button key={item.value} type="button" className={`energy-choice energy-${item.value}${selectedEnergy?.level===item.value?' active':''}`} onClick={()=>setEnergy(item.value)}>
-                    <EnergyBattery level={item.value}/><span>{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
+      <TagDialogs {...{
+        activeManagedTags, addTag, archivedTags, archivedTagsOpen, canSetTagScope, closeTagEditor,
+        deleteTag, focusSessions, journalEntries, moduleOrder, newTagColor, newTagName, newTagScope,
+        saveTagEdit, selectedTagManageId, setArchivedTagsOpen, setNewTagColor, setNewTagName,
+        setNewTagScope, setSelectedTagManageId, setTagArchived, setTagEditDraft, setTagManagerOpen,
+        tagEditDraft, tagManagerOpen, tagScopeBlockedReason, tagUsageAreas, tasks
+      }} />
 
+      <TaskDetails {...{
+        activeFocusSession, activeTimerTask, beginEditFocusSession, deleteTask, editTask, focusEditId,
+        focusEditTagIds, focusHistoryEditFields, formatRunningTimer, formatUiDate, openImagePreview,
+        saveFocusSessionEdit, setAutoSyncToast, setEditingOccurrenceDate, setEditingTaskId,
+        setFocusEditError, setFocusEditId, setFocusEditTagIds, setFocusSessions, setSeriesAction,
+        setTaskFocusHistoryOpen, setTaskStatus, setViewingTask, startTaskTimer, stopTaskTimer, tags,
+        taskFocusHistoryOpen, taskFocusHistorySeconds, taskFocusHistorySessions, tasks, timerNow,
+        viewingTask
+      }} />
 
+      <JournalDialogs {...{
+        addJournalImages, closeJournalEditor, deleteJournal, editJournal, editingJournalId,
+        emotionOptions, formatUiDate, journalDraft, journalEditorOpen, journalMessageDraft,
+        openImagePreview, recording, recordingSeconds, removeJournalAttachment, saveJournal,
+        sendJournalMessage, setEmotionPickerOpen, setImageLibraryTarget, setJournalDraft,
+        setJournalMessageDraft, setViewingJournalId, startJournalRecording, stopJournalRecording, tags,
+        toggleDraftTag, viewingJournal
+      }} />
 
-            
+      <TaskEditor {...{
+        addTaskImages, closeEditor, confirmSingleTask, convertOccurrenceToSingleTask, deleteTask, draft,
+        editingOccurrenceDate, editingTaskId, editorOpen, handleTaskNotesKeyDown,
+        insertTaskNoteChecklist, openImagePreview, removeTaskImage, saveTask, selectedDate, seriesAction,
+        setConfirmSingleTask, setDraft, setImageLibraryTarget, setSeriesAction, setTaskStatus,
+        stopRepeating, tags, taskNotesRef, tasks, today, toggleDraftTag, toggleTaskNoteChecklistLine
+      }} />
 
-                        </>}
+      <MediaDialogs {...{
+        chooseLibraryImage, closeImagePreview, draft, imageLibraryNoteId, imageLibraryTarget,
+        imagePreview, journalDraft, libraryImages, notes, renamePreviewImage, setImageLibraryTarget,
+        stepImagePreview
+      }} />
 
-            <section className="detail-section mood-calendar-section" style={daySectionStyle("calendar")}>
-              <div className="mini-calendar-header">
-                <div>
-                  <span className="eyebrow">STATUS CALENDAR</span>
-                  <div className="status-calendar-title"><h3>{statusCalendarMode==='mood'?'心情月历':'能量月历'}</h3><div className="status-mode-toggle"><button className={statusCalendarMode==='mood'?'active':''} onClick={()=>setStatusCalendarMode('mood')}>心情</button><button className={statusCalendarMode==='energy'?'active':''} onClick={()=>setStatusCalendarMode('energy')}>能量</button></div></div>
-                </div>
-                <div className="mini-month-navigation">
-                  <button type="button" aria-label="上个月" onClick={() => setMoodMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>‹</button>
-                  <strong>{MONTHS[moodMonth.getMonth()]} {moodMonth.getFullYear()}</strong>
-                  <button type="button" aria-label="下个月" onClick={() => setMoodMonth(current => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>›</button>
-                </div>
-              </div>
-              <div className="mini-weekdays">{displayWeekdays.map(day => <span key={day}>{day.slice(0, 1)}</span>)}</div>
-              <div className="mood-mini-grid">
-                {moodDays.map(({ date, inCurrentMonth }, index) => {
-                  const key = toDateKey(date)
-                  const mood = moodsByDate.get(key)
-                  const energy = energyByDate.get(key)
-                  const status = statusCalendarMode==='mood' ? mood : energy
-                  const column = index % 7
-                  const prevKey=index>0?toDateKey(moodDays[index-1].date):''
-                  const nextKey=index<moodDays.length-1?toDateKey(moodDays[index+1].date):''
-                  const prev = statusCalendarMode==='mood' ? moodsByDate.get(prevKey) : energyByDate.get(prevKey)
-                  const next = statusCalendarMode==='mood' ? moodsByDate.get(nextKey) : energyByDate.get(nextKey)
-                  const joinLeft = Boolean(status && column > 0 && prev?.level === status.level && moodDays[index - 1].inCurrentMonth)
-                  const joinRight = Boolean(status && column < 6 && next?.level === status.level && moodDays[index + 1].inCurrentMonth)
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`mood-mini-day${inCurrentMonth ? '' : ' outside'}${sameDay(date, today) ? ' today' : ''}`}
-                      disabled={key > toDateKey(today)}
-                      onClick={() => {
-                        if (key > toDateKey(today)) return
-                        const nextDate = new Date(date)
-                        const nextMonth = new Date(date.getFullYear(), date.getMonth(), 1)
-                        cancelDayDetailCloseTimer()
-                        setDayDetailClosing(false)
-                        setSelectedDate(nextDate)
-                        setDayDetailOpen(true)
-                        setMoodMonth(nextMonth)
-                        setVisibleMonth(nextMonth)
-                      }}
-                      aria-label={`${formatDate(date)}${status ? `，${statusCalendarMode==='mood' ? MOODS.find(item=>item.value===status.level)?.label : ENERGIES.find(item=>item.value===status.level)?.label}` : `，尚未记录${statusCalendarMode==='mood'?'心情':'能量'}`}`}
-                    >
-                      {status && inCurrentMonth && <span className={`mood-run mood-${status.level}${joinLeft ? ' join-left' : ''}${joinRight ? ' join-right' : ''}`} />}
-                      <span className="mini-day-number">{date.getDate()}</span>
-                      {inCurrentMonth && journalDates.has(key) && (journalThreadDates.has(key)
-                        ? <span className="mini-journal-thread-dot" aria-label="当天记录有后续" />
-                        : <span className="mini-journal-dot" aria-label="当天有记录" />)}
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
-
-
-
-            {!selectedIsFuture && <>
-            <section className="detail-section journal-section" style={daySectionStyle("journal")}>
-              <div className="section-heading journal-heading">
-                <h3>记录</h3>
-                
-              
-                {selectedJournalEntries.length > 0 && <span>{selectedJournalEntries.length}</span>}
-                {selectedJournalEntries.length > 0 && <strong className={`impact-total ${selectedImpactTotal > 0 ? 'positive' : selectedImpactTotal < 0 ? 'negative' : ''}`}>事件合计 {selectedImpactTotal > 0 ? '+' : ''}{selectedImpactTotal}</strong>}
-              </div>
-              {selectedJournalEntries.length === 0 ? <p className="empty-state">暂无记录</p> : (
-                <div className="journal-list">
-                  {selectedJournalEntries.map(entry => {
-                    const entryTagIds = (entry.tagIds ?? [DEFAULT_TAG_ID]).filter(id => id !== DEFAULT_TAG_ID)
-                    const visibleTags = entryTagIds.slice(0, 3)
-                    const extraTags = Math.max(0, entryTagIds.length - visibleTags.length)
-                    const images = (entry.attachments ?? []).filter(a => a.type === 'image').length
-                    const hasAudio = (entry.attachments ?? []).some(a => a.type === 'audio')
-                    return <button key={entry.id} type="button" className="journal-entry journal-card-v067" onClick={() => setViewingJournalId(entry.id)}>
-                      <span className="journal-meta">{new Date(entry.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
-                      <strong className="journal-title">{entry.title || '记录'}</strong>
-                      <span className={`impact-badge impact-${entry.impact}`}>{entry.impact > 0 ? '+' : ''}{entry.impact}</span>
-                      <span className="journal-card-bottom">
-                        <span className="entry-tags">{visibleTags.map(id => { const tag = tags.find(item => item.id === id); return tag ? <span key={id} className="mini-tag" style={{ '--tag-color': tag.color } as any}>#{tag.name}</span> : null })}{extraTags > 0 && <span className="extra-tags">+{extraTags}</span>}</span>
-                        <span className="journal-markers">{entry.content && <span title="有正文" aria-label="有正文">≡</span>}{normalizeJournalMessages(entry.messages).length > 0 && <span className="journal-thread-list-marker" title="有后续" aria-label="有后续">■</span>}{images > 0 && <span title="有图片" aria-label="有图片">▧</span>}{hasAudio && <span title="有录音" aria-label="有录音">●</span>}</span>
-                      </span>
-                    </button>
-                  })}
-                </div>
-              )}
-              <button className="add-button" type="button" onClick={openJournalEditor}>＋ 添加记录</button>
-            </section>
-
-            {selectedDate && orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).length>0 && <section className="detail-section habit-daily-section" style={daySectionStyle("habit")}><div className="section-heading"><h3>习惯</h3></div>{orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).map(habit=>{const rows=liveCheckIns(habit.id,habitCheckIns).filter(row=>row.occurredDate===toDateKey(selectedDate));const progress=progressForDate(habit,habitCheckIns,toDateKey(selectedDate));const done=progress.met;const hasLog=rows.length>0;return <div className="habit-daily-row" key={habit.id}><span className="habit-daily-name"><HabitIcon name={habit.icon} color={tags.find(t=>t.id===habit.tagId)?.color} />{habit.name}</span>{habit.archivedAt?<span className="habit-daily-archived">{done?'✓ 已达标 · 已归档':hasLog?'已打卡 · 已归档':'已归档'}</span>:<button type="button" onClick={()=>hasLog?undoHabitCheckIn(habit,toDateKey(selectedDate)):quickHabitCheckIn(habit,toDateKey(selectedDate))}>{done?'✓ 已达标':hasLog?`已打卡 ${progress.done}/${progress.target??'-'} · 撤销`:'○ 打卡'}</button>}</div>})}</section>}
-            <section className="detail-section menstrual-section" style={daySectionStyle("period")}>
-              <div className="section-heading">
-                <h3>{selectedIsFuture ? '预计经期' : '月经记录'}</h3>
-                {menstrualPrediction && <small>预计下次约 {menstrualPrediction.start.slice(5).replace('-','/')} · ±1天</small>}
-              </div>
-              {selectedDate && (() => {
-                const key=toDateKey(selectedDate)
-                if (selectedIsFuture) {
-                  if (!menstrualPrediction || key < menstrualPrediction.windowStart || key > menstrualPrediction.windowEnd) return null
-                  return <div className="menstrual-prediction-card">预计日期，仅作任务安排参考；实际开始后再记录。</div>
-                }
-                const period=periodForDate(key)
-                if(!period) return <button className="secondary-button" type="button" onClick={startPeriod}>＋ 月经开始</button>
-                const log=period.dayLogs.find(row=>row.date===key)
-                return <div className="menstrual-editor">
-                  <div className="menstrual-summary"><strong>🩸 第 {dayDiff(period.startDate,key)+1} 天</strong><span>{period.startDate}{period.endDate?` → ${period.endDate}`:' · 进行中'}</span></div>
-                  {!period.endDate && dayDiff(period.startDate,key)+1 > 7 && <div className="menstrual-duration-warning">本次记录已超过 7 天，请确认是否忘记标记结束；如果仍在持续，可以继续记录。</div>}
-                  <label className="menstrual-note"><span>备注</span><input value={log?.notes??''} placeholder="可选，例如腹痛、量多、状态变化…" onChange={e=>updatePeriodDayLog(period.id,key,{notes:e.target.value})}/></label>
-                  {!period.endDate && key>=period.startDate && <button className="secondary-button" type="button" onClick={()=>endPeriod(period.id,key)}>月经在今天结束</button>}
-                  <button className="menstrual-delete-button" type="button" onClick={()=>deletePeriod(period.id)}>删除这次月经记录</button>
-                </div>
-              })()}
-            </section>
-
-
-            </>}
-
-            {selectedIsFuture && selectedDate && menstrualPrediction && toDateKey(selectedDate)>=menstrualPrediction.windowStart && toDateKey(selectedDate)<=menstrualPrediction.windowEnd && (
-              <section className="detail-section menstrual-section" style={daySectionStyle("period")}>
-                <div className="section-heading"><h3>预计经期</h3><small>预计约 {menstrualPrediction.start.slice(5).replace('-','/')} · ±1天</small></div>
-                <div className="menstrual-prediction-card">预计日期，仅作任务安排参考；实际开始后再记录。</div>
-              </section>
-            )}
-
-
-                      </aside>
-        </>
-      )}
-
-      {focusHistoryDate && (
-        <div className="modal-layer focus-history-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭专注记录" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null)}} />
-          <section className="task-editor focus-history-panel" role="dialog" aria-modal="true" aria-label="专注记录">
-            <div className="editor-header"><div><span className="eyebrow">FOCUS LOG</span><h2>{formatUiDate(fromDateKey(focusHistoryDate))} · 专注记录</h2></div><button className="close-button" type="button" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null)}}>×</button></div>
-            <div className="editor-body focus-history-body">
-              <div className="focus-history-summary"><strong>{formatFocusDuration(combinedFocusSecondsByDate(activeTasks,focusSessions,timerNow,undefined,notes).get(focusHistoryDate)??0)}</strong><span>{focusHistoryRecords.length} 项</span></div>
-              {focusHistoryRecords.length===0?<p className="page-empty compact">这一天还没有专注记录。</p>:<div className="focus-history-sections">{(['direct','note','task','habit'] as const).map(kind=>{
-                const rows=focusHistoryRecords.filter(record=>record.kind===kind)
-                if(!rows.length)return null
-                const label=kind==='direct'?'自由专注':kind==='note'?'笔记':kind==='habit'?'习惯':'任务'
-                return <section className="focus-history-section" key={kind}><h3>{label}<small>{rows.length} 项</small></h3><div className="focus-history-list">{rows.map(record=>{
-                  const editing=(record.kind==='direct'||record.kind==='habit')&&record.session&&focusEditId===record.session.id
-                  const focusTag=record.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
-                  return <div className="focus-history-item" key={record.id}>
-                    <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{record.kind==='task'?`任务 · ${record.title}`:record.kind==='note'?`笔记 · ${record.title}`:record.kind==='habit'?'习惯专注':'自由专注'}</span><small>{formatFocusDuration(record.seconds)}</small></div></div>
-                    {editing&&record.session?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions">
-                      {record.kind==='note'&&record.note&&<button type="button" onClick={()=>{setFocusHistoryDate(null);setFocusEditId(null);setNoteFocusHistoryId(record.note!.id);setMainView('notes');setRequestedNoteId(record.note!.id)}}>查看</button>}
-                      {record.kind==='task'&&record.task&&<button type="button" onClick={()=>{setFocusHistoryDate(null);closeDayDetailImmediately();setViewingTask(record.task!)}}>查看</button>}
-                      {(record.kind==='direct'||record.kind==='habit')&&record.session&&<><button type="button" disabled={!record.session.endedAt} onClick={()=>beginEditFocusSession(record.session!)}>更改</button><button type="button" className="danger" disabled={!record.session.endedAt} onClick={()=>{if(!record.session?.endedAt)return;if(!window.confirm('确定删除这条专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===record.session!.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></>}
-                    </div>}
-                  </div>})}</div></section>})}</div>}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {noteFocusHistoryId && noteFocusHistoryNote && (
-        <div className="modal-layer note-focus-history-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭笔记专注历史" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}} />
-          <section className="task-editor focus-history-panel" role="dialog" aria-modal="true" aria-label="笔记专注历史">
-            <div className="editor-header"><div><span className="eyebrow">NOTE FOCUS</span><h2>{noteFocusHistoryNote.title || '无标题笔记'} · 专注历史</h2></div><button className="close-button" type="button" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}}>×</button></div>
-            <div className="editor-body focus-history-body">
-              <div className="focus-history-summary"><strong>{formatFocusDuration(noteFocusHistorySeconds)}</strong><span>{noteFocusHistorySessions.length} 条记录</span></div>
-              {noteFocusHistorySessions.length===0?<p className="page-empty compact">这篇笔记还没有专注记录。</p>:<div className="focus-history-list">{noteFocusHistorySessions.map(session=>{
-                const editing=focusEditId===session.id
-                const focusTag=session.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
-                const seconds=focusSessionDurationSeconds(session,timerNow)
-                const started=new Date(session.startedAt)
-                return <div className="focus-history-item" key={session.id}>
-                  <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{formatUiDate(started)} · {started.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><small>{formatFocusDuration(seconds)}</small></div></div>
-                  {editing?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!session.endedAt)return;if(!window.confirm('确定删除这条笔记专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
-                </div>})}</div>}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {focusOpen && (
-        <div className="modal-layer focus-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭专注界面" onClick={()=>setFocusOpen(false)} />
-          <section className="task-editor focus-panel" role="dialog" aria-modal="true" aria-label="专注">
-            <div className="editor-header"><div><span className="eyebrow">FOCUS</span><h2>{activeFocusSession?'正在专注':'开始专注'}</h2></div><button className="close-button" type="button" onClick={()=>setFocusOpen(false)} aria-label="关闭专注界面">×</button></div>
-            <div className="editor-body focus-body">
-              {activeFocusSession ? <>
-                <div className="focus-live-clock">{formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}</div>
-                <div className="focus-live-tags">{activeFocusSession.tagIds.map(id=>tags.find(tag=>tag.id===id)).filter(Boolean).map(tag=><span key={tag!.id}><i style={{background:tag!.color}} />{tag!.name}</span>)}</div>
-                <small>{activeFocusSession.mode==='countdown'?`倒计时 · 原定 ${Math.round((activeFocusSession.plannedSeconds??0)/60)} 分钟`:'正计时'}</small>
-                {activeFocusNote&&<small>笔记 · {activeFocusNote.title || '无标题笔记'}</small>}
-                {activeFocusHabit&&<small>习惯 · {activeFocusHabit.name}</small>}
-                <button className="focus-stop-button" type="button" onClick={()=>{if(activeFocusNote)stopNoteFocus(activeFocusNote);else if(activeFocusHabit)stopHabitFocus(activeFocusHabit);else if(activeTimerTask)stopTaskTimer(activeTimerTask);else stopDirectFocus(false)}}>■ 结束专注</button>
-              </> : <>
-                <div className="focus-mode-switch"><button type="button" className={focusMode==='stopwatch'?'active':''} onClick={()=>setFocusMode('stopwatch')}>正计时</button><button type="button" className={focusMode==='countdown'?'active':''} onClick={()=>setFocusMode('countdown')}>倒计时</button></div>
-                {focusMode==='countdown' && <label className="focus-minutes-field"><span>时长</span><div><input type="number" min="1" max="720" value={focusMinutes} onChange={e=>setFocusMinutes(e.target.value)} onBlur={()=>setFocusMinutes(String(countdownMinutes(focusMinutes,15)))} /><b>分钟</b></div></label>}
-                <div className="focus-tag-picker compact"><span>专注标签</span>{(()=>{const selected=tags.find(tag=>tag.id===(focusTagIds[0]??DEFAULT_TAG_ID))??DEFAULT_TAG;return <button className="focus-current-tag" type="button" onClick={()=>setFocusTagSelectOpen(true)}><span><i style={{background:selected.color}} />{selected.name}</span><b>›</b></button>})()}</div>
-
-                {activeTimerTask && <p className="focus-conflict-note">当前有任务正在计时，请先结束任务计时。</p>}
-                <button className="focus-start-button" type="button" disabled={Boolean(activeTimerTask)||focusTagIds.length===0} onClick={startDirectFocus}>▶ 开始专注</button>
-              </>}
-            </div>
-          </section>
-          {focusTagSelectOpen&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setFocusTagSelectOpen(false)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setFocusTagSelectOpen(false)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags(tags).map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);setFocusTagSelectOpen(false)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
-        </div>
-      )}
-
-      {pendingNoteFocusId&&<div className="focus-tag-select-layer" role="presentation"><button className="modal-backdrop" type="button" aria-label="关闭标签选择" onClick={()=>setPendingNoteFocusId(null)} /><section className="focus-tag-select-panel" role="dialog" aria-modal="true" aria-label="选择笔记专注标签"><header><strong>选择专注标签</strong><button type="button" onClick={()=>setPendingNoteFocusId(null)}>×</button></header><div className="focus-tag-select-list">{focusSelectableTags(tags).map(tag=><button key={tag.id} type="button" className={focusTagIds.includes(tag.id)?'selected':''} onClick={()=>{setFocusTagIds([tag.id]);const note=notes.find(item=>item.id===pendingNoteFocusId&&!item.trashedAt);if(note)startNoteFocus(note,tag.id);else setPendingNoteFocusId(null)}}><i style={{background:tag.color}} /><span>{tag.name}</span>{focusTagIds.includes(tag.id)&&<b>✓</b>}</button>)}</div></section></div>}
-
-      {trashOpen && (
-        <div className="modal-layer overdue-inbox-layer trash-inbox-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭回收站" onClick={()=>setTrashOpen(false)} />
-          <section className="task-editor overdue-inbox-panel trash-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="trash-inbox-title">
-            <div className="editor-header">
-              <div><span className="eyebrow">RECYCLE BIN</span><h2 id="trash-inbox-title">回收站 · {trashItems.length}</h2></div>
-              <div className="trash-header-actions">{trashItems.length>0 && <button className="trash-clear-button" type="button" onClick={()=>{if(window.confirm(`确定永久删除回收站中的 ${trashItems.length} 项吗？此操作无法恢复。`)) clearTrash()}}>清空</button>}<button className="close-button" type="button" onClick={()=>setTrashOpen(false)} aria-label="关闭">×</button></div>
-            </div>
-            <div className="editor-body overdue-inbox-body">
-              {trashItems.length===0 ? <p className="page-empty compact">回收站是空的。</p> : <>
-                <div className="trash-filter-row" role="group" aria-label="回收站类型筛选">
-                  {orderedCategories([['all','全部'],['task','任务'],['journal','记录'],['note','笔记'],['anniversary','纪念日'],['focus','专注'],['habit','习惯']] as const,moduleOrder).map(([value,label])=><button key={value} type="button" className={trashFilter===value?'active':''} onClick={()=>setTrashFilter(value)}>{label}</button>)}
-                </div>
-                {visibleTrashItems.length===0 ? <p className="page-empty compact">这一类还没有内容。</p> : <div className="overdue-inbox-list trash-inbox-list">
-                  {(trashTaskGroups ? [
-                    {label:'未完成',items:trashTaskGroups.active},
-                    ...(showEndedTasks ? [{label:'已完成',items:trashTaskGroups.ended}] : []),
-                  ] : [{label:'',items:visibleTrashItems}]).map(group=>group.items.length>0&&<div className="trash-task-group" key={group.label||'all'}>{group.label&&<div className="trash-task-group-label">{group.label} · {group.items.length}</div>}{group.items.map(item=><article key={item.key} className={`trash-inbox-item${item.entity==='task'&&trashTaskStatus(item)!=='todo'?' completed':''}`}>
-                    <div className="trash-inbox-main"><strong>{item.entity==='task'&&trashTaskStatus(item)!=='todo'&&<span className="trash-task-status" aria-label="已完成">✓</span>}{item.entity==='task'?item.task.title:item.entity==='journal'?item.journal.title:item.entity==='note'?item.note.title:item.entity==='anniversary'?item.anniversary.title:item.entity==='habit'?item.habit.name:(tags.find(tag=>item.session.tagIds.includes(tag.id))?.name??'默认')}</strong><small>{item.entity==='journal'?`${item.journal.date.replaceAll('-','/')} · 记录`:item.entity==='note'?`${notebooks.find(book=>book.id===item.note.notebookId)?.name??'默认'} · 笔记`:item.entity==='anniversary'?`${anniversaryIcon(item.anniversary.type)} · 纪念日`:item.entity==='habit'?'习惯 · 历史打卡可恢复':item.entity==='focus'?`${new Date(item.session.startedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})} · 自由专注 · ${formatFocusDuration(item.session.durationSeconds??0)}`:item.kind==='occurrence'?`${item.occurrenceDate?.replaceAll('-','/')} · 单次任务`:item.kind==='future'?`${item.occurrenceDate?.replaceAll('-','/')} 起 · 此后重复任务`:`${item.task.date ? item.task.date.replaceAll('-','/') : '收集箱'} · ${item.task.recurrence?'整个重复任务':'任务'}`}</small><time>删除于 {new Date(item.trashedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time></div>
-                    <div className="trash-inbox-actions"><button type="button" onClick={()=>restoreTrashItem(item)}>恢复</button><button className="danger" type="button" onClick={()=>{if(window.confirm('永久删除后无法从回收站恢复，确定继续吗？')) permanentlyDeleteTrashItem(item)}}>永久删除</button></div>
-                  </article>)}</div>)}
-                </div>}
-              </>}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {inboxOpen && (
-        <div className="modal-layer overdue-inbox-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭收集箱" onClick={()=>setInboxOpen(false)} />
-          <section className="task-editor overdue-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="inbox-title">
-            <div className="editor-header inbox-editor-header">
-              <div><span className="eyebrow">INBOX</span><div className="inbox-title-row"><h2 id="inbox-title">收集箱 · {inboxTasks.length}</h2><button className="inbox-add-button" type="button" onClick={openInboxTaskEditor} aria-label="添加未排期任务" title="添加未排期任务">＋</button></div></div>
-              <button className="close-button" type="button" onClick={()=>setInboxOpen(false)} aria-label="关闭">×</button>
-            </div>
-            <div className="editor-body overdue-inbox-body">
-              <div className="inbox-sort-row" aria-label="收集箱排序优先级">
-                {inboxSortOrder.map((key,index)=><Fragment key={key}><button className={`inbox-sort-chip${index===0?' primary':''}${inboxSortDropTarget===key&&inboxSortDragRef.current!==key?' drop-target':''}`} type="button" draggable
-                  onDragStart={()=>{inboxSortDragRef.current=key;setInboxSortDropTarget(null)}} onDragEnter={()=>{if(inboxSortDragRef.current&&inboxSortDragRef.current!==key)setInboxSortDropTarget(key)}} onDragOver={event=>event.preventDefault()} onDragEnd={()=>{inboxSortDragRef.current=null;setInboxSortDropTarget(null)}} onDrop={()=>{const from=inboxSortDragRef.current;if(from)setInboxSortOrder(current=>moveInboxSortKey(current,from,key));inboxSortDragRef.current=null;setInboxSortDropTarget(null)}}
-                  onTouchStart={()=>{inboxSortDragRef.current=key;setInboxSortDropTarget(null)}} onTouchMove={event=>{const touch=event.touches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest<HTMLButtonElement>('[data-inbox-sort-key]');const to=target?.dataset.inboxSortKey as InboxSortKey|undefined;if(to&&to!==inboxSortDragRef.current)setInboxSortDropTarget(to)}} onTouchEnd={event=>{const touch=event.changedTouches[0];const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest<HTMLButtonElement>('[data-inbox-sort-key]');const to=(target?.dataset.inboxSortKey as InboxSortKey|undefined)??inboxSortDropTarget??undefined;const from=inboxSortDragRef.current;if(from&&to)setInboxSortOrder(current=>moveInboxSortKey(current,from,to));inboxSortDragRef.current=null;setInboxSortDropTarget(null)}}
-                  data-inbox-sort-key={key} aria-label={`${index===0?'首要排序：':'排序：'}${key==='time'?'时间':key==='priority'?'优先级':'标签'}`}>{inboxSortDropTarget===key&&inboxSortDragRef.current!==key&&<span className="inbox-sort-drop-cue">放这里</span>}{key==='time'?'时间':key==='priority'?'优先级':'标签'}</button>{index<inboxSortOrder.length-1&&<span className="inbox-sort-arrow" aria-hidden="true">›</span>}</Fragment>)}
-              </div>
-              {inboxTasks.length===0 ? <p className="page-empty compact">暂时没有未排期任务。</p> :
-                <div className="overdue-inbox-list inbox-task-list">
-                  {inboxTodoGroups.length>0&&<section className="inbox-task-group" aria-label="未完成任务">
-                    <div className="inbox-task-group-label">未完成 · {inboxTodoGroups.reduce((sum,group)=>sum+group.tasks.length,0)}</div>
-                    {inboxTodoGroups.map(group=><div className="inbox-primary-group" key={group.key}><div className="inbox-primary-group-label">{group.color&&<span className="inbox-group-dot" style={{background:group.color}} aria-hidden="true"/>}{group.label}</div><div className="inbox-task-group-items">{group.tasks.map(task=>{const meta=inboxTaskMeta(task);const tagIsPrimary=inboxSortOrder[0]==='tag';return <article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}><div className="overdue-inbox-main"><button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta">{!tagIsPrimary&&<span className="inbox-task-tag"><i style={{background:meta.tagColor}} aria-hidden="true"/>{meta.tag}</span>}<span>{meta.activity}</span></time></button></div></article>})}</div></div>)}
-                  </section>}
-                  {showEndedTasks&&inboxCompletedTasks.length>0&&<section className="inbox-task-group completed" aria-label="已完成任务"><div className="inbox-task-group-label">已完成 · {inboxCompletedTasks.length}</div><div className="inbox-task-group-items">{inboxCompletedTasks.map(task=>{const meta=inboxTaskMeta(task);const tagIsPrimary=inboxSortOrder[0]==='tag';return <article key={task.id} className={`overdue-inbox-item priority-${task.priority} completed`}><div className="overdue-inbox-main"><span className="overdue-priority-box completed" aria-label="已完成">✓</span><button className="overdue-task-link" type="button" onClick={()=>openTaskDetail(task)}><strong>{task.title}</strong><time className="inbox-task-meta">{!tagIsPrimary&&<span className="inbox-task-tag"><i style={{background:meta.tagColor}} aria-hidden="true"/>{meta.tag}</span>}<span>{meta.activity}</span></time></button></div></article>})}</div></section>}
-                </div>}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {overdueInboxOpen && (
-        <div className="modal-layer overdue-inbox-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭已逾期收件箱" onClick={()=>setOverdueInboxOpen(false)} />
-          <section className="task-editor overdue-inbox-panel" role="dialog" aria-modal="true" aria-labelledby="overdue-inbox-title">
-            <div className="editor-header">
-              <div><span className="eyebrow">OVERDUE INBOX</span><h2 id="overdue-inbox-title">已逾期 · {overdueTasks.length}</h2></div>
-              <button className="close-button" type="button" onClick={()=>setOverdueInboxOpen(false)} aria-label="关闭">×</button>
-            </div>
-            <div className="editor-body overdue-inbox-body">
-              {overdueTasks.length===0 ? <p className="page-empty compact">目前没有已逾期任务。</p> :
-                <div className="overdue-inbox-list">
-                  {overdueTasks.map(task=><article key={task.id} className={`overdue-inbox-item priority-${task.priority}`}>
-                    <div className="overdue-inbox-main overdue-task-row">
-                      <button className="overdue-priority-box" type="button" aria-label={`完成 ${task.title}`} title="标记完成" onClick={()=>setTaskStatus(task,'completed')}>✓</button>
-                      <button className="overdue-task-link" type="button" onClick={()=>openTaskAtItsDay(task)}>
-                        <strong>{task.title}</strong>
-                        <time>{task.date?.replaceAll('-','/') ?? ''}</time>
-                      </button>
-                      <button className="overdue-postpone-today" type="button" onClick={()=>postponeTask(task,toDateKey(today))}>延期</button>
-                    </div>
-                  </article>)}
-                </div>}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {monthPickerTarget && (
-        <div className="modal-layer month-picker-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭年月选择" onClick={()=>setMonthPickerTarget(null)} />
-          <section className="month-picker-panel" role="dialog" aria-modal="true" aria-label="选择年月">
-            <div className="month-picker-year">
-              <button type="button" onClick={()=>setMonthPickerYear(y=>y-1)} aria-label="上一年">‹</button>
-              <strong>{monthPickerYear}</strong>
-              <button type="button" onClick={()=>setMonthPickerYear(y=>y+1)} aria-label="下一年">›</button>
-            </div>
-            <div className="month-picker-grid">
-              {MONTHS.map((name,index)=><button key={name} type="button" className={(monthPickerTarget==='calendar'?(isMobileCalendar?mobileActiveMonth:visibleMonth):moodMonth).getFullYear()===monthPickerYear && (monthPickerTarget==='calendar'?(isMobileCalendar?mobileActiveMonth:visibleMonth):moodMonth).getMonth()===index?'active':''} onClick={()=>chooseMonth(index)}>{name}</button>)}
-            </div>
-            <button className="month-picker-today" type="button" onClick={()=>{setMonthPickerYear(today.getFullYear());chooseMonth(today.getMonth())}}>今年本月</button>
-          </section>
-        </div>
-      )}
-
-      {anniversaryEditorOpen && (
-        <div className="modal-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭纪念日编辑" onClick={() => setAnniversaryEditorOpen(false)} />
-          <section className="task-editor anniversary-editor" role="dialog" aria-modal="true" aria-labelledby="anniversary-editor-title">
-            <div className="editor-header"><div><span className="eyebrow">ANNIVERSARY</span><h2 id="anniversary-editor-title">{editingAnniversaryId ? '编辑纪念日' : '新建纪念日'}</h2></div><button className="close-button" type="button" onClick={() => setAnniversaryEditorOpen(false)}>×</button></div>
-            <div className="editor-body">
-              <label className="field"><span>名称</span><input value={anniversaryDraft.title} onChange={e=>setAnniversaryDraft(d=>({...d,title:e.target.value}))} placeholder="例如：小A生日" autoFocus /></label>
-              <div className="anniversary-type-grid">{ANNIVERSARY_TYPES.map(item=><button key={item.value} type="button" className={`anniversary-type-button${anniversaryDraft.type===item.value?' selected':''}`} onClick={()=>setAnniversaryDraft(d=>({...d,type:item.value,repeatYearly:item.value==='birthday'?true:d.repeatYearly,year:item.value!=='birthday'&&!d.year?String(today.getFullYear()):d.year}))}><span>{item.icon}</span>{item.label}</button>)}</div>
-              <div className="segmented-control"><button type="button" className={anniversaryDraft.calendar==='solar'?'active':''} onClick={()=>setAnniversaryDraft(d=>({...d,calendar:'solar',isLeapMonth:false}))}>公历</button><button type="button" className={anniversaryDraft.calendar==='lunar'?'active':''} onClick={()=>setAnniversaryDraft(d=>({...d,calendar:'lunar'}))}>农历</button></div>
-              <div className="anniversary-date-grid">
-                <label className="field"><span>年份{anniversaryDraft.type==='birthday'?'（可选）':''}</span><select value={anniversaryDraft.year} onChange={e=>setAnniversaryDraft(d=>({...d,year:e.target.value}))}>{anniversaryDraft.type==='birthday'&&<option value="">——</option>}{Array.from({length:today.getFullYear()+20-1900+1},(_,i)=>today.getFullYear()+20-i).map(year=><option key={year} value={year}>{year}年</option>)}</select></label>
-                <label className="field"><span>月</span><select value={anniversaryDraft.month} onChange={e=>setAnniversaryDraft(d=>({...d,month:Number(e.target.value)}))}>{Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}月</option>)}</select></label>
-                <label className="field"><span>日</span><select value={anniversaryDraft.day} onChange={e=>setAnniversaryDraft(d=>({...d,day:Number(e.target.value)}))}>{Array.from({length:anniversaryDayLimit(anniversaryDraft.calendar,anniversaryDraft.month,anniversaryDraft.year?Number(anniversaryDraft.year):undefined)},(_,i)=><option key={i+1} value={i+1}>{i+1}日</option>)}</select></label>
-              </div>
-              {anniversaryDraft.calendar==='lunar' && <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.isLeapMonth} onChange={e=>setAnniversaryDraft(d=>({...d,isLeapMonth:e.target.checked}))} /> 闰月</label>}
-              {anniversaryDraft.type!=='birthday' && <label className="anniversary-check"><input type="checkbox" checked={anniversaryDraft.repeatYearly} onChange={e=>setAnniversaryDraft(d=>({...d,repeatYearly:e.target.checked}))} /> 每年重复</label>}
-              <label className="field"><span>备注</span><textarea rows={3} value={anniversaryDraft.notes} onChange={e=>setAnniversaryDraft(d=>({...d,notes:e.target.value}))} placeholder="可选" /></label>
-            </div>
-            <div className="editor-actions">{editingAnniversaryId && <button className="danger-button" type="button" onClick={deleteAnniversary}>删除</button>}<button className="ghost-button" type="button" onClick={()=>setAnniversaryEditorOpen(false)}>取消</button><button className="save-button" type="button" onClick={saveAnniversary} disabled={!anniversaryDraft.title.trim() || (anniversaryDraft.type!=='birthday' && !anniversaryDraft.year)}>保存</button></div>
-          </section>
-        </div>
-      )}
-
-      {tagManagerOpen && (
-        <div className="modal-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭标签管理" onClick={() => {setSelectedTagManageId(null);setTagEditDraft(null);setTagManagerOpen(false)}} />
-          <section className="task-editor tag-manager compact-tag-manager" role="dialog" aria-modal="true" aria-labelledby="tag-manager-title">
-            <div className="editor-header"><div><span className="eyebrow">TAGS</span><h2 id="tag-manager-title">标签</h2></div><button className="close-button" type="button" onClick={() => {setSelectedTagManageId(null);setTagEditDraft(null);setTagManagerOpen(false)}}>×</button></div>
-            <div className="editor-body">
-              <div className="tag-scope-tabs" role="tablist" aria-label="标签分类">
-                {orderedCategories([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const,moduleOrder).map(([scope,label])=><button key={scope} type="button" className={newTagScope===scope?'active':''} onClick={()=>{setNewTagScope(scope);setSelectedTagManageId(null)}}>{label}<small>{activeManagedTags.filter(tag=>tag.scope===scope).length}</small></button>)}
-              </div>
-
-              <div className="compact-tag-create">
-                <div className="compact-tag-create-main"><input value={newTagName} onChange={e=>setNewTagName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addTag()}} placeholder={`新建${tagScopeLabel(newTagScope)}`} /><button className="save-button" type="button" onClick={addTag} disabled={!newTagName.trim()}>添加</button></div>
-                <div className="tag-color-row compact-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${newTagColor===color?' active':''}`} style={{background:color}} onClick={()=>setNewTagColor(color)} aria-label={`选择颜色 ${color}`} />)}</div>
-              </div>
-
-              <div className="compact-tag-list">
-                {activeManagedTags.filter(tag=>tag.scope===newTagScope).map(tag=><button key={tag.id} type="button" className="compact-tag-chip" onClick={()=>{setSelectedTagManageId(tag.id);setTagEditDraft({name:tag.name,color:tag.color,scope:tag.scope})}}>
-                  <i style={{background:tag.color}} /><span>{tag.name}</span>
-                </button>)}
-                {activeManagedTags.every(tag=>tag.scope!==newTagScope)&&<p className="page-empty compact">这里还没有{tagScopeLabel(newTagScope)}。</p>}
-              </div>
-
-            </div>
-          </section>
-        </div>
-      )}
-
-
-      {selectedTagManageId && (() => {
-        const tag=activeManagedTags.find(item=>item.id===selectedTagManageId)
-        if(!tag) return null
-        return <div className="modal-layer tag-edit-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭编辑标签" onClick={closeTagEditor} />
-          <section className="task-editor compact-tag-edit-modal" role="dialog" aria-modal="true" aria-labelledby="tag-edit-title">
-            <div className="editor-header">
-              <div className="compact-tag-edit-title"><i style={{background:tag.color}} /><div><span className="eyebrow">TAG</span><h2 id="tag-edit-title">编辑标签</h2></div></div>
-              <button className="close-button" type="button" aria-label="关闭编辑标签" onClick={closeTagEditor}>×</button>
-            </div>
-            <div className="editor-body compact-tag-edit-body">
-              <label className="field"><span>名称</span><input value={tagEditDraft?.name ?? tag.name} onChange={e=>setTagEditDraft(current=>current?{...current,name:e.target.value}:current)} autoFocus /></label>
-              <div className="field"><span>颜色</span><div className="tag-color-row detail-palette">{TAG_COLORS.map(color=><button key={color} type="button" className={`tag-color${(tagEditDraft?.color ?? tag.color)===color?' active':''}`} style={{background:color}} onClick={()=>setTagEditDraft(current=>current?{...current,color}:current)} aria-label={`设为 ${color}`} />)}</div></div>
-              <div className="field"><span>分类</span><div className="tag-detail-scope">
-                {orderedCategories([['both','共享'],['task','任务'],['focus','专注'],['journal','记录'],['note','笔记'],['habit','习惯']] as const,moduleOrder).map(([scope,label])=>{const blocked=!canSetTagScope(tag.id,scope);return <button key={scope} type="button" className={`${(tagEditDraft?.scope ?? tag.scope)===scope?'active ':''}${blocked?'scope-disabled':''}`.trim()} disabled={blocked} title={blocked?tagScopeBlockedReason(tag.id,scope):undefined} onClick={()=>setTagEditDraft(current=>current?{...current,scope}:current)}>{label}</button>})}
-              </div><small className="tag-usage-hint">当前引用：{tagUsageAreas(tag.id).join(' · ') || '暂无'}</small></div>
-            </div>
-            <div className="editor-actions compact-tag-edit-actions">
-              <div className="compact-tag-edit-secondary">
-                <button type="button" className="ghost-button" onClick={()=>{setTagArchived(tag.id,true);closeTagEditor()}}>归档</button>
-                <button type="button" className="danger-button" onClick={()=>deleteTag(tag.id)}>删除</button>
-              </div>
-              <button type="button" className="save-button" onClick={()=>saveTagEdit(tag)} disabled={!tagEditDraft?.name.trim()}>保存</button>
-            </div>
-          </section>
-        </div>
-      })()}
-
-      {archivedTagsOpen && (
-        <div className="modal-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭已归档标签" onClick={() => setArchivedTagsOpen(false)} />
-          <section className="task-editor tag-manager compact-tag-manager" role="dialog" aria-modal="true" aria-labelledby="archived-tags-title">
-            <div className="editor-header"><div><span className="eyebrow">ARCHIVED TAGS</span><h2 id="archived-tags-title">已归档</h2></div><button className="close-button" type="button" onClick={() => setArchivedTagsOpen(false)}>×</button></div>
-            <div className="editor-body">
-              {archivedTags.length ? <div className="archived-tag-list">{archivedTags.map(tag=>{
-                const taskCount=tasks.filter(task=>(task.tagIds??[]).includes(tag.id)||Object.values(task.recurrenceExceptions??{}).some(exception=>(exception.tagIds??[]).includes(tag.id))).length
-                const focusCount=focusSessions.filter(session=>(session.tagIds??[]).includes(tag.id)).length
-                const journalCount=journalEntries.filter(entry=>(entry.tagIds??[]).includes(tag.id)).length
-                return <div className="archived-tag-row" key={tag.id}>
-                  <div className="archived-tag-info"><span><i style={{background:tag.color}} />{tag.name}</span><small>任务 {taskCount} · 专注 {focusCount} · 记录 {journalCount}</small></div>
-                  <div className="archived-tag-actions"><button type="button" className="archive-button" onClick={()=>setTagArchived(tag.id,false)}>恢复</button><button type="button" className="delete-button compact-delete" onClick={()=>deleteTag(tag.id)}>删除</button></div>
-                </div>
-              })}</div> : <p className="page-empty compact">暂无已归档标签。</p>}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {viewingTask && (
-        <div className="modal-layer task-view-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭任务详情" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} />
-          <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
-            <div className="editor-header task-view-header">
-              <div className="task-view-heading">
-                <div className="task-view-title-row">
-                  <button
-                    type="button"
-                    className={`task-view-checkbox priority-${viewingTask.priority} status-${viewingTask.status}`}
-                    aria-label={viewingTask.status==='completed'?'取消完成':'完成任务'}
-                    onClick={()=>{
-                      const nextStatus:TaskStatus=viewingTask.status==='completed'?'todo':'completed'
-                      if (activeTimerTask?.id===viewingTask.id && nextStatus==='completed') {
-                        stopTaskTimer(viewingTask, true)
-                        return
-                      }
-                      setTaskStatus(viewingTask,nextStatus)
-                      setViewingTask(current=>current?{...current,status:nextStatus,completedAt:nextStatus==='completed'?new Date().toISOString():undefined}:current)
-                    }}
-                  >{viewingTask.status==='completed'?'✓':viewingTask.status==='abandoned'?'×':''}</button>
-                  <h2 id="task-view-title">{viewingTask.title}</h2>
-                </div>
-              </div>
-              <button className="close-button" type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} aria-label="关闭任务详情">×</button>
-            </div>
-            <div className="editor-body task-view-body">
-              {taskFocusHistoryOpen ? <section className="task-inline-focus-history" aria-label="任务专注历史">
-                <div className="task-inline-focus-history-head"><button type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null)}}>‹ 返回</button><div><strong>专注记录</strong><small>{formatFocusDuration(taskFocusHistorySeconds)} · {taskFocusHistorySessions.length} 条</small></div></div>
-                {taskFocusHistorySessions.length===0?<p className="page-empty compact">这个任务还没有专注记录。</p>:<div className="focus-history-list">{taskFocusHistorySessions.map(session=>{
-                  const editing=focusEditId===session.id
-                  const focusTag=session.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)
-                  const seconds=focusSessionDurationSeconds(session,timerNow)
-                  const started=new Date(session.startedAt)
-                  return <div className="focus-history-item" key={session.id}>
-                    <div className="focus-history-main"><strong className="focus-history-primary">{focusTag&&<i style={{background:focusTag.color}} />}{focusTag?.name??'默认'}</strong><div className="focus-history-meta"><span>{formatUiDate(started)} · {started.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><small>{formatFocusDuration(seconds)}</small></div></div>
-                    {editing?<div className="focus-history-edit">{focusHistoryEditFields}<div className="focus-history-edit-tags">{focusSelectableTags(tags).map(tag=>{const checked=focusEditTagIds.includes(tag.id);return <button key={tag.id} type="button" className={checked?'selected':''} onClick={()=>setFocusEditTagIds([tag.id])}><i style={{background:tag.color}} />{tag.name}</button>})}</div><div className="focus-history-edit-actions"><button type="button" onClick={()=>{setFocusEditId(null);setFocusEditError('')}}>取消</button><button type="button" className="primary" onClick={saveFocusSessionEdit}>保存</button></div></div>:<div className="focus-history-actions"><button type="button" disabled={!session.endedAt} onClick={()=>beginEditFocusSession(session)}>更改</button><button type="button" className="danger" disabled={!session.endedAt} onClick={()=>{if(!session.endedAt)return;if(!window.confirm('确定删除这条任务专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item));setAutoSyncToast('✓ 专注已移入回收站')}}>删除</button></div>}
-                  </div>})}</div>}
-              </section> : <>
-              {viewingTask.date && <div className="task-view-schedule" aria-label="任务时间">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>
-                <span>{isMultiDayTask(viewingTask) ? formatTaskRange(viewingTask) : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}</span>
-              </div>}
-
-              {viewingTask.status === 'todo' && !viewingTask.recurrence && !viewingTask.seriesId && (
-                <section className={`task-timer-panel ${activeTimerTask?.id===viewingTask.id ? 'running' : ''}`}>
-                  {activeTimerTask?.id===viewingTask.id ? (
-                    <>
-                      <span className="task-timer-label">正在专注</span>
-                      <strong className="task-timer-clock">{formatRunningTimer(viewingTask)}</strong>
-                      <button className="task-timer-stop" type="button" onClick={()=>stopTaskTimer(viewingTask)}>■ 结束计时</button>
-                      <small>结束本次计时后，可继续浏览或编辑任务。</small>
-                    </>
-                  ) : (
-                    <>
-                      <button className="task-timer-start" type="button" disabled={Boolean(activeFocusSession)} onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</button>{activeFocusSession && <small>已有其他专注正在进行，请先结束后再开始任务计时。</small>}
-                    </>
-                  )}
-                </section>
-              )}
-
-              {(viewingTask.attachments ?? []).some(item=>item.type==='image') && (
-                <section className="task-view-section task-view-images">
-                  <div className="attachment-list">
-                    {(viewingTask.attachments ?? []).filter(item=>item.type==='image').map(attachment=>
-                      <AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {taskFocusHistorySeconds > 0 && !viewingTask.seriesId && (
-                <section className="task-view-section task-view-focus-summary">
-                  <button type="button" className="task-focus-history-trigger" onClick={()=>setTaskFocusHistoryOpen(true)}>累计专注 {formatFocusDuration(taskFocusHistorySeconds)} · 历史 ›</button>
-                </section>
-              )}
-
-              {viewingTask.deadline && <section className="task-view-section"><h3>截止日期</h3><p>{viewingTask.deadline}</p></section>}
-
-              {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID).length>0 && (
-                <section className="task-view-section">
-                  <h3>标签</h3>
-                  <div className="entry-tags task-view-tags">
-                    {(viewingTask.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID).map(id=>{
-                      const tag=tags.find(item=>item.id===id)
-                      return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null
-                    })}
-                  </div>
-                </section>
-              )}
-
-              {viewingTask.notes && <section className="task-view-section"><h3>备注</h3><div className="task-view-notes">{viewingTask.notes}</div></section>}
-              </>}
-            </div>
-            {!taskFocusHistoryOpen && <div className="editor-footer task-view-footer">
-              {activeTimerTask?.id!==viewingTask.id && <button className="delete-button task-view-delete" type="button" onClick={()=>{
-                      const task=viewingTask
-                      const series=task.seriesId ? tasks.find(item=>item.id===task.seriesId) : task
-                      if (!series) return
-                      if (task.seriesId && task.occurrenceDate && series.recurrence) {
-                        setEditingTaskId(series.id)
-                        setEditingOccurrenceDate(task.occurrenceDate)
-                        setViewingTask(null)
-                        setSeriesAction('delete')
-                        return
-                      }
-                      deleteTask(series,'series')
-                      setViewingTask(null)
-              }}>删除</button>}
-              <div className="editor-primary-actions">
-                {activeTimerTask?.id===viewingTask.id ? (
-                  <><span className="task-timer-lock-note">🔒 计时中，结束后可编辑</span><button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button></>
-                ) : (<>
-                  <button className="cancel-button" type="button" onClick={()=>setViewingTask(null)}>关闭</button>
-                  <button className="save-button" type="button" onClick={()=>editTask(viewingTask)}>编辑</button>
-                </>)}
-              </div>
-            </div>}
-          </section>
-        </div>
-      )}
-
-      {viewingJournal && (
-        <div className="modal-layer journal-view-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭记录详情" onClick={() => setViewingJournalId(null)} />
-          <section className="task-editor journal-viewer" role="dialog" aria-modal="true" aria-labelledby="journal-view-title">
-            <div className="editor-header">
-              <div><span className="eyebrow">JOURNAL</span><h2 id="journal-view-title">{viewingJournal.title || '记录'}</h2></div>
-              <button className="close-button" type="button" onClick={() => setViewingJournalId(null)} aria-label="关闭">×</button>
-            </div>
-            <div className="editor-body">
-              <div className="journal-view-date-meta" aria-label={`事件日期 ${viewingJournal.date}`}>
-                <span className="journal-view-date"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4.5 8.5h15M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" /></svg>{formatUiDate(fromDateKey(viewingJournal.date))}</span>
-              </div>
-              <div className="journal-view-feeling-row">
-                {(viewingJournal.emotionIds??[]).map(id=>{const item=emotionOptions.find(row=>row.id===id);return item?<span key={id} className={`emotion-chip emotion-${item.group}`}>{item.name}</span>:null})}
-                <span className={`impact-badge impact-${viewingJournal.impact}`}>{viewingJournal.impact > 0 ? '+' : ''}{viewingJournal.impact}</span>
-              </div>
-              {viewingJournal.content && <div className="journal-view-content"><MarkdownRenderer content={viewingJournal.content}/></div>}
-              {(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).length>0 && <div className="entry-tags journal-view-tags">{(viewingJournal.tagIds ?? []).filter(id=>id!==DEFAULT_TAG_ID && !isImportSourceTagId(id)).map(id=>{const tag=tags.find(item=>item.id===id);return tag?<span key={id} className="mini-tag" style={{'--tag-color':tag.color} as any}>#{tag.name}</span>:null})}</div>}
-              {(viewingJournal.attachments ?? []).some(a=>a.type==='image') && <div className="attachment-list">{(viewingJournal.attachments ?? []).filter(a=>a.type==='image').map(attachment=><AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />)}</div>}
-              {(viewingJournal.attachments ?? []).filter(a=>a.type==='audio').map(attachment=><AudioAttachment key={attachment.id} attachment={attachment}/>)}
-              <section className="journal-thread" aria-label="记录后续对话">
-                <div className="journal-thread-divider"><span>后续</span></div>
-                <div className="journal-message-list">
-                  {normalizeJournalMessages(viewingJournal.messages).map((message,index,rows)=>{
-                    const previous=rows[index-1]
-                    const showTime=!previous || Date.parse(message.createdAt)-Date.parse(previous.createdAt)>=5*60*1000
-                    return <Fragment key={message.id}>
-                      {showTime&&<div className="journal-message-time">{formatUiDate(new Date(message.createdAt))} · {new Date(message.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>}
-                      <div className="journal-message-row"><div className="journal-message-bubble">{message.content}</div></div>
-                    </Fragment>
-                  })}
-                  {normalizeJournalMessages(viewingJournal.messages).length===0&&<div className="journal-thread-empty">想到什么，就在这里继续说。</div>}
-                </div>
-                <div className="journal-message-composer">
-                  <textarea aria-label="继续说" rows={1} value={journalMessageDraft} onChange={event=>setJournalMessageDraft(event.target.value)} placeholder="继续说点什么…" />
-                  <button type="button" onClick={()=>sendJournalMessage(viewingJournal.id)} disabled={!journalMessageDraft.trim()}>发送</button>
-                </div>
-                <small className="journal-message-note">发送后不可修改或删除</small>
-              </section>
-            </div>
-            <div className="editor-footer">
-              <div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={()=>deleteJournal(viewingJournal.id)}>删除记录</button></div>
-              <div className="editor-primary-actions">
-                <button className="cancel-button" type="button" onClick={()=>setViewingJournalId(null)}>关闭</button>
-                <button className="save-button" type="button" onClick={()=>{const entry=viewingJournal;setViewingJournalId(null);editJournal(entry)}}>编辑</button>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {journalEditorOpen && (
-        <div className="modal-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭记录编辑器" onClick={closeJournalEditor} />
-          <section className="task-editor journal-editor" role="dialog" aria-modal="true" aria-labelledby="journal-editor-title">
-            <div className="editor-header">
-              <div><span className="eyebrow">{editingJournalId ? 'EDIT JOURNAL' : 'NEW JOURNAL'}</span><h2 id="journal-editor-title">{editingJournalId ? '编辑记录' : '添加记录'}</h2></div>
-              <button className="close-button" type="button" onClick={closeJournalEditor} aria-label="关闭">×</button>
-            </div>
-            <div className="editor-body">
-              <label className="field full-field"><span>标题 *</span><input autoFocus value={journalDraft.title} onChange={event => setJournalDraft(current => ({ ...current, title: event.target.value }))} placeholder="给这条记录一个标题" /></label>
-              <div className="field full-field"><span>事件影响</span><div className="impact-picker">{IMPACTS.map(impact => <button key={impact} type="button" className={`impact-choice impact-${impact}${journalDraft.impact === impact ? ' active' : ''}`} onClick={() => setJournalDraft(current => ({ ...current, impact }))}>{impact > 0 ? '+' : ''}{impact}</button>)}</div></div>
-              <div className="field full-field journal-emotion-field"><span>具体感受 · 可选 · 最多 3 个</span><button type="button" className="journal-emotion-trigger" onClick={()=>setEmotionPickerOpen(true)}><span className="journal-emotion-selection">{journalDraft.emotionIds.length ? journalDraft.emotionIds.map(id=>{const item=emotionOptions.find(row=>row.id===id);return item?<i key={id} className={`emotion-chip emotion-${item.group}`}>{item.name}</i>:null}) : <small>还没有选择具体感受</small>}</span><b>{journalDraft.emotionIds.length?'修改':'选择'} ›</b></button></div>
-              <label className="field full-field"><span>正文 · Markdown</span><textarea rows={10} value={journalDraft.content} onChange={event => setJournalDraft(current => ({ ...current, content: event.target.value }))} placeholder="正文可选。支持标题、粗体、斜体、删除线、列表、引用、行内代码、分隔线和链接。" /></label>
-              <div className="field full-field journal-image-field"><span>图片 · 最多 9 张</span><div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input className="journal-file-input" type="file" accept="image/*" multiple onChange={event => { void addJournalImages(event.target.files); event.currentTarget.value = '' }} disabled={journalDraft.attachments.filter(a => a.type === 'image').length >= 9} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('journal')} disabled={journalDraft.attachments.filter(a=>a.type==='image').length>=9}>▧ 从图片库选择</button></div>
-                {journalDraft.attachments.some(a => a.type === 'image') && <div className="attachment-list">{journalDraft.attachments.filter(a => a.type === 'image').map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeJournalAttachment(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
-                <small>自动压缩后保存 · 单张约 1 MB · 最多 9 张</small>
-              </div>
-              <div className="field full-field"><span>录音 · 最多 1 条 / 30 分钟</span>
-                {journalDraft.attachments.find(a => a.type === 'audio') ? (() => { const audio = journalDraft.attachments.find(a => a.type === 'audio')!; return <div className="journal-audio-edit"><AudioAttachment attachment={audio}/><button type="button" onClick={() => void removeJournalAttachment(audio)}>删除录音</button></div> })() :
-                  <button type="button" className="record-button" onClick={recording ? stopJournalRecording : () => void startJournalRecording()}>{recording ? `■ 停止录音 ${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2,'0')}` : '● 开始录音'}</button>}
-              </div>
-              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor(tags, 'journal').map(tag => <button key={tag.id} type="button" className={`tag-choice${journalDraft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('journal', tag.id)}><i />{tag.name}</button>)}</div></div>
-            </div>
-            <div className="editor-footer">
-              {editingJournalId && <div className="editor-secondary-actions"><button type="button" className="delete-button" onClick={() => { deleteJournal(editingJournalId); closeJournalEditor() }}>删除记录</button></div>}
-              <div className="editor-primary-actions"><button className="cancel-button" type="button" onClick={closeJournalEditor}>取消</button><button className="save-button" type="button" onClick={saveJournal} disabled={!journalDraft.title.trim()}>{editingJournalId ? '保存修改' : '保存记录'}</button></div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {editorOpen && (
-        <div className="modal-layer" role="presentation">
-          <button className="modal-backdrop" type="button" aria-label="关闭任务编辑器" onClick={closeEditor} />
-          <section className="task-editor" role="dialog" aria-modal="true" aria-labelledby="task-editor-title">
-            <div className="editor-header">
-              <div>
-                <span className="eyebrow">{editingTaskId ? 'TASK DETAIL' : 'NEW TASK'}</span>
-                <h2 id="task-editor-title">{editingTaskId ? '任务详情' : '添加任务'}</h2>
-              </div>
-              <button className="close-button" type="button" onClick={closeEditor} aria-label="关闭">×</button>
-            </div>
-
-            <div className="editor-body">
-              <label className="field full-field task-title-field">
-                <span>任务名称 *</span>
-                <div className="task-title-input-wrap">
-                  <input autoFocus value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} placeholder="要做什么？" />
-                  {editingTaskId && (() => {
-                    const series = tasks.find(task => task.id === editingTaskId)
-                    const shown = series ? (editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series) : null
-                    const count = shown?.postponeHistory?.length ?? 0
-                    return count > 0 ? <small className={`postpone-count${count > 3 ? ' postpone-count-high' : ''}`}>↪ 已延期 {count} 次</small> : null
-                  })()}
-                </div>
-              </label>
-
-              <div className="field full-field">
-                <span>优先级</span>
-                <div className="priority-picker">
-                  {PRIORITIES.map(priority => (
-                    <button key={priority.value} type="button" className={`priority-choice priority-${priority.value}${draft.priority === priority.value ? ' active' : ''}`} onClick={() => setDraft(current => ({ ...current, priority: priority.value }))}>
-                      <span className="priority-dot" />
-                      <strong>{priority.label}</strong>
-                      <small>{priority.hint}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-
-              <div className="field full-field attachment-field">
-                <span>图片附件</span>
-                <div className="attachment-source-actions"><label className="attachment-add">＋ 从设备添加<input type="file" accept="image/*" multiple onChange={event => { void addTaskImages(event.target.files); event.currentTarget.value = '' }} /></label><button type="button" className="attachment-add" onClick={()=>setImageLibraryTarget('task')}>▧ 从图片库选择</button></div>
-                {draft.attachments.length > 0 && <div className="attachment-grid">{draft.attachments.map(attachment => <AttachmentThumb key={attachment.id} attachment={attachment} onRemove={() => void removeTaskImage(attachment)} onPreview={attachment => void openImagePreview(attachment)} />)}</div>}
-                <small>自动压缩后保存 · 单张上限 1 MB</small>
-              </div>
-
-              <div className="field full-field task-notes-field">
-                <div className="task-notes-heading"><span>备注</span><div className="task-notes-tools"><button type="button" onClick={insertTaskNoteChecklist} title="插入清单项">☐ 清单</button><button type="button" onClick={toggleTaskNoteChecklistLine} title="勾选或取消当前清单项">✓ 切换</button></div></div>
-                <textarea ref={taskNotesRef} rows={4} value={draft.notes} onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))} onKeyDown={handleTaskNotesKeyDown} placeholder="可选" />
-              </div>
-
-              <div className="field full-field"><span>标签</span><div className="tag-picker">{tagsFor(tags, 'task').map(tag => <button key={tag.id} type="button" className={`tag-choice${draft.tagIds.includes(tag.id) ? ' active' : ''}`} style={{ '--tag-color': tag.color } as any} onClick={() => toggleDraftTag('task', tag.id)}><i />{tag.name}</button>)}</div>
-                {draft.tagIds.some(isImportSourceTagId) && <div className="task-source-readonly">{draft.tagIds.filter(isImportSourceTagId).map(id => { const tag=tags.find(item=>item.id===id); return tag ? <span key={id} className="task-source-tag">#{tag.name}</span> : null })}<small>来源标签由系统管理</small></div>}
-              </div>
-
-              <div className="time-row task-timing-toggle">
-                <label className="check-field">
-                  <input type="checkbox" checked={Boolean(draft.date)} onChange={event => {
-                    if (!event.target.checked) {
-                      if (draft.repeatPreset !== 'none') { window.alert('请先取消重复。重复任务需要关联日期。'); return }
-                      setDraft(current => ({ ...current, date: '', endDate: '', allDay: false, time: '' }))
-                    } else setDraft(current => ({ ...current, date: toDateKey(selectedDate ?? today) }))
-                  }} />
-                  <span>安排日期</span>
-                </label>
-                {draft.date && <label className="check-field">
-                  <input type="checkbox" checked={draft.allDay} onChange={event => setDraft(current => ({ ...current, allDay: event.target.checked, endDate: event.target.checked ? current.endDate : '' }))} />
-                  <span>跨日期</span>
-                </label>}
-              </div>
-
-              {!draft.date ? null : draft.allDay ? (
-                <div className="field-grid">
-                  <label className="field"><span>开始日期</span><input type="date" value={draft.date} onChange={event => setDraft(current => ({ ...current, date: event.target.value, endDate: current.endDate && current.endDate < event.target.value ? '' : current.endDate }))} /></label>
-                  <label className="field"><span>结束日期 · 可选</span><input type="date" min={draft.date} value={draft.endDate} onChange={event => setDraft(current => ({ ...current, endDate: event.target.value }))} /></label>
-                </div>
-              ) : (
-                <div className="field-grid">
-                  <label className="field"><span>日期</span><input type="date" value={draft.date} onChange={event => setDraft(current => ({ ...current, date: event.target.value, endDate: '' }))} /></label>
-                  <label className="field"><span>时间</span><input type="time" value={draft.time} onChange={event => setDraft(current => ({ ...current, time: event.target.value }))} /></label>
-                </div>
-              )}
-            </div>
-
-            <div className="editor-footer">
-              {editingTaskId && (
-                <div className="editor-secondary-actions">
-                  {editingOccurrenceDate && tasks.find(task => task.id === editingTaskId)?.recurrence && (
-                    <button type="button" className="abandon-button" onClick={() => {
-                      const series = tasks.find(task => task.id === editingTaskId)
-                      if (series) stopRepeating(series, editingOccurrenceDate)
-                    }}>停止重复</button>
-                  )}
-                  <button type="button" className="abandon-button" onClick={() => { const series = tasks.find(task => task.id === editingTaskId); if (series) { const shown = editingOccurrenceDate ? materializeOccurrence(series, editingOccurrenceDate) : series; if (shown) setTaskStatus(shown, 'abandoned') }; closeEditor() }}>放弃任务</button>
-                  <button type="button" className="delete-button" onClick={() => {
-                    const series = tasks.find(task => task.id === editingTaskId)
-                    if (!series) return
-                    if (editingOccurrenceDate && series.recurrence) setSeriesAction('delete')
-                    else { deleteTask(series, 'series'); closeEditor() }
-                  }}>删除</button>
-                </div>
-              )}
-              <div className="editor-primary-actions">
-                <button className="cancel-button" type="button" onClick={closeEditor}>取消</button>
-                <button className="save-button" type="button" onClick={() => {
-                  const series = editingTaskId ? tasks.find(task => task.id === editingTaskId) : null
-                  if (editingOccurrenceDate && series?.recurrence && draft.repeatPreset === 'none') setConfirmSingleTask(true)
-                  else if (editingOccurrenceDate && series?.recurrence) setSeriesAction('save')
-                  else saveTask('series')
-                }} disabled={!draft.title.trim()}>{editingTaskId ? '保存修改' : '保存任务'}</button>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-      {confirmSingleTask && editingTaskId && editingOccurrenceDate && (
-        <div className="scope-layer" role="presentation">
-          <button className="scope-backdrop" type="button" aria-label="关闭" onClick={() => setConfirmSingleTask(false)} />
-          <section className="scope-dialog" role="dialog" aria-modal="true">
-            <h3>改为单次任务？</h3>
-            <p>当前重复系列将在这次任务之前结束；当前这次会保留为单次任务，此前的任务记录保留，之后的重复任务不再生成。</p>
-            <div className="scope-actions">
-              <button type="button" onClick={() => setConfirmSingleTask(false)}>取消</button>
-              <button type="button" className="save-button" onClick={convertOccurrenceToSingleTask}>改为单次任务</button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {seriesAction && editingTaskId && editingOccurrenceDate && (
-        <div className="scope-layer" role="presentation">
-          <button className="scope-backdrop" type="button" aria-label="关闭" onClick={() => setSeriesAction(null)} />
-          <section className="scope-dialog" role="dialog" aria-modal="true">
-            <h3>{seriesAction === 'save' ? '修改重复任务' : '删除重复任务'}</h3>
-            <p>{seriesAction === 'save' ? '这次修改应用到哪里？' : '要删除哪些重复任务？'}</p>
-            <div className="scope-actions scope-actions-three">
-              <button type="button" onClick={() => {
-                if (seriesAction === 'save') saveTask('occurrence')
-                else {
-                  const series = tasks.find(t => t.id === editingTaskId)
-                  const shown = series ? materializeOccurrence(series, editingOccurrenceDate) : null
-                  if (shown) deleteTask(shown, 'occurrence')
-                  closeEditor()
-                }
-                setSeriesAction(null)
-              }}>仅本次</button>
-              <button type="button" onClick={() => {
-                if (seriesAction === 'save') saveTask('future')
-                else {
-                  const series = tasks.find(t => t.id === editingTaskId)
-                  const shown = series ? materializeOccurrence(series, editingOccurrenceDate) : null
-                  if (shown) deleteTask(shown, 'future')
-                  closeEditor()
-                }
-                setSeriesAction(null)
-              }}>本次及以后</button>
-              <button type="button" className={seriesAction === 'delete' ? 'delete-button' : 'save-button'} onClick={() => {
-                const series = tasks.find(t => t.id === editingTaskId)
-                if (seriesAction === 'save') saveTask('series')
-                else if (series) {
-                  deleteTask(series, 'series')
-                  closeEditor()
-                }
-                setSeriesAction(null)
-              }}>整个系列</button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {imageLibraryTarget && createPortal(
-        <div className="storage-browser-layer attachment-library-layer" role="dialog" aria-modal="true" aria-label="从图片库选择">
-          <button className="modal-backdrop" type="button" aria-label="关闭图片库" onClick={()=>setImageLibraryTarget(null)} />
-          <section className="storage-browser attachment-library-modal">
-            <header className="storage-browser-header"><div><span className="eyebrow">IMAGE LIBRARY</span><h2>从图片库选择</h2><small>复用已有图片，不会重复占用存储空间</small></div><button className="close-button" type="button" onClick={()=>setImageLibraryTarget(null)}>×</button></header>
-            {libraryImages.length===0 ? <p className="page-empty">图片库还是空的。</p> : <div className="storage-image-grid selectable-library-grid">{libraryImages.map(attachment => {
-              const selected = imageLibraryTarget==='task'
-                ? draft.attachments.some(a=>a.storageKey===attachment.storageKey)
-                : imageLibraryTarget==='journal'
-                  ? journalDraft.attachments.some(a=>a.storageKey===attachment.storageKey)
-                  : notes.find(note=>note.id===imageLibraryNoteId)?.attachments?.some(a=>a.storageKey===attachment.storageKey) ?? false
-              return <div className={`library-pick-item ${selected?'selected':''}`} key={attachment.storageKey}><StorageImage attachment={attachment} onPreview={()=>chooseLibraryImage(attachment)} />{selected && <span className="library-picked-mark">✓ 已引用</span>}</div>
-            })}</div>}
-          </section>
-        </div>,
-        document.body
-      )}
-
-      {imagePreview && (
-        <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={imagePreview.name}>
-          <button className="image-lightbox-backdrop" type="button" aria-label="关闭图片" onClick={closeImagePreview} />
-          <img src={imagePreview.url} alt={imagePreview.name} />
-          {imagePreview.galleryKeys?.length ? <>
-            <button className="image-lightbox-nav image-lightbox-prev" type="button" onClick={()=>stepImagePreview(-1)} disabled={imagePreview.galleryKeys.indexOf(imagePreview.storageKey)<=0} aria-label="上一张">‹</button>
-            <button className="image-lightbox-nav image-lightbox-next" type="button" onClick={()=>stepImagePreview(1)} disabled={imagePreview.galleryKeys.indexOf(imagePreview.storageKey)>=imagePreview.galleryKeys.length-1} aria-label="下一张">›</button>
-            <span className="image-lightbox-count">{imagePreview.galleryKeys.indexOf(imagePreview.storageKey)+1} / {imagePreview.galleryKeys.length}</span>
-            <button className="image-lightbox-rename" type="button" onClick={renamePreviewImage}>重命名</button>
-          </>:null}
-          <button className="image-lightbox-close" type="button" onClick={closeImagePreview} aria-label="关闭">×</button>
-        </div>
-      )}
     </main>
   )
 }

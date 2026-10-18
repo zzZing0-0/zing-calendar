@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button'
 import { Children, isValidElement, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -28,7 +29,7 @@ function CodeBlock({children}:{children?: ReactNode}) {
   return <div className="zing-code-block">
     <div className="zing-code-block-bar">
       <span>{language??'代码'}</span>
-      <button type="button" onClick={copy} aria-label="复制代码">{copied?'✓ 已复制':'复制'}</button>
+      <Button type="button" onClick={copy} aria-label="复制代码">{copied?'✓ 已复制':'复制'}</Button>
     </div>
     <pre>{children}</pre>
   </div>

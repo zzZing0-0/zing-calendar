@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test'
-import fs from 'node:fs'
-import path from 'node:path'
+import { readApplicationSource, readStylesheet } from '../helpers/applicationSource'
 
-const source = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-const css = fs.readFileSync(path.resolve(process.cwd(), 'src/App.css'), 'utf8')
+const source = readApplicationSource()
+const css = readStylesheet('src/App.css')
 
 test('Inbox UI exposes unscheduled task creation and recurrence guard', () => {
   expect(source).toContain('收集箱')
@@ -12,8 +11,8 @@ test('Inbox UI exposes unscheduled task creation and recurrence guard', () => {
   expect(source).toContain('<span>跨日期</span>')
   expect(source).toContain('添加未排期任务')
   expect(source).not.toContain('未安排日期的任务会保存在收集箱中。')
-  expect(source).toContain('compactCount(inboxTasks.length)')
-  expect(source).toContain('compactCount(overdueTasks.length)')
+  expect(source).toContain('compactCount(inboxCount)')
+  expect(source).toContain('compactCount(overdueCount)')
   expect(source).toContain('请先取消重复。重复任务需要关联日期。')
   expect(source).toContain("date: '', endDate: '', allDay: false")
 })
@@ -69,10 +68,10 @@ test('Inbox task operations keep the Inbox open and rows show tag plus activity 
 })
 
 test('Inbox and overdue task rows use normal task text styling and overdue postponement stays inline', () => {
-  expect(css).toContain('.overdue-task-link strong{color:#354039')
+  expect(css).toContain('.overdue-task-link strong{color:var(--color-text-secondary)')
   expect(source).toContain('className="overdue-inbox-main overdue-task-row"')
-  expect(source).toContain('>延期</button>')
-  expect(source).not.toContain('>延期到今天</button>')
+  expect(source).toContain('>延期</Button>')
+  expect(source).not.toContain('>延期到今天</Button>')
   expect(css).toContain('.overdue-task-row{grid-template-columns:20px minmax(0,1fr) auto}')
 })
 

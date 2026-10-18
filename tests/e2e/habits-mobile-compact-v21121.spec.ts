@@ -1,6 +1,7 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-const css = readFileSync('src/features/habits/habits.css', 'utf8')
+import { readStylesheet } from '../helpers/applicationSource'
+const css = readStylesheet('src/features/habits/habits.css')
 const component = readFileSync('src/features/habits/HabitsPage.tsx', 'utf8')
 
 test('mobile target inputs fit in one compact row without horizontal overflow', async ({ page }) => {
@@ -16,14 +17,17 @@ test('mobile target inputs fit in one compact row without horizontal overflow', 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
 
-test('native date focus hides underlying management footer and blur restores it', async ({ page }) => {
+test('native date focus hides underlying management footer and moving focus away restores it', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><section class="habit-modal"><div class="habit-log-editor"><label>发生日期<span class="habit-date-control"><span class="habit-date-display">2026年10月17日</span><input type="date" value="2026-10-17" aria-label="发生日期"></span></label></div><footer><button>编辑习惯</button><button>归档</button><button>删除</button></footer></section>`)
+  await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><button type="button" aria-label="结束日期输入">完成</button><section class="habit-modal"><div class="habit-log-editor"><label>发生日期<span class="habit-date-control"><span class="habit-date-display">2026年10月17日</span><input type="date" value="2026-10-17" aria-label="发生日期"></span></label></div><footer><Button>编辑习惯</Button><Button>归档</Button><Button>删除</Button></footer></section>`)
   const footer=page.locator('.habit-modal footer')
   await expect(footer).toBeVisible()
   await page.locator('input[type="date"]').focus()
   await expect(footer).toBeHidden()
-  await page.locator('input[type="date"]').blur()
+  // Chromium's segmented native date control can retain focus after a synthetic blur().
+  // Move focus as a user does, then verify both the focus transition and the footer.
+  await page.getByRole('button', { name: '结束日期输入' }).focus()
+  await expect(page.locator('input[type="date"]')).not.toBeFocused()
   await expect(footer).toBeVisible()
 })
 

@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
+import { readApplicationSource } from '../helpers/applicationSource'
 
-const app = fs.readFileSync('src/App.tsx', 'utf8')
+const app = readApplicationSource()
 const notes = fs.readFileSync('src/features/notes/NotesPage.tsx', 'utf8')
 
 test('note focus opens the shared focus-eligible tag choice instead of silently using the note tag or default', () => {
