@@ -5443,3 +5443,10 @@ button {
 .note-focus-row .note-focus-history-trigger:hover,.note-focus-row>button:last-child:hover{background:#f4f7f5!important}
 .note-focus-row>button:disabled{opacity:.48;cursor:not-allowed}
 @media(max-width:700px){.note-focus-row{gap:8px}.note-focus-row .note-focus-history-trigger,.note-focus-row>button:last-child{font-size:12px;padding:8px 10px;min-width:0;white-space:nowrap}}
+
+/* v2.14.11 — Notes editor buttons: consistent theme colors, no iOS blue links. */
+.note-editor .note-editor-actions .note-finish-button{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;border:1px solid #39765d!important;border-radius:10px;background:#39765d!important;color:#fff!important;-webkit-text-fill-color:#fff;font:inherit;font-weight:650;line-height:1.3;min-height:38px;padding:8px 13px;cursor:pointer;text-decoration:none!important}
+.note-editor .note-editor-actions .note-finish-button:hover{background:#305f4d!important}
+.note-editor .note-mobile-tabs button{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;min-height:40px;border:1px solid #dce3df!important;border-radius:10px;background:#fff!important;color:#34483e!important;-webkit-text-fill-color:#34483e;font:inherit;font-weight:550;text-decoration:none!important;cursor:pointer}
+.note-editor .note-mobile-tabs button.active{border-color:#34483e!important;background:#34483e!important;color:#fff!important;-webkit-text-fill-color:#fff}
+.note-editor .note-mobile-tabs button:not(.active):hover{background:#f4f7f5!important}
