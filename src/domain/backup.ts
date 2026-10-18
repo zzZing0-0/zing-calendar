@@ -68,23 +68,47 @@ function readU32(view: DataView, offset: number) { return view.getUint32(offset,
 
 export async function readZingZip(file: File): Promise<Map<string, Uint8Array>> {
   const bytes = new Uint8Array(await file.arrayBuffer()), view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const decoder = new TextDecoder(), entries = new Map<string, Uint8Array>()
+  const decoder = new TextDecoder('utf-8', { fatal: true }), entries = new Map<string, Uint8Array>()
   let offset = 0
   while (offset + 4 <= bytes.length) {
     const signature = readU32(view, offset)
     if (signature === 0x02014b50 || signature === 0x06054b50) break
-    if (signature !== 0x04034b50) throw new Error('ZIP 结构无法识别')
-    const flags = readU16(view, offset + 6), method = readU16(view, offset + 8), compressedSize = readU32(view, offset + 18), uncompressedSize = readU32(view, offset + 22)
+    if (signature !== 0x04034b50 || offset + 30 > bytes.length) throw new Error('ZIP 结构无法识别或文件不完整')
+    const flags = readU16(view, offset + 6), method = readU16(view, offset + 8)
+    const expectedCrc = readU32(view, offset + 14)
+    const compressedSize = readU32(view, offset + 18), uncompressedSize = readU32(view, offset + 22)
     const nameLength = readU16(view, offset + 26), extraLength = readU16(view, offset + 28)
-    if (flags & 0x0008) throw new Error('不支持 data descriptor ZIP')
+    if (flags & 0x0001) throw new Error('不支持加密 ZIP')
+    if (flags & ~0x0800) throw new Error('ZIP 包含不支持的标志位')
     if (method !== 0) throw new Error('备份 ZIP 使用了不支持的压缩方式')
     const nameStart = offset + 30, dataStart = nameStart + nameLength + extraLength, dataEnd = dataStart + compressedSize
-    if (dataEnd > bytes.length) throw new Error('ZIP 文件不完整')
-    const name = decoder.decode(bytes.slice(nameStart, nameStart + nameLength))
+    if (dataStart > bytes.length || dataEnd > bytes.length) throw new Error('ZIP 文件不完整')
+    const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength))
+    if (!name || name.startsWith('/') || name.includes('\\') || name.split('/').some(part => part === '..' || part === '.' || !part)) throw new Error('ZIP 包含不安全的文件路径')
+    if (entries.has(name)) throw new Error(`ZIP 包含重复文件：${name}`)
     const payload = bytes.slice(dataStart, dataEnd)
     if (payload.length !== uncompressedSize) throw new Error(`文件大小异常：${name}`)
+    if (crc32(payload) !== expectedCrc) throw new Error(`文件校验失败（CRC32）：${name}`)
     entries.set(name, payload); offset = dataEnd
   }
+  if (entries.size === 0 || offset + 4 > bytes.length) throw new Error('ZIP 文件不完整')
+  // The writer uses stored entries; verify central-directory metadata as well.
+  let cursor = offset, centralCount = 0
+  while (cursor + 4 <= bytes.length && readU32(view, cursor) === 0x02014b50) {
+    if (cursor + 46 > bytes.length) throw new Error('ZIP 中央目录不完整')
+    const nameLength = readU16(view, cursor + 28), extraLength = readU16(view, cursor + 30), commentLength = readU16(view, cursor + 32)
+    const next = cursor + 46 + nameLength + extraLength + commentLength
+    if (next > bytes.length) throw new Error('ZIP 中央目录不完整')
+    const name = decoder.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength))
+    const payload = entries.get(name)
+    if (!payload || readU16(view, cursor + 10) !== 0 || readU32(view, cursor + 20) !== payload.length ||
+        readU32(view, cursor + 42) >= offset || readU32(view, cursor + 16) !== crc32(payload) || readU32(view, cursor + 24) !== payload.length) throw new Error(`ZIP 中央目录校验失败：${name}`)
+    centralCount += 1; cursor = next
+  }
+  if (cursor + 22 !== bytes.length || readU32(view, cursor) !== 0x06054b50 ||
+      readU16(view, cursor + 8) !== entries.size || readU16(view, cursor + 10) !== entries.size ||
+      readU32(view, cursor + 12) !== cursor - offset || readU32(view, cursor + 16) !== offset ||
+      readU16(view, cursor + 20) !== 0 || centralCount !== entries.size) throw new Error('ZIP 中央目录或结尾校验失败')
   return entries
 }
 
@@ -122,9 +146,31 @@ export function parseBackupEntries(entries: Map<string, Uint8Array>): ParsedBack
   const habitCheckIns = entries.has('data/habit-checkins.json') ? decodeBackupJson<BackupPreview['habitCheckIns']>(entries, 'data/habit-checkins.json') : []
   const settings = decodeBackupJson<BackupPreview['settings']>(entries, 'data/settings.json')
   if (![tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, habits, habitCheckIns].every(Array.isArray)) throw new Error('备份中的数据格式不完整')
-  const rows = Array.isArray(manifest.attachments) ? manifest.attachments : []
+  if (!manifest.counts || typeof manifest.counts !== 'object' || !Array.isArray(manifest.attachments)) throw new Error('备份清单格式错误')
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('备份设置格式错误')
+  const dataGroups = { tasks, journals, notes, notebooks, moods, energies, environments, periods, tags, anniversaries, focusSessions, habits, habitCheckIns }
+  for (const [group, records] of Object.entries(dataGroups)) {
+    for (const record of records) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) throw new Error(`备份记录格式错误：${group}`)
+    }
+  }
+  // Reject ambiguous entity keys before any restore transaction is started.
+  for (const [group, records] of Object.entries(dataGroups)) {
+    const keys = new Set<string>()
+    for (const record of records) {
+      const key = ['moods', 'energies', 'environments'].includes(group) ? (record as any).date : (record as any).id
+      if (typeof key !== 'string' || !key.trim()) throw new Error(`备份记录缺少标识：${group}`)
+      if (keys.has(key)) throw new Error(`备份包含重复记录：${group}/${key}`)
+      keys.add(key)
+    }
+  }
+  const rows = manifest.attachments
+  const attachmentKeys = new Set<string>()
   const attachments = rows.map((row:any) => {
     if (!row?.storageKey || !row?.path || !row?.mimeType || !row?.type) throw new Error('附件清单格式错误')
+    if (typeof row.storageKey !== 'string' || typeof row.path !== 'string' || typeof row.mimeType !== 'string' || typeof row.type !== 'string') throw new Error('附件清单字段类型错误')
+    if (attachmentKeys.has(row.storageKey)) throw new Error('附件清单存在重复存储键')
+    attachmentKeys.add(row.storageKey)
     const bytes = entries.get(row.path)
     if (!bytes) throw new Error(`缺少附件：${row.filename ?? row.path}`)
     if (typeof row.size === 'number' && bytes.length !== row.size) throw new Error(`附件大小不一致：${row.filename ?? row.path}`)

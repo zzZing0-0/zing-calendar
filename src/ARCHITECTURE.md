@@ -117,3 +117,10 @@ Notes-specific Markdown additions should remain inside the Notes feature. The sh
 
 ### Note × Focus integration (v2.9.22)
 Notes use the same persisted `FocusSession` source of truth as free and Task focus. A Note session is a stopwatch FocusSession with `context: { kind: 'note', noteId }`; Note records never store aggregate focus duration. Note totals and Today Focus rows are derived from FocusSessions. Note deletion cascades its live FocusSessions into Trash with a reversible cascade marker; restore reverses only that cascade, while permanent deletion removes every FocusSession associated with the Note. Trashed or missing Note contexts are excluded from all focus statistics. Global focus exclusivity and Wake Lock remain shared across free, Task, and Note focus.
+
+## Data integrity guardrails (v2.15.2)
+
+- Full ZIP restore validates CRC32, central directory and unique entity keys before writing. Missing/duplicate IDs are rejected rather than silently overwritten by IndexedDB.
+- Generic CSV and Dida CSV imports track identifiers within the imported file as well as existing local records, preventing duplicate IDs from being inserted in a single import. Forest already tracks imported IDs in its parsing loop.
+- Backup restoration writes primary records and binary attachments in a shared IndexedDB transaction. Device-local settings are stored separately; full settings/data atomicity across localStorage and IndexedDB is not guaranteed.
+- Cloud sync is deliberately not realtime. Do not add realtime cross-device focus locking; test merge and tombstone invariants instead.

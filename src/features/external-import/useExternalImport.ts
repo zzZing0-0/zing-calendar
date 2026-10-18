@@ -68,6 +68,7 @@ export function useExternalImport({tasks,tags,focusSessions,defaultPriority,setT
         const sourceId=cell(col.id)||`${date}:${title}:${rowIndex+1}`
         const id=`import:generic:${sourceId}`
         if(existingIds.has(id)){duplicateCount++;return}
+        existingIds.add(id)
         const category=cell(col.category)
         const ordinaryTagIds:string[]=[]
         category.split(/[;,，、|]/).map(v=>v.trim()).filter(Boolean).forEach(name=>{
@@ -129,6 +130,7 @@ export function useExternalImport({tasks,tags,focusSessions,defaultPriority,setT
         const taskId=get('taskId').trim() || `row-${rowIndex+1}`
         const id=`import:dida:${taskId}`
         if(existingIds.has(id)){ duplicateCount++; return }
+        existingIds.add(id)
         const timezone=get('Timezone') || 'Asia/Shanghai'
         const start=zonedParts(get('Start Date'),timezone), due=zonedParts(get('Due Date'),timezone)
         const base=start ?? due
