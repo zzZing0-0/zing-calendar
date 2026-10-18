@@ -19,7 +19,7 @@ test('habit names and controls use the existing green palette instead of link bl
   expect(habitsCss).toContain('color:var(--color-text-strong)')
   expect(habitsCss).toContain('color:var(--color-accent)')
   expect(navCss).toContain('.mobile-nav-panel header button{color:#536b5b}')
-  expect(app).toMatch(/const APP_VERSION = '\d+\.\d+\.\d+'/)
+  expect(app).toContain('export const APP_VERSION = packageInfo.version')
 })
 
 test('navigation editor has drag handles but no arrow or show/hide action buttons', () => {

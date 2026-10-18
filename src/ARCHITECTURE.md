@@ -133,3 +133,31 @@ Notes use the same persisted `FocusSession` source of truth as free and Task foc
 - Generic CSV and Dida CSV imports track identifiers within the imported file as well as existing local records, preventing duplicate IDs from being inserted in a single import. Forest already tracks imported IDs in its parsing loop.
 - Backup restoration writes primary records and binary attachments in a shared IndexedDB transaction. Device-local settings are stored separately; full settings/data atomicity across localStorage and IndexedDB is not guaranteed.
 - Cloud sync is deliberately not realtime. Do not add realtime cross-device focus locking; test merge and tombstone invariants instead.
+
+## v2.15.3 candidate: safety and maintenance boundaries
+
+This section supersedes earlier safety claims where they are more optimistic. The database remains schema 12 and sync remains protocol 1. See [AGENTS.md](../AGENTS.md), [release rules](../docs/RELEASING.md) and [the current audit](../docs/SECURITY_AUDIT_v2.15.3.md).
+
+- `db/transaction.ts` owns explicit rollback on synchronous enqueue errors and replacement key validation. `db/request.ts` owns bounded client request lifetimes. `domain/syncValidation.ts` validates incoming bundle identities before merge. `domain/backupValidation.ts` validates settings and attachment references before restore.
+- Sync composes a candidate without mutating local records, uploads with the existing GitHub SHA compare-and-swap, and commits acknowledged data against the latest local rows in one transaction. A single pre-merge structured-data checkpoint lives in syncMetadata; it is not a complete binary backup or a user-facing rollback interface.
+- Failed hydration must not enable empty-state persistence. Merely viewing storage statistics must not collect attachment bytes. Explicit local cleanup rechecks persisted Task, Journal and Note references, including trash and recurring exceptions, within its deletion transaction.
+- B2 delete-time revalidation compares against the supplied reference list, not an authoritative up-to-date multi-device ledger. The historical claim that it protects a newly regained reference only applies when the caller supplies that reference. Server-side same-origin checks do not provide identity authentication. These remain release blockers in the current audit.
+- IndexedDB data plus attachments restore atomically inside IndexedDB. localStorage preferences and tombstone/outbox recording are separate storage/transaction boundaries; do not claim whole-application crash atomicity.
+- Existing shared UI, feature controllers and global date formatting remain the extension points. Persistent root effects and sync orchestration are still substantial; move them only with behavior-focused tests and a stable business boundary, not merely to reduce App.tsx line count.
+- Version ownership is package.json, with synchronized lockfile and generated production worker version. Every new code delivery needs a new version; historical tags and changelogs remain immutable.
+
+## v2.15.4 candidate: atomic persistence and server authorization
+
+See [current remediation audit](../docs/SECURITY_AUDIT_v2.15.4.md) and [deployment prerequisites](../docs/B2_DEPLOYMENT.md). This supersedes the prior candidate's open-code-boundary descriptions; deployed behavior is still unverified.
+
+- `server/b2-authorization.ts` binds B2 access to configured GitHub numeric identities and one fixed private ledger ID plus write permission. Both B2 handlers deny on missing configuration/identity/permission/upstream availability. Same-origin checks remain defense in depth.
+- B2 GC is preview only. Its delete action always refuses before bucket access; there is no server DELETE implementation or force switch. No live/offline global-reference proof currently exists.
+- `saveEntityWithSync` reads durable rows and atomically writes entity data, tombstones and outbox. `features/sync/useEntityPersistence` connects hydrated feature state to it. The old diff adapter delegates to the atomic method, never records stale UI snapshots in separate transactions.
+- `replaceZingData` accepts optional settings without changing stored row or backup formats; the application restore supplies fully prepared settings in the same transaction as all data and blobs.
+- `features/application/settingsCache.ts` treats localStorage as a cache. main prepares it from durable IDB settings before mounting React. Failure blocks mounting, leaving IDB data intact; old installs with no settings row retain their local preference compatibility. Cache writes in running preferences cannot convert a committed restore into a failed data transaction.
+
+## v2.15.5 candidate: restore authorized manual B2 deletion
+
+This supersedes the preceding candidate's preview-only restriction. The existing preview → review → confirmation → delete flow is retained. `api/b2-gc.ts` requires the same server identity/ledger authorization, lists only the configured bucket, and reads cloud attachment references through `server/b2-ledger.ts`. Server-pinned branch/path default to the existing sync defaults; client input cannot choose a bucket or ledger. Task recurrence, trash, Journal and Note links protect objects even when omitted by a stale client. Each deletion rechecks current cloud references and reports per-key outcomes. `features/attachments/b2CleanupResult.ts` validates results; the UI retains failed/protected files and does not collect unrelated local bytes.
+
+There is no global atomic transaction between GitHub reference checks and B2 deletion, nor visibility into unsynced offline devices. Deployment binding and provider behavior remain unverified; no release is authorized in this round. See `docs/B2_DEPLOYMENT.md` for these limits.

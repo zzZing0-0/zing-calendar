@@ -34,7 +34,7 @@ test('Inbox exposes compact add action and draggable three-key sorting controls'
   expect(source).toContain('inbox-sort-row')
   expect(source).toContain('data-inbox-sort-key={key}')
   expect(source).toContain('moveInboxSortKey(current,from,key)')
-  expect(source).toContain("localStorage.setItem('zing:inboxSortOrder'")
+  expect(source).toContain("writeLocalCache('zing:inboxSortOrder'")
   expect(source).toContain('inboxTodoGroups')
   expect(source).toContain('inboxCompletedTasks')
   expect(css).toContain('.inbox-sort-chip.primary')

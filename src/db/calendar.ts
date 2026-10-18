@@ -1,3 +1,11 @@
+import { fetchWithTimeout } from './request'
+import { assertAttachmentIntegrity } from '../domain/attachmentIntegrity'
+import { completeWrite, validateStoreRows } from './transaction'
+import { referencedAttachmentKeys } from '../domain/attachments'
+import type { Task, JournalEntry, Note } from '../types'
+import { validateSyncBundle, validateSyncRows, SYNC_ENTITY_TYPES } from '../domain/syncValidation'
+import { planSyncDiff, syncEntityKey } from '../domain/sync'
+
 const DB_NAME = 'zing-calendar'
 const DB_VERSION = 12
 const TASK_STORE = 'tasks'
@@ -49,7 +57,14 @@ function openDatabase(): Promise<IDBDatabase> {
       }
     }
 
-    request.onsuccess = () => resolve(request.result)
+    let blocked = false
+    request.onblocked = () => { blocked = true; reject(new Error('数据库升级被其他窗口阻塞，请关闭其他 Zing 窗口后重试')) }
+    request.onsuccess = () => {
+      const db = request.result
+      db.onversionchange = () => db.close()
+      if (blocked) db.close()
+      else resolve(db)
+    }
     request.onerror = () => reject(request.error)
   })
 }
@@ -71,14 +86,12 @@ async function loadAll<T>(storeName: string): Promise<T[]> {
 async function replaceAll<T>(storeName: string, rows: T[]): Promise<void> {
   const db = await openDatabase()
   try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(storeName, 'readwrite')
+    const transaction = db.transaction(storeName, 'readwrite')
+    await completeWrite(transaction, () => {
       const store = transaction.objectStore(storeName)
+      validateStoreRows(String(store.keyPath), rows)
       store.clear()
       rows.forEach(row => store.put(row))
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
     })
   } finally {
     db.close()
@@ -151,26 +164,31 @@ export async function getStorageStats(): Promise<ZingStorageStats> {
 
 export async function cleanupOrphanAttachmentBlobs(referencedKeys: string[]): Promise<number> {
   const db = await openDatabase()
+  let removed = 0
   try {
-    const referenced = new Set(referencedKeys)
-    return await new Promise<number>((resolve,reject) => {
-      const tx = db.transaction(ATTACHMENT_STORE,'readwrite')
-      const store = tx.objectStore(ATTACHMENT_STORE)
-      const request = store.openCursor()
-      let removed = 0
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) return
-        if (!referenced.has(String(cursor.key))) {
-          cursor.delete()
-          removed += 1
+    const tx = db.transaction([ATTACHMENT_STORE, TASK_STORE, JOURNAL_STORE, NOTE_STORE], 'readwrite')
+    await completeWrite(tx, () => {
+      const owners: Record<string, any[]> = {}
+      let pending = 3
+      for (const name of [TASK_STORE, JOURNAL_STORE, NOTE_STORE]) {
+        const request = tx.objectStore(name).getAll()
+        request.onsuccess = () => {
+          owners[name] = request.result
+          if (--pending) return
+          // Recheck persisted owners in the same transaction as deletion. A stale UI
+          // reference list must never erase note/trash/recurrence attachment bytes.
+          const referenced = new Set([...referencedKeys, ...referencedAttachmentKeys(owners[TASK_STORE] as Task[], owners[JOURNAL_STORE] as JournalEntry[], owners[NOTE_STORE] as Note[])])
+          const cursorRequest = tx.objectStore(ATTACHMENT_STORE).openCursor()
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result
+            if (!cursor) return
+            if (!referenced.has(String(cursor.key))) { cursor.delete(); removed += 1 }
+            cursor.continue()
+          }
         }
-        cursor.continue()
       }
-      request.onerror = () => reject(request.error)
-      tx.oncomplete = () => resolve(removed)
-      tx.onerror = () => reject(tx.error)
     })
+    return removed
   } finally { db.close() }
 }
 
@@ -290,6 +308,40 @@ export async function saveSyncTombstone(tombstone: SyncTombstone): Promise<void>
 
 export const loadSyncTombstones = () => loadAll<SyncTombstone>(SYNC_TOMBSTONE_STORE)
 
+/** Compare durable rows, replace them and record their deletions in ONE commit.
+ * No caller-provided snapshots: queued writes must see the preceding committed state.
+ */
+export async function saveEntityWithSync(entityType: SyncEntityType, rows: any[]): Promise<boolean> {
+  const name = entityStoreName(entityType)
+  const db = await openDatabase()
+  const deviceId = getOrCreateDeviceId(), changedAt = new Date().toISOString()
+  let changed = false
+  try {
+    const tx = db.transaction([name, SYNC_TOMBSTONE_STORE, SYNC_CHANGE_STORE], 'readwrite')
+    await completeWrite(tx, () => {
+      const store = tx.objectStore(name)
+      validateStoreRows(String(store.keyPath), rows)
+      const request = store.getAll()
+      request.onsuccess = () => {
+        try {
+          const operations = planSyncDiff(entityType, request.result, rows)
+          changed = operations.length > 0
+          if (!changed) return
+          store.clear()
+          rows.forEach(row => store.put(row))
+          for (const operation of operations) {
+            const key = syncEntityKey(entityType, operation.entityId)
+            if (operation.operation === 'delete') tx.objectStore(SYNC_TOMBSTONE_STORE).put({ key, entityType, entityId: operation.entityId, deletedAt: changedAt, deviceId })
+            else tx.objectStore(SYNC_TOMBSTONE_STORE).delete(key)
+            tx.objectStore(SYNC_CHANGE_STORE).add({ ...operation, changedAt, deviceId })
+          }
+        } catch { tx.abort() }
+      }
+    })
+    return changed
+  } finally { db.close() }
+}
+
 export async function clearSyncTombstone(key: string): Promise<void> {
   const db = await openDatabase()
   try {
@@ -383,7 +435,8 @@ function entityStoreName(entityType: SyncEntityType): string {
   if (entityType === 'tag') return TAG_STORE
   if (entityType === 'anniversary') return ANNIVERSARY_STORE
   if (entityType === 'focus') return FOCUS_STORE
-  return SETTINGS_STORE
+  if (entityType === 'settings') return SETTINGS_STORE
+  throw new Error('未知同步实体类型')
 }
 
 function entityIdOf(entityType: SyncEntityType, row: any): string {
@@ -528,8 +581,11 @@ function mergeConcurrentAttachments(localRecord: SyncEntityRecord, remoteRecord:
 }
 
 export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> {
-  if (remote.protocolVersion !== 1) throw new Error(`不支持的同步协议版本：${remote.protocolVersion}`)
-  const local = await createSyncBundle()
+  validateSyncBundle(remote)
+  return planBundleMerge(remote, await createSyncBundle())
+}
+
+function planBundleMerge(remote: SyncBundle, local: SyncBundle): SyncMergePlan {
   const localRecords = new Map(local.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
   const localTombstones = new Map(local.tombstones.map(tombstone => [tombstone.key, tombstone]))
   const remoteRecords = new Map(remote.records.map(record => [`${record.entityType}:${record.entityId}`, record]))
@@ -583,11 +639,12 @@ export async function planSyncMerge(remote: SyncBundle): Promise<SyncMergePlan> 
 }
 
 export async function applySyncMerge(plan: SyncMergePlan): Promise<void> {
+  validateSyncRows(plan.upserts, plan.deletes)
   const db = await openDatabase()
   const stores = [TASK_STORE, JOURNAL_STORE, NOTE_STORE, NOTEBOOK_STORE, MOOD_STORE, ENERGY_STORE, ENVIRONMENT_STORE, PERIOD_STORE, TAG_STORE, ANNIVERSARY_STORE, FOCUS_STORE, HABIT_STORE, HABIT_CHECKIN_STORE, SETTINGS_STORE, SYNC_TOMBSTONE_STORE]
   try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(stores, 'readwrite')
+    const tx = db.transaction(stores, 'readwrite')
+    await completeWrite(tx, () => {
 
       plan.upserts.forEach(record => {
         tx.objectStore(entityStoreName(record.entityType)).put(record.payload)
@@ -600,13 +657,79 @@ export async function applySyncMerge(plan: SyncMergePlan): Promise<void> {
         tx.objectStore(SYNC_TOMBSTONE_STORE).put(tombstone)
       })
 
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-      tx.onabort = () => reject(tx.error)
     })
   } finally {
     db.close()
   }
+}
+
+
+function mergedSyncBundle(local: SyncBundle, remote: SyncBundle): SyncBundle {
+  validateSyncBundle(remote)
+  const plan = planBundleMerge(remote, local)
+  const records = new Map(local.records.map(row => [`${row.entityType}:${row.entityId}`, row]))
+  const tombstones = new Map(local.tombstones.map(row => [row.key, row]))
+  for (const row of plan.upserts) { const key = `${row.entityType}:${row.entityId}`; records.set(key, row); tombstones.delete(key) }
+  for (const row of plan.deletes) { records.delete(row.key); tombstones.set(row.key, row) }
+  return { ...local, records: [...records.values()].sort((a,b) => SYNC_ENTITY_TYPES.indexOf(a.entityType)-SYNC_ENTITY_TYPES.indexOf(b.entityType) || (a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : 0)), tombstones: [...tombstones.values()].sort((a,b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0) }
+}
+
+/** Read-only maintenance access; credentials and binary data never enter this checkpoint. */
+export async function loadSyncRecoveryBundle(): Promise<SyncBundle | undefined> {
+  const db = await openDatabase()
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = db.transaction(SYNC_META_STORE, 'readonly').objectStore(SYNC_META_STORE).get('preSyncRecovery')
+      request.onsuccess = () => resolve(request.result?.bundle)
+      request.onerror = () => reject(request.error)
+    })
+  } finally { db.close() }
+}
+
+// Rebase against the latest durable local state inside one transaction: edits made
+// while the upload was in flight cannot be replaced by an earlier merge plan.
+async function commitRemoteBundle(remote: SyncBundle, finishedAt: string): Promise<SyncMergePlan> {
+  validateSyncBundle(remote)
+  const db = await openDatabase()
+  const deviceId = getOrCreateDeviceId()
+  let plan: SyncMergePlan = { upserts: [], deletes: [], ignoredRemoteRecords: 0, ignoredRemoteTombstones: 0 }
+  try {
+    const stores = [...SYNC_ENTITY_TYPES.map(entityStoreName), SYNC_TOMBSTONE_STORE, SYNC_META_STORE]
+    const tx = db.transaction(stores, 'readwrite')
+    await completeWrite(tx, () => {
+      const local: SyncBundle = { protocolVersion: 1, exportedAt: finishedAt, deviceId, records: [], tombstones: [] }
+      let state: SyncState | undefined
+      let pending = SYNC_ENTITY_TYPES.length + 2
+      const ready = () => {
+        if (--pending) return
+        try {
+          plan = planBundleMerge(remote, local)
+          if (plan.upserts.length || plan.deletes.length) tx.objectStore(SYNC_META_STORE).put({ key: 'preSyncRecovery', bundle: local })
+          for (const row of plan.upserts) {
+            tx.objectStore(entityStoreName(row.entityType)).put(row.payload)
+            tx.objectStore(SYNC_TOMBSTONE_STORE).delete(`${row.entityType}:${row.entityId}`)
+          }
+          for (const row of plan.deletes) {
+            tx.objectStore(entityStoreName(row.entityType)).delete(row.entityId)
+            tx.objectStore(SYNC_TOMBSTONE_STORE).put(row)
+          }
+          tx.objectStore(SYNC_META_STORE).put({ ...(state ?? { key: 'state', schemaVersion: 1, deviceId }), lastSuccessfulSyncAt: finishedAt })
+        } catch { tx.abort() }
+      }
+      for (const entityType of SYNC_ENTITY_TYPES) {
+        const request = tx.objectStore(entityStoreName(entityType)).getAll()
+        request.onsuccess = () => {
+          local.records.push(...request.result.map(row => ({ entityType, entityId: entityIdOf(entityType, row), updatedAt: entityUpdatedAt(row), payload: canonicalSyncPayload(entityType, row) })))
+          ready()
+        }
+      }
+      const tombstones = tx.objectStore(SYNC_TOMBSTONE_STORE).getAll()
+      tombstones.onsuccess = () => { local.tombstones = tombstones.result; ready() }
+      const metadata = tx.objectStore(SYNC_META_STORE).get('state')
+      metadata.onsuccess = () => { state = metadata.result; ready() }
+    })
+    return plan
+  } finally { db.close() }
 }
 
 
@@ -640,20 +763,20 @@ function syncHeaders(config: SyncTransportConfig): HeadersInit {
 export async function pullSyncBundle(config: SyncTransportConfig): Promise<SyncBundle> {
   const baseUrl = normalizeSyncBaseUrl(config.baseUrl)
   if (!baseUrl) throw new Error('同步服务器地址为空')
-  const response = await fetch(`${baseUrl}/api/sync/bundle`, {
+  const response = await fetchWithTimeout(`${baseUrl}/api/sync/bundle`, {
     method: 'GET',
     headers: syncHeaders(config),
   })
   if (!response.ok) throw new Error(`同步下载失败（HTTP ${response.status}）`)
   const bundle = await response.json() as SyncBundle
-  if (bundle.protocolVersion !== 1) throw new Error(`不支持的同步协议版本：${bundle.protocolVersion}`)
+  validateSyncBundle(bundle)
   return bundle
 }
 
 export async function pushSyncBundle(config: SyncTransportConfig, bundle: SyncBundle): Promise<SyncTransportResult> {
   const baseUrl = normalizeSyncBaseUrl(config.baseUrl)
   if (!baseUrl) throw new Error('同步服务器地址为空')
-  const response = await fetch(`${baseUrl}/api/sync/bundle`, {
+  const response = await fetchWithTimeout(`${baseUrl}/api/sync/bundle`, {
     method: 'PUT',
     headers: { ...syncHeaders(config), 'Content-Type': 'application/json' },
     body: JSON.stringify(bundle),
@@ -678,13 +801,11 @@ export type SyncRoundTripResult = {
 // Keeping this orchestration in the data layer means UI and backend remain replaceable.
 export async function syncRoundTrip(config: SyncTransportConfig): Promise<SyncRoundTripResult> {
   const remote = await pullSyncBundle(config)
-  const plan = await planSyncMerge(remote)
-  await applySyncMerge(plan)
-  const mergedLocal = await createSyncBundle()
-  await pushSyncBundle(config, mergedLocal)
+  const mergedLocal = mergedSyncBundle(await createSyncBundle(), remote)
+  const pushed = await pushSyncBundle(config, mergedLocal)
+  if (pushed.remoteBundle) validateSyncBundle(pushed.remoteBundle)
   const finishedAt = new Date().toISOString()
-  const state = await loadSyncState()
-  await saveSyncState({ ...state, lastSuccessfulSyncAt: finishedAt })
+  const plan = await commitRemoteBundle(pushed.remoteBundle ?? mergedLocal, finishedAt)
   return {
     pulled: { upserts: plan.upserts.length, deletes: plan.deletes.length },
     pushedRecords: mergedLocal.records.length,
@@ -729,7 +850,7 @@ async function githubApiFetch(config: GitHubSyncConfig, url: string, init: Reque
 
   let response: Response
   try {
-    response = await fetch('/api/github-sync', {
+    response = await fetchWithTimeout('/api/github-sync', {
       method: 'POST',
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -826,7 +947,8 @@ async function readGitHubBundleFile(config: GitHubSyncConfig): Promise<{ bundle?
     throw new Error('GitHub 同步文件结构无效（缺少 records/tombstones）')
   }
 
-  return { bundle: parsed as SyncBundle, sha: file.sha }
+  validateSyncBundle(parsed)
+  return { bundle: parsed, sha: file.sha }
 }
 async function writeGitHubBundleFile(config: GitHubSyncConfig, bundle: SyncBundle, sha?: string): Promise<'ok' | 'conflict'> {
   const branch = config.branch?.trim() || 'main'
@@ -873,17 +995,17 @@ function attachmentMetasFromBundle(bundle: SyncBundle): SyncAttachmentMeta[] {
     if (record.entityType === 'task') {
       add(record.payload?.attachments)
       Object.values(record.payload?.recurrenceExceptions ?? {}).forEach((exception: any) => add(exception?.attachments))
-    } else if (record.entityType === 'journal') add(record.payload?.attachments)
+    } else if (record.entityType === 'journal' || record.entityType === 'note') add(record.payload?.attachments)
   })
   return [...byKey.values()]
 }
 
 type B2SignedUrl = { url: string }
 
-async function signedB2Url(storageKey: string, method: 'GET'|'HEAD'|'PUT'): Promise<string> {
-  const response = await fetch(`/api/b2-sign?key=${encodeURIComponent(storageKey)}&method=${method}`, {
+async function signedB2Url(storageKey: string, method: 'GET'|'HEAD'|'PUT', token: string): Promise<string> {
+  const response = await fetchWithTimeout(`/api/b2-sign?key=${encodeURIComponent(storageKey)}&method=${method}`, {
     cache: 'no-store',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   })
   const contentType = response.headers.get('content-type') || ''
   const raw = await response.text()
@@ -902,25 +1024,28 @@ async function signedB2Url(storageKey: string, method: 'GET'|'HEAD'|'PUT'): Prom
   return payload.url
 }
 
-async function readB2Attachment(meta: SyncAttachmentMeta): Promise<Blob | undefined> {
+async function readB2Attachment(meta: SyncAttachmentMeta, token: string): Promise<Blob | undefined> {
   let url: string
-  try { url = await signedB2Url(meta.storageKey, 'GET') }
+  try { url = await signedB2Url(meta.storageKey, 'GET', token) }
   catch (error) { throw new Error(`B2 GET 签名失败 · ${meta.storageKey} · ${error instanceof Error ? error.message : String(error)}`) }
   let response: Response
-  try { response = await fetch(url, { method: 'GET', cache: 'no-store' }) }
+  try { response = await fetchWithTimeout(url, { method: 'GET', cache: 'no-store' }) }
   catch (error) { throw new Error(`B2 GET 网络失败 · ${meta.storageKey} · ${error instanceof Error ? error.message : String(error)}`) }
   if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`B2 附件读取失败（HTTP ${response.status} · ${meta.storageKey}）`)
-  return await response.blob()
+  const blob = await response.blob()
+  await assertAttachmentIntegrity(meta.storageKey, blob)
+  return blob
 }
 
-async function writeB2Attachment(meta: SyncAttachmentMeta, blob: Blob): Promise<void> {
+async function writeB2Attachment(meta: SyncAttachmentMeta, blob: Blob, token: string): Promise<void> {
+  await assertAttachmentIntegrity(meta.storageKey, blob)
   let url: string
-  try { url = await signedB2Url(meta.storageKey, 'PUT') }
+  try { url = await signedB2Url(meta.storageKey, 'PUT', token) }
   catch (error) { throw new Error(`B2 PUT 签名失败 · ${meta.storageKey} · ${error instanceof Error ? error.message : String(error)}`) }
   let response: Response
   try {
-    response = await fetch(url, {
+    response = await fetchWithTimeout(url, {
       method: 'PUT',
       headers: { 'Content-Type': blob.type || meta.mimeType || 'application/octet-stream' },
       body: blob,
@@ -931,16 +1056,24 @@ async function writeB2Attachment(meta: SyncAttachmentMeta, blob: Blob): Promise<
   if (!response.ok) throw new Error(`B2 附件上传失败（HTTP ${response.status} · ${meta.storageKey}）`)
 }
 
-async function syncB2Attachments(bundle: SyncBundle): Promise<{ uploaded: number; downloaded: number; missing: number }> {
+async function syncB2Attachments(bundle: SyncBundle, token: string): Promise<{ uploaded: number; downloaded: number; missing: number }> {
   const result = { uploaded: 0, downloaded: 0, missing: 0 }
   const metas = attachmentMetasFromBundle(bundle)
   for (const meta of metas) {
     const local = await getAttachmentBlob(meta.storageKey)
+    if (local) await assertAttachmentIntegrity(meta.storageKey, local)
     // Avoid HEAD entirely. Safari/Chromium were both failing on the extra presigned
     // HEAD/CORS round trip. A single GET tells us both existence and supplies the blob
     // when this device does not have it.
-    const remote = await readB2Attachment(meta)
+    const remote = await readB2Attachment(meta, token)
     if (remote) {
+      if (local) {
+        const [localBytes, remoteBytes] = await Promise.all([local.arrayBuffer(), remote.arrayBuffer()])
+        const a = new Uint8Array(localBytes), b = new Uint8Array(remoteBytes)
+        if (a.length !== b.length || a.some((value, index) => value !== b[index])) {
+          throw new Error(`B2 附件内容冲突，已停止同步以防止覆盖（${meta.storageKey}）`)
+        }
+      }
       if (!local) {
         await putAttachmentBlob(meta.storageKey, remote)
         result.downloaded += 1
@@ -948,7 +1081,7 @@ async function syncB2Attachments(bundle: SyncBundle): Promise<{ uploaded: number
       continue
     }
     if (local) {
-      await writeB2Attachment(meta, local)
+      await writeB2Attachment(meta, local, token)
       result.uploaded += 1
     } else result.missing += 1
   }
@@ -1069,7 +1202,8 @@ export async function previewGitHubSync(config: GitHubSyncConfig): Promise<GitHu
 
       let mergedRecord: SyncEntityRecord | undefined
       if (newestRecordTime >= newestDeleteTime && (localRecord || remoteRecord)) {
-        if (localRecord && remoteRecord && (entityType === 'task' || entityType === 'journal' || entityType === 'note')) mergedRecord = mergeConcurrentAttachments(localRecord, remoteRecord)
+        if (localRecord && remoteRecord && entityType === 'settings') mergedRecord = mergeConcurrentSettings(localRecord, remoteRecord)
+        else if (localRecord && remoteRecord && (entityType === 'task' || entityType === 'journal' || entityType === 'note')) mergedRecord = mergeConcurrentAttachments(localRecord, remoteRecord)
         else if (remoteRecordTime > localRecordTime) mergedRecord = remoteRecord
         else mergedRecord = localRecord ?? remoteRecord
       }
@@ -1140,8 +1274,6 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
 
   const maxAttempts = 3
   let initializedRemote = false
-  let totalPulledUpserts = 0
-  let totalPulledDeletes = 0
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     // Every attempt re-reads both the latest remote bundle and its SHA.
@@ -1150,35 +1282,28 @@ export async function syncWithGitHub(config: GitHubSyncConfig): Promise<GitHubSy
     const remote = await readGitHubBundleFile(config)
     if (attempt === 1) initializedRemote = !remote.bundle
 
-    if (remote.bundle) {
-      const plan = await planSyncMerge(remote.bundle)
-      await applySyncMerge(plan)
-      totalPulledUpserts += plan.upserts.length
-      totalPulledDeletes += plan.deletes.length
-    }
-
-    const mergedLocal = await createSyncBundle()
+    const local = await createSyncBundle()
+    const mergedLocal = remote.bundle ? mergedSyncBundle(local, remote.bundle) : local
     // Commit the bundle first. Uploading separate attachment files also advances the
     // Git branch HEAD; doing those writes before the SHA-guarded bundle PUT made our
     // own attachment upload look like a concurrent-device conflict.
     const writeResult = await writeGitHubBundleFile(config, mergedLocal, remote.sha)
 
     if (writeResult === 'ok') {
+      const finishedAt = new Date().toISOString()
+      const plan = await commitRemoteBundle(mergedLocal, finishedAt)
       // Binary files are immutable by storageKey and live in private Backblaze B2.
       // GitHub is the structured-data ledger only; attachment binaries are no longer read from GitHub.
       let attachmentTransfer = { uploaded: 0, downloaded: 0, missing: 0 }
       let attachmentWarning: string | undefined
       try {
-        attachmentTransfer = await syncB2Attachments(mergedLocal)
+        attachmentTransfer = await syncB2Attachments(mergedLocal, config.token)
       } catch (error) {
         attachmentWarning = error instanceof Error ? error.message : String(error)
       }
-      const finishedAt = new Date().toISOString()
-      const state = await loadSyncState()
-      await saveSyncState({ ...state, lastSuccessfulSyncAt: finishedAt })
       return {
         initializedRemote,
-        pulled: { upserts: totalPulledUpserts, deletes: totalPulledDeletes },
+        pulled: { upserts: plan.upserts.length, deletes: plan.deletes.length },
         pushedRecords: mergedLocal.records.length,
         pushedTombstones: mergedLocal.tombstones.length,
         attachments: {
@@ -1245,21 +1370,19 @@ export async function clearZingUserDataWithSync(systemTags:any[]): Promise<void>
 
 export async function replaceZingData(payload: {
   tasks:any[]; journals:any[]; notes?:any[]; notebooks?:any[]; moods:any[]; energies:any[]; environments:any[]; periods:any[]; tags:any[]; anniversaries:any[]; focusSessions:any[]; habits?:any[]; habitCheckIns?:any[];
-  attachments:{key:string;blob:Blob}[]
+  attachments:{key:string;blob:Blob}[]; settings?: import('../types').SyncedUserSettings
 }): Promise<void> {
   const db=await openDatabase()
-  const stores=[TASK_STORE,JOURNAL_STORE,NOTE_STORE,NOTEBOOK_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,HABIT_STORE,HABIT_CHECKIN_STORE,ATTACHMENT_STORE]
+  const stores=[TASK_STORE,JOURNAL_STORE,NOTE_STORE,NOTEBOOK_STORE,MOOD_STORE,ENERGY_STORE,ENVIRONMENT_STORE,PERIOD_STORE,TAG_STORE,ANNIVERSARY_STORE,FOCUS_STORE,HABIT_STORE,HABIT_CHECKIN_STORE,ATTACHMENT_STORE,SETTINGS_STORE]
   try {
-    await new Promise<void>((resolve,reject)=>{
-      const tx=db.transaction(stores,'readwrite')
-      const replace=(name:string,rows:any[])=>{ const store=tx.objectStore(name); store.clear(); rows.forEach(row=>store.put(row)) }
+    const tx=db.transaction(stores,'readwrite')
+    await completeWrite(tx, () => {
+      const replace=(name:string,rows:any[])=>{ const store=tx.objectStore(name); validateStoreRows(String(store.keyPath),rows); store.clear(); rows.forEach(row=>store.put(row)) }
       replace(TASK_STORE,payload.tasks); replace(JOURNAL_STORE,payload.journals); replace(NOTE_STORE,payload.notes ?? []); replace(NOTEBOOK_STORE,payload.notebooks ?? []); replace(MOOD_STORE,payload.moods); replace(ENERGY_STORE,payload.energies); replace(ENVIRONMENT_STORE,payload.environments); replace(PERIOD_STORE,payload.periods)
       replace(TAG_STORE,payload.tags); replace(ANNIVERSARY_STORE,payload.anniversaries); replace(FOCUS_STORE,payload.focusSessions); replace(HABIT_STORE,payload.habits??[]); replace(HABIT_CHECKIN_STORE,payload.habitCheckIns??[])
+      if (payload.settings) replace(SETTINGS_STORE, [payload.settings])
       const attachments=tx.objectStore(ATTACHMENT_STORE); attachments.clear()
       payload.attachments.forEach(item=>attachments.put(item.blob,item.key))
-      tx.oncomplete=()=>resolve()
-      tx.onerror=()=>reject(tx.error ?? new Error('恢复事务失败'))
-      tx.onabort=()=>reject(tx.error ?? new Error('恢复事务已回滚'))
     })
   } finally { db.close() }
 }
