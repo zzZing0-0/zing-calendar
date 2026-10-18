@@ -1,3 +1,4 @@
+import { normalizeDaySectionOrder, normalizeSettingsGroupOrder } from './layoutPreferences'
 import { normalizeModuleOrder } from './modulePriority'
 import { normalizeMobileNav } from '../features/navigation/navigationConfig'
 import type { EncouragementMessage, EncouragementStyle, EmotionOption, EnvironmentOption, SyncedUserSettings, TaskPriority, RandomPoolGroup, RandomPoolItem } from '../types'
@@ -62,6 +63,8 @@ type BuildSettingsInput = {
   randomPoolGroups?: RandomPoolGroup[]
   randomPoolItems?: RandomPoolItem[]
   mixedPoolItemIds?: string[]
+  daySectionOrder?: import('./layoutPreferences').DaySectionKey[]
+  settingsGroupOrder?: import('./layoutPreferences').SettingsGroupKey[]
   modulePriority?: import('./modulePriority').ModuleKey[]
   defaultMobileNavigation?: import('../features/navigation/navigationConfig').MobileNavConfig
 }
@@ -75,7 +78,7 @@ export function buildSyncedSettings(input: BuildSettingsInput, clock: WordClock,
     wordCloudIgnored: normalizeIgnoredWords(input.wordCloudIgnored),
     wordCloudIgnoredAddedAt: { ...clock.added }, wordCloudIgnoredRemovedAt: { ...clock.removed },
     encouragementMessages: input.encouragementMessages, encouragementStyle: input.encouragementStyle,
-    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), keepScreenAwakeDuringFocus: input.keepScreenAwakeDuringFocus, weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions, emotionOptions: input.emotionOptions, randomPoolGroups: input.randomPoolGroups ?? [], randomPoolItems: input.randomPoolItems ?? [], mixedPoolItemIds: input.mixedPoolItemIds ?? [], defaultMobileNavigation: input.defaultMobileNavigation, modulePriority:normalizeModuleOrder(input.modulePriority),
+    maxFocusHours: clampMaxFocusHours(input.maxFocusHours), keepScreenAwakeDuringFocus: input.keepScreenAwakeDuringFocus, weatherOptions: input.weatherOptions, thermalOptions: input.thermalOptions, emotionOptions: input.emotionOptions, randomPoolGroups: input.randomPoolGroups ?? [], randomPoolItems: input.randomPoolItems ?? [], mixedPoolItemIds: input.mixedPoolItemIds ?? [], defaultMobileNavigation: input.defaultMobileNavigation, modulePriority:normalizeModuleOrder(input.modulePriority),daySectionOrder:normalizeDaySectionOrder(input.daySectionOrder),settingsGroupOrder:normalizeSettingsGroupOrder(input.settingsGroupOrder),
   }
 }
 
@@ -101,6 +104,6 @@ export function normalizedIncomingSettings(settings: SyncedUserSettings) {
     weatherOptions: normalizeEnvironmentOptions(settings.weatherOptions, DEFAULT_WEATHER_OPTIONS),
     thermalOptions: normalizeEnvironmentOptions(settings.thermalOptions, DEFAULT_THERMAL_OPTIONS),
     emotionOptions: normalizeEmotionOptions(settings.emotionOptions),
-    randomPoolGroups: settings.randomPoolGroups ?? [], randomPoolItems: settings.randomPoolItems ?? [], mixedPoolItemIds: settings.mixedPoolItemIds ?? [], defaultMobileNavigation: settings.defaultMobileNavigation ? normalizeMobileNav(settings.defaultMobileNavigation) : undefined, modulePriority:normalizeModuleOrder(settings.modulePriority),
+    randomPoolGroups: settings.randomPoolGroups ?? [], randomPoolItems: settings.randomPoolItems ?? [], mixedPoolItemIds: settings.mixedPoolItemIds ?? [], defaultMobileNavigation: settings.defaultMobileNavigation ? normalizeMobileNav(settings.defaultMobileNavigation) : undefined, modulePriority:normalizeModuleOrder(settings.modulePriority),daySectionOrder:normalizeDaySectionOrder(settings.daySectionOrder),settingsGroupOrder:normalizeSettingsGroupOrder(settings.settingsGroupOrder),
   }
 }

@@ -4,6 +4,9 @@ import type { MobileNavConfig } from './features/navigation/navigationConfig'
 import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
 import { MobileNavigation } from './features/navigation/MobileNavigation'
 import { DesktopNavigationDrawer } from './features/navigation/DesktopNavigationDrawer'
+import { DEFAULT_DAY_SECTION_ORDER, DEFAULT_SETTINGS_GROUP_ORDER, normalizeDaySectionOrder, normalizeSettingsGroupOrder, syncPreviewRowsByModule } from './domain/layoutPreferences'
+import type { DaySectionKey, SettingsGroupKey } from './domain/layoutPreferences'
+import { LayoutOrderEditor } from './features/layout/LayoutOrderEditor'
 import { DEFAULT_MODULE_ORDER, normalizeModuleOrder, moveModule, orderedCategories } from './domain/modulePriority'
 import type { ModuleKey } from './domain/modulePriority'
 import { MobileNavigationSettings } from './features/navigation/MobileNavigationSettings'
@@ -15,7 +18,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.11.29'
+const APP_VERSION = '2.12.1'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -307,6 +310,11 @@ function App() {
   const inboxSortDragRef = useRef<InboxSortKey | null>(null)
   const [inboxSortDropTarget, setInboxSortDropTarget] = useState<InboxSortKey | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
+  const [layoutEditor, setLayoutEditor] = useState<'day'|'settings'|null>(null)
+  const [daySectionOrder, setDaySectionOrder] = useState<DaySectionKey[]>(() => {try{return normalizeDaySectionOrder(JSON.parse(localStorage.getItem('zing:daySectionOrder')||'null'))}catch{return [...DEFAULT_DAY_SECTION_ORDER]}})
+  const [settingsGroupOrder, setSettingsGroupOrder] = useState<SettingsGroupKey[]>(() => {try{return normalizeSettingsGroupOrder(JSON.parse(localStorage.getItem('zing:settingsGroupOrder')||'null'))}catch{return [...DEFAULT_SETTINGS_GROUP_ORDER]}})
+  const daySectionStyle=(key:DaySectionKey):CSSProperties=>({order:daySectionOrder.indexOf(key)+10})
+  const settingsGroupStyle=(key:SettingsGroupKey):CSSProperties=>({order:settingsGroupOrder.indexOf(key)+10})
   const [modulePriorityOpen, setModulePriorityOpen] = useState(false)
   const [moduleOrder, setModuleOrder] = useState<ModuleKey[]>(() => { try { return normalizeModuleOrder(JSON.parse(localStorage.getItem('zing:modulePriority') || 'null')) } catch { return [...DEFAULT_MODULE_ORDER] } })
   const moduleDragRef = useRef<ModuleKey | null>(null)
@@ -1271,6 +1279,8 @@ function App() {
   useEffect(()=>{localStorage.setItem('zing:randomPoolItems',JSON.stringify(randomPoolItems))},[randomPoolItems])
   useEffect(()=>{const live=new Set(randomPoolItems.map(item=>item.id));const clean=mixedPoolItemIds.filter(id=>live.has(id));if(clean.length!==mixedPoolItemIds.length){setMixedPoolItemIds(clean);return}localStorage.setItem('zing:mixedPoolItemIds',JSON.stringify(clean))},[randomPoolItems,mixedPoolItemIds])
   useEffect(() => { localStorage.setItem('zing:modulePriority', JSON.stringify(moduleOrder)) }, [moduleOrder])
+  useEffect(() => {localStorage.setItem('zing:daySectionOrder',JSON.stringify(daySectionOrder))},[daySectionOrder])
+  useEffect(() => {localStorage.setItem('zing:settingsGroupOrder',JSON.stringify(settingsGroupOrder))},[settingsGroupOrder])
   useEffect(() => { localStorage.setItem('zing:inboxSortOrder', JSON.stringify(inboxSortOrder)) }, [inboxSortOrder])
   useEffect(() => { if (mobileNavConfigured) saveLocalNavigation(mobileNav) }, [mobileNav, mobileNavConfigured])
   useEffect(() => {
@@ -1279,7 +1289,7 @@ function App() {
     settingsWordClockRef.current = clocks
     const next = buildSyncedSettings({
       greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
-      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds, defaultMobileNavigation: syncedDefaultMobileNav, modulePriority: moduleOrder,
+      excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds, defaultMobileNavigation: syncedDefaultMobileNav, modulePriority: moduleOrder, daySectionOrder, settingsGroupOrder,
     }, clocks, now)
     if (!settingsSyncReadyRef.current) {
       settingsSyncReadyRef.current = true
@@ -1289,6 +1299,8 @@ function App() {
           settingsWordClockRef.current=hydrateWordClock(existing, now)
           if (existing.defaultMobileNavigation) receiveDefaultMobileNav(existing.defaultMobileNavigation)
           if (existing.modulePriority) setModuleOrder(normalizeModuleOrder(existing.modulePriority))
+          if (existing.daySectionOrder) setDaySectionOrder(normalizeDaySectionOrder(existing.daySectionOrder))
+          if (existing.settingsGroupOrder) setSettingsGroupOrder(normalizeSettingsGroupOrder(existing.settingsGroupOrder))
           syncSnapshotsRef.current.settings = rows; syncSnapshotReadyRef.current.settings = true; return
         }
         await saveUserSettings([next])
@@ -1304,7 +1316,7 @@ function App() {
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveUserSettings([next]).then(()=>recordSyncDiff('settings',previous,[next])).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav,moduleOrder])
+  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav,moduleOrder,daySectionOrder,settingsGroupOrder])
   useEffect(() => { localStorage.setItem('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { localStorage.setItem('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { localStorage.setItem('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -2758,7 +2770,7 @@ function App() {
         {path:'data/focus.json',bytes:json(focusSessions)},
         {path:'data/habits.json',bytes:json(habits)},
         {path:'data/habit-checkins.json',bytes:json(habitCheckIns)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav,modulePriority:moduleOrder})},
+        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav,modulePriority:moduleOrder,daySectionOrder,settingsGroupOrder})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -2850,10 +2862,12 @@ function App() {
         encouragementStyle:(s.encouragementStyle==='dark'||s.encouragementStyle==='light'||s.encouragementStyle==='random')?s.encouragementStyle:encouragementStyle,
         maxFocusHours:typeof s.maxFocusHours==='number'?Math.min(12,Math.max(2,Math.round(s.maxFocusHours))):maxFocusHours,
         keepScreenAwakeDuringFocus:typeof s.keepScreenAwakeDuringFocus==='boolean'?s.keepScreenAwakeDuringFocus:keepScreenAwakeDuringFocus,
-        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds, defaultMobileNavigation: s.defaultMobileNavigation ? normalizeMobileNav(s.defaultMobileNavigation) : syncedDefaultMobileNav, modulePriority:normalizeModuleOrder(s.modulePriority),
+        weatherOptions:Array.isArray(s.weatherOptions)?s.weatherOptions:weatherOptions, thermalOptions:Array.isArray(s.thermalOptions)?s.thermalOptions:thermalOptions, emotionOptions:Array.isArray(s.emotionOptions)?s.emotionOptions:emotionOptions, randomPoolGroups:Array.isArray(s.randomPoolGroups)?s.randomPoolGroups:randomPoolGroups, randomPoolItems:Array.isArray(s.randomPoolItems)?s.randomPoolItems:randomPoolItems, mixedPoolItemIds:Array.isArray(s.mixedPoolItemIds)?s.mixedPoolItemIds:mixedPoolItemIds, defaultMobileNavigation: s.defaultMobileNavigation ? normalizeMobileNav(s.defaultMobileNavigation) : syncedDefaultMobileNav, modulePriority:normalizeModuleOrder(s.modulePriority),daySectionOrder:normalizeDaySectionOrder(s.daySectionOrder),settingsGroupOrder:normalizeSettingsGroupOrder(s.settingsGroupOrder),
       }
       if (s.defaultMobileNavigation) receiveDefaultMobileNav(normalizeMobileNav(s.defaultMobileNavigation))
       setModuleOrder(normalizeModuleOrder(s.modulePriority))
+      setDaySectionOrder(normalizeDaySectionOrder(s.daySectionOrder))
+      setSettingsGroupOrder(normalizeSettingsGroupOrder(s.settingsGroupOrder))
       await saveUserSettings([restoredSettings])
       settingsWordClockRef.current={added:{...(restoredSettings.wordCloudIgnoredAddedAt??{})},removed:{}}
       syncSnapshotsRef.current = { task:restoredTasks, journal:backupPreview.journals, note:backupPreview.notes, notebook:ensureDefaultNotebook(backupPreview.notebooks), mood:backupPreview.moods, energy:backupPreview.energies, environment:backupPreview.environments, period:backupPreview.periods, tag:backupPreview.tags, anniversary:backupPreview.anniversaries, focus:backupPreview.focusSessions, habit:backupPreview.habits, habitCheckIn:backupPreview.habitCheckIns, settings:[restoredSettings] }
@@ -2964,6 +2978,8 @@ function App() {
         const incoming=normalizedIncomingSettings(syncedSettings)
         if (incoming.defaultMobileNavigation) receiveDefaultMobileNav(incoming.defaultMobileNavigation)
         setModuleOrder(normalizeModuleOrder(incoming.modulePriority))
+        setDaySectionOrder(normalizeDaySectionOrder(incoming.daySectionOrder))
+        setSettingsGroupOrder(normalizeSettingsGroupOrder(incoming.settingsGroupOrder))
         suppressNextSettingsSyncRef.current = true
         localStorage.setItem('zing:greeting',incoming.greeting)
         localStorage.setItem('zing:weekStart',incoming.weekStartsMonday?'monday':'sunday')
@@ -3420,15 +3436,20 @@ function App() {
         <section className="settings-page">
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
           <button className="settings-mobile-search-entry" type="button" aria-label="打开全局搜索" onClick={() => { setMobileSearchVisible(true); setSearchOpen(true); window.setTimeout(() => document.querySelector<HTMLInputElement>('.global-search-wrap input')?.focus(), 0) }}><span aria-hidden="true">⌕</span><span>搜索任务、笔记、习惯等内容</span><span aria-hidden="true">›</span></button>
-          <div className="settings-group mobile-nav-settings-group">
+          <div className="settings-group layout-settings-group">
+            <div className="settings-group-title"><h3>排序与布局</h3></div>
+            <button className="settings-link-row" type="button" onClick={()=>{setMobileNavToast('');setMobileNavSettingsOpen(true)}}><span><strong>底部导航</strong><small>选择与排列底部入口</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setModulePriorityOpen(true)}><span><strong>模块优先级</strong><small>跨模块分类和同步预览顺序</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setLayoutEditor('day')}><span><strong>今日详情排序</strong><small>任务固定第一，其余区块可调整</small></span><b>›</b></button>
+            <button className="settings-link-row" type="button" onClick={()=>setLayoutEditor('settings')}><span><strong>设置页面排序</strong><small>仅调整一级功能区块</small></span><b>›</b></button>
+          </div>
+          <div className="settings-group mobile-nav-settings-group" style={settingsGroupStyle('navigation')}>
             <div className="settings-group-title"><h3>导航</h3></div>
             {missingMobileNav(mobileNav).map(page => <button key={page} className="settings-link-row settings-destination-link" type="button" aria-label={mobileNavLabel(page)} onClick={() => switchMainView(page)}><span className="settings-nav-link-label">{mobileNavIcon(page)}<strong>{mobileNavLabel(page)}</strong></span><b>›</b></button>)}
-            <button className="settings-link-row" type="button" onClick={() => { setMobileNavToast(''); setMobileNavSettingsOpen(true) }}><span><strong>导航栏设置</strong></span><b>›</b></button>
-            <button className="settings-link-row" type="button" onClick={() => setModulePriorityOpen(true)}><span><strong>模块优先级</strong><small>统一搜索、回收站与标签管理的分类顺序</small></span><b>›</b></button>
           </div>
 
 
-          <div className="settings-group calendar-task-settings">
+          <div className="settings-group calendar-task-settings" style={settingsGroupStyle('tasks')}>
             <div className="settings-group-title"><h3>日历任务</h3></div>
             <label className="setting-row personalization-settings">
               <span><strong>顶部问候语</strong><small>显示在左上角品牌标记旁。</small></span>
@@ -3447,7 +3468,7 @@ function App() {
             </div>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('focus')}>
             <div className="settings-group-title"><h3>专注</h3></div>
             <div className="encouragement-style-setting max-focus-setting">
               <div className="max-focus-setting-line"><strong>最长专注时长（小时）</strong><label className="max-focus-hours-control"><input aria-label="最长专注时长（小时）" type="number" min="2" max="12" step="1" value={maxFocusHours} onChange={event=>{const value=Number.parseInt(event.target.value,10);if(Number.isFinite(value))setMaxFocusHours(Math.min(12,Math.max(2,value)))}} /></label></div>
@@ -3459,26 +3480,26 @@ function App() {
             </label>
           </div>
 
-          <div className="settings-group random-wheel-settings">
+          <div className="settings-group random-wheel-settings" style={settingsGroupStyle('random')}>
             <div className="settings-group-title"><h3>随机选择</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setRandomWheelOpen(true)}><span><strong>抽奖大转盘</strong><small>转一下，看看这次的奇遇。结果不是任务，也不是命令。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setRandomPoolOpen(true)}><span><strong>幸运池</strong><small>{randomPoolGroups.length?`${randomPoolGroups.length} 个分组 · ${randomPoolItems.length} 个项目`:'创建分组、项目、数量/单位、权重与参与状态。'}</small></span><b>›</b></button>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('tags')}>
             <div className="settings-group-title"><h3>标签</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setTagManagerOpen(true)}><span><strong>标签管理</strong><small>管理任务、记录与专注共用的标签。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setArchivedTagsOpen(true)}><span><strong>已归档</strong><small>{archivedTags.length ? `${archivedTags.length} 个已归档标签` : '暂无已归档标签'}</small></span><b>›</b></button>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('weather')}>
             <div className="settings-group-title"><h3>天气与情绪</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('weather')}><span><strong>管理天气</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setEnvironmentManagerKind('thermal')}><span><strong>管理体感</strong><small>管理名称、Emoji、顺序与归档。</small></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={()=>setEmotionManagerOpen(true)}><span><strong>管理具体感受</strong><small>管理 Record 使用的情绪词库与分组。</small></span><b>›</b></button>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('encouragement')}>
             <div className="settings-group-title"><h3>鼓励语</h3></div>
             <div className="encouragement-style-setting">
               <span><strong>样式</strong><small>选择任务完成时鼓励卡的显示样式。</small></span>
@@ -3489,21 +3510,21 @@ function App() {
             </button>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('wordcloud')}>
             <div className="settings-group-title"><h3>词云</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setWordIgnoreManagerOpen(true)}>
               <span><strong>管理屏蔽词</strong><small>{wordCloudIgnored.length ? `已屏蔽 ${wordCloudIgnored.length} 个词` : '添加或恢复不参与词云统计的词。'}</small></span><b>›</b>
             </button>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('sync')}>
             <div className="settings-group-title"><h3>云同步</h3></div>
             <button className="settings-link-row" type="button" onClick={()=>setGithubSyncOpen(true)}>
               <span><strong>GitHub Sync</strong><small>{lastGithubSyncAt ? `上次同步 ${new Date(lastGithubSyncAt).toLocaleString()}` : 'GitHub 同步结构化数据；B2 同步图片与录音。'}</small></span><b>›</b>
             </button>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('data')}>
             <div className="settings-group-title"><h3>数据</h3></div>
             <div className="storage-card">
               <div className="storage-total"><span>当前有效数据</span><strong>{formatBytes(storageStats.data + effectiveAttachmentBytes)}</strong></div>
@@ -3539,7 +3560,7 @@ function App() {
             </div>
           </div>
 
-          <div className="settings-group">
+          <div className="settings-group" style={settingsGroupStyle('links')}>
             <div className="settings-group-title"><h3>友情链接</h3></div>
             <button className="settings-link-row friend-link-row" type="button" onClick={()=>window.open('https://zzzing0-0.github.io/audio-vocabulary-sprint/index.html','_blank','noopener,noreferrer')}>
               <span><strong>Zing 背单词</strong><small>Audio Vocabulary Sprint · 背单词与学习统计</small></span><b>↗</b>
@@ -3586,7 +3607,7 @@ function App() {
             <div className="editor-body">
               <p className="sync-summary-time">{githubSyncPreview.initializedRemote?'服务器还没有同步数据；确认后将以本机数据初始化。':'以下只显示本次存在变化的数据。确认后才会合并并写回。'}</p>
               {(() => {
-                const changedRows=githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount)
+                const changedRows=syncPreviewRowsByModule(githubSyncPreview.rows.filter(row=>row.added||row.updated||row.deleted||row.localCount!==row.remoteCount||row.localCount!==row.mergedCount||row.remoteCount!==row.mergedCount),moduleOrder)
                 return changedRows.length ? <>
                   <div className="sync-summary-grid">
                     {changedRows.map(row=><div className="sync-summary-row sync-preview-count-row" key={row.entityType}><b>{syncEntityLabel(row.entityType)}</b><span>本机 {row.localCount}</span><span>服务器 {row.remoteCount}</span><span>合并后 {row.mergedCount}</span></div>)}
@@ -3786,6 +3807,7 @@ function App() {
       </>
       )}
 
+      {layoutEditor && mainView === 'settings' && <LayoutOrderEditor kind={layoutEditor} order={layoutEditor==='day'?daySectionOrder:settingsGroupOrder} onChange={items=>{if(layoutEditor==='day')setDaySectionOrder(normalizeDaySectionOrder(items));else setSettingsGroupOrder(normalizeSettingsGroupOrder(items))}} onClose={()=>setLayoutEditor(null)} />}
       {modulePriorityOpen && mainView === 'settings' && <div className="modal-layer" role="presentation">
         <button className="modal-backdrop" type="button" aria-label="关闭模块优先级" onClick={() => setModulePriorityOpen(false)} />
         <section className="task-editor module-priority-dialog" role="dialog" aria-modal="true" aria-label="模块优先级">
@@ -3910,7 +3932,7 @@ function App() {
             </div>
 
             {selectedAnniversaries.length > 0 && (
-              <section className="detail-section anniversary-section">
+              <section className="detail-section anniversary-section" style={{order:2}}>
                 <div className="section-heading"><h3>纪念日</h3><span>{selectedAnniversaries.length}</span></div>
                 <div className="anniversary-list">{selectedAnniversaries.map(({anniversary, occurrence}) => (
                   <button key={anniversary.id} type="button" className="anniversary-row" onClick={() => openAnniversaryEditor(anniversary)}>
@@ -3922,7 +3944,7 @@ function App() {
               </section>
             )}
 
-            <section className="detail-section task-section">
+            <section className="detail-section task-section" style={{order:1}}>
               <div className="section-heading task-section-heading">
                 <div className="task-heading-title"><h3>任务</h3>{selectedTasks.length > 0 && <span>{selectedTasks.length}</span>}</div>
                 {endedTasksViewToggle('detail-ended-toggle')}
@@ -3963,7 +3985,7 @@ function App() {
             </section>
 
             {!selectedIsFuture && <>
-            <section className="detail-section mood-section">
+            <section className="detail-section mood-section" style={daySectionStyle("mood")}>
               <div className="section-heading"><h3>今日心情</h3></div>
               <div className="mood-picker" aria-label="今日心情">
                 {MOODS.slice().reverse().map(mood => (
@@ -3975,7 +3997,7 @@ function App() {
               </div>
             </section>
 
-            <section className="detail-section energy-section">
+            <section className="detail-section energy-section" style={daySectionStyle("energy")}>
               <div className="section-heading"><h3>身体能量</h3></div>
               <div className="energy-picker" aria-label="今日身体能量">
                 {ENERGIES.slice().reverse().map(item => (
@@ -3992,7 +4014,7 @@ function App() {
 
                         </>}
 
-            <section className="detail-section mood-calendar-section">
+            <section className="detail-section mood-calendar-section" style={daySectionStyle("calendar")}>
               <div className="mini-calendar-header">
                 <div>
                   <span className="eyebrow">STATUS CALENDAR</span>
@@ -4051,7 +4073,7 @@ function App() {
 
 
             {!selectedIsFuture && <>
-            <section className="detail-section journal-section">
+            <section className="detail-section journal-section" style={daySectionStyle("journal")}>
               <div className="section-heading journal-heading">
                 <h3>记录</h3>
                 
@@ -4082,8 +4104,8 @@ function App() {
               <button className="add-button" type="button" onClick={openJournalEditor}>＋ 添加记录</button>
             </section>
 
-            {selectedDate && orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).length>0 && <section className="detail-section habit-daily-section"><div className="section-heading"><h3>习惯</h3></div>{orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).map(habit=>{const rows=liveCheckIns(habit.id,habitCheckIns).filter(row=>row.occurredDate===toDateKey(selectedDate));const progress=progressForDate(habit,habitCheckIns,toDateKey(selectedDate));const done=progress.met;const hasLog=rows.length>0;return <div className="habit-daily-row" key={habit.id}><span className="habit-daily-name"><HabitIcon name={habit.icon} color={tags.find(t=>t.id===habit.tagId)?.color} />{habit.name}</span>{habit.archivedAt?<span className="habit-daily-archived">{done?'✓ 已达标 · 已归档':hasLog?'已打卡 · 已归档':'已归档'}</span>:<button type="button" onClick={()=>hasLog?undoHabitCheckIn(habit,toDateKey(selectedDate)):quickHabitCheckIn(habit,toDateKey(selectedDate))}>{done?'✓ 已达标':hasLog?`已打卡 ${progress.done}/${progress.target??'-'} · 撤销`:'○ 打卡'}</button>}</div>})}</section>}
-            <section className="detail-section menstrual-section">
+            {selectedDate && orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).length>0 && <section className="detail-section habit-daily-section" style={daySectionStyle("habit")}><div className="section-heading"><h3>习惯</h3></div>{orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).map(habit=>{const rows=liveCheckIns(habit.id,habitCheckIns).filter(row=>row.occurredDate===toDateKey(selectedDate));const progress=progressForDate(habit,habitCheckIns,toDateKey(selectedDate));const done=progress.met;const hasLog=rows.length>0;return <div className="habit-daily-row" key={habit.id}><span className="habit-daily-name"><HabitIcon name={habit.icon} color={tags.find(t=>t.id===habit.tagId)?.color} />{habit.name}</span>{habit.archivedAt?<span className="habit-daily-archived">{done?'✓ 已达标 · 已归档':hasLog?'已打卡 · 已归档':'已归档'}</span>:<button type="button" onClick={()=>hasLog?undoHabitCheckIn(habit,toDateKey(selectedDate)):quickHabitCheckIn(habit,toDateKey(selectedDate))}>{done?'✓ 已达标':hasLog?`已打卡 ${progress.done}/${progress.target??'-'} · 撤销`:'○ 打卡'}</button>}</div>})}</section>}
+            <section className="detail-section menstrual-section" style={daySectionStyle("period")}>
               <div className="section-heading">
                 <h3>{selectedIsFuture ? '预计经期' : '月经记录'}</h3>
                 {menstrualPrediction && <small>预计下次约 {menstrualPrediction.start.slice(5).replace('-','/')} · ±1天</small>}
@@ -4111,7 +4133,7 @@ function App() {
             </>}
 
             {selectedIsFuture && selectedDate && menstrualPrediction && toDateKey(selectedDate)>=menstrualPrediction.windowStart && toDateKey(selectedDate)<=menstrualPrediction.windowEnd && (
-              <section className="detail-section menstrual-section">
+              <section className="detail-section menstrual-section" style={daySectionStyle("period")}>
                 <div className="section-heading"><h3>预计经期</h3><small>预计约 {menstrualPrediction.start.slice(5).replace('-','/')} · ±1天</small></div>
                 <div className="menstrual-prediction-card">预计日期，仅作任务安排参考；实际开始后再记录。</div>
               </section>
