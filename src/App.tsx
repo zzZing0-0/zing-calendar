@@ -18,7 +18,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.14.12'
+const APP_VERSION = '2.15.0'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -75,6 +75,7 @@ import { DEFAULT_INBOX_SORT_ORDER, groupInboxTodoTasks, inboxActivityAt, inboxAc
 import type { InboxSortKey } from './domain/inbox'
 import { ensureDefaultNotebook, linkImageAttachmentToNote, normalizeNotes, permanentlyDeleteNote, purgeTrashedNotes, restoreNote } from './domain/notes'
 import { cascadeRestoreNoteFocus, cascadeTrashNoteFocus, permanentlyDeleteNoteFocus, purgeTrashWithNoteFocus } from './domain/noteFocusLifecycle'
+import { cascadeTrashHabitFocus, cascadeRestoreHabitFocus, permanentlyDeleteHabitFocus, purgeTrashWithHabitFocus } from './domain/habitFocusLifecycle'
 import { HabitsPage } from './features/habits/HabitsPage'
 import { HabitIcon } from './features/habits/HabitIcons'
 import { orderedDailyHabits, liveCheckIns, progressForDate } from './features/habits/habitDomain'
@@ -1373,10 +1374,10 @@ function App() {
     journalEntries.forEach(journal => { if (journal.trashedAt) items.push({key:`journal:${journal.id}`,entity:'journal',journal,trashedAt:journal.trashedAt}) })
     anniversaries.forEach(anniversary => { if (anniversary.trashedAt) items.push({key:`anniversary:${anniversary.id}`,entity:'anniversary',anniversary,trashedAt:anniversary.trashedAt}) })
     notes.forEach(note => { if (note.trashedAt) items.push({key:`note:${note.id}`,entity:'note',note,trashedAt:note.trashedAt}) })
-    focusSessions.forEach(session => { if (session.trashedAt && !session.trashedByTaskId && !session.trashedByNoteId) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
+    focusSessions.forEach(session => { if (session.trashedAt && !session.trashedByTaskId && !session.trashedByNoteId && !session.trashedByHabitId) items.push({key:`focus:${session.id}`,entity:'focus',session,trashedAt:session.trashedAt}) })
     habits.forEach(habit => { if(habit.deletedAt) items.push({key:`habit:${habit.id}`,entity:'habit',habit,trashedAt:habit.deletedAt}) })
     return items.sort((a,b)=>b.trashedAt.localeCompare(a.trashedAt))
-  },[tasks,journalEntries,anniversaries,notes,focusSessions])
+  },[tasks,journalEntries,anniversaries,notes,focusSessions,habits])
   const trashTaskStatus = (item: Extract<TrashItem,{entity:'task'}>): TaskStatus => item.kind === 'occurrence' && item.occurrenceDate
     ? (item.task.recurrenceExceptions?.[item.occurrenceDate]?.status ?? item.task.status)
     : item.task.status
@@ -2235,7 +2236,7 @@ function App() {
   }
 
   const restoreTrashItem = (item: TrashItem) => {
-    if(item.entity==='habit') { const now=new Date().toISOString();setHabits(current=>current.map(h=>h.id===item.habit.id?{...h,deletedAt:undefined,updatedAt:now}:h));setAutoSyncToast('✓ 已恢复习惯');return }
+    if(item.entity==='habit') { const now=new Date().toISOString();setHabits(current=>current.map(h=>h.id===item.habit.id?{...h,deletedAt:undefined,updatedAt:now}:h));setFocusSessions(current=>cascadeRestoreHabitFocus(current,item.habit.id,now));setAutoSyncToast('✓ 已恢复习惯');return }
     if(item.entity==='focus') { const now=new Date().toISOString(); setFocusSessions(current=>current.map(session=>session.id===item.session.id?restoreFocusSession(session,now):session)); setAutoSyncToast('✓ 已恢复专注'); return }
     if(item.entity==='journal') { const now=new Date().toISOString(); setJournalEntries(current=>current.map(entry=>entry.id===item.journal.id?{...entry,trashedAt:undefined,updatedAt:now}:entry)); setAutoSyncToast('✓ 已恢复记录'); return }
     if(item.entity==='note') { const now=new Date().toISOString(); setNotes(current=>current.map(note=>note.id===item.note.id?restoreNote(note,now):note)); setFocusSessions(current=>cascadeRestoreNoteFocus(current,item.note.id,now)); setAutoSyncToast('✓ 已恢复笔记'); return }
@@ -2253,7 +2254,7 @@ function App() {
   }
 
   const permanentlyDeleteTrashItem = (item: TrashItem) => {
-    if(item.entity==='habit') { setHabits(current=>current.filter(h=>h.id!==item.habit.id));setHabitCheckIns(current=>current.filter(r=>r.habitId!==item.habit.id));return }
+    if(item.entity==='habit') { setHabits(current=>current.filter(h=>h.id!==item.habit.id));setHabitCheckIns(current=>current.filter(r=>r.habitId!==item.habit.id));setFocusSessions(current=>permanentlyDeleteHabitFocus(current,item.habit.id));return }
     if(item.entity==='focus') { setFocusSessions(current=>permanentlyDeleteFocusSession(current,item.session.id)); return }
     if(item.entity==='journal') { setJournalEntries(current=>current.filter(entry=>entry.id!==item.journal.id)); return }
     if(item.entity==='note') { setNotes(current=>permanentlyDeleteNote(current,item.note.id)); setFocusSessions(current=>permanentlyDeleteNoteFocus(current,item.note.id)); return }
@@ -2277,7 +2278,7 @@ function App() {
     setJournalEntries(current => current.filter(entry => !entry.trashedAt))
     setAnniversaries(current => current.filter(anniversary => !anniversary.trashedAt))
     setNotes(current => purgeTrashedNotes(current))
-    setFocusSessions(current => purgeTrashWithNoteFocus(purgeTrashWithTaskFocus(current,tasks),notes))
+    setFocusSessions(current => purgeTrashWithHabitFocus(purgeTrashWithNoteFocus(purgeTrashWithTaskFocus(current,tasks),notes),habits))
     setTasks(current => current.flatMap(task => {
       if (task.trashedAt) return []
       let next = task
@@ -3433,7 +3434,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'habits' && <HabitsPage formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} focusSessions={focusSessions} focusNow={timerNow} activeFocusHabitId={activeFocusHabit?.id??null} requestedHabitId={requestedHabitId} focusBusy={Boolean(activeFocusSession)} onStartHabitFocus={startHabitFocus} onStopHabitFocus={stopHabitFocus} onEditFocusSession={session=>beginEditFocusSession(session)} onTrashFocusSession={session=>{if(!window.confirm('确定删除这条习惯专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item))}} />}
+      {mainView === 'habits' && <HabitsPage formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onDeleteHabit={habitId=>{const now=new Date().toISOString();setHabits(current=>current.map(h=>h.id===habitId?{...h,deletedAt:now,updatedAt:now}:h));setFocusSessions(current=>cascadeTrashHabitFocus(current,habitId,now))}} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} focusSessions={focusSessions} focusNow={timerNow} activeFocusHabitId={activeFocusHabit?.id??null} requestedHabitId={requestedHabitId} focusBusy={Boolean(activeFocusSession)} onStartHabitFocus={startHabitFocus} onStopHabitFocus={stopHabitFocus} onEditFocusSession={session=>beginEditFocusSession(session)} onTrashFocusSession={session=>{if(!window.confirm('确定删除这条习惯专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item))}} />}
 
       {mainView === 'habits' && focusEditId && focusSessions.some(session=>session.id===focusEditId && session.context?.kind==='habit') && (
         <div className="habit-modal-backdrop" role="presentation">
