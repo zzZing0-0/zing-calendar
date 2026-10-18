@@ -224,3 +224,14 @@
 .habits-page .habits-header .primary-button{height:44px;min-height:44px;line-height:1.2;flex-shrink:0}
 .habit-card-main small .habit-card-tag{display:inline-flex;vertical-align:baseline;align-items:center;gap:5px;padding:0;border-radius:0;background:transparent;color:inherit;font-size:inherit;max-width:none;white-space:nowrap}
 .habit-card-main small .habit-card-tag i{width:7px;height:7px}
+
+/* v2.11.30 — Match Notes' title-row alignment and keep tags as metadata, not dot-separated progress. */
+@media (max-width:700px) {
+  .habits-page .habits-header {display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;align-items:center;column-gap:14px;row-gap:4px;min-height:0}
+  .habits-page .habits-header > div:first-child {display:contents}
+  .habits-page .habits-header .eyebrow {grid-column:1;grid-row:1;align-self:end}
+  .habits-page .habits-header h2 {grid-column:1;grid-row:2;margin:0;line-height:1.3;font-size:26px}
+  .habits-page .habits-header .primary-button {grid-column:2;grid-row:2;align-self:center}
+}
+.habit-card-main small .habit-card-tag {margin-left:10px;vertical-align:middle;line-height:inherit}
+.habit-card-main small .habit-card-tag i {width:7px;height:7px}
