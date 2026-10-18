@@ -18,7 +18,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.14.7'
+const APP_VERSION = '2.14.10'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -320,6 +320,7 @@ function App() {
   const [modulePriorityOpen, setModulePriorityOpen] = useState(false)
   const [moduleOrder, setModuleOrder] = useState<ModuleKey[]>(() => { try { return normalizeModuleOrder(JSON.parse(localStorage.getItem('zing:modulePriority') || 'null')) } catch { return [...DEFAULT_MODULE_ORDER] } })
   const moduleDragRef = useRef<ModuleKey | null>(null)
+  const [requestedHabitId, setRequestedHabitId] = useState<{ id: string; request: number } | null>(null)
   const [trashFilter, setTrashFilter] = useState<'all'|'task'|'journal'|'note'|'anniversary'|'focus'|'habit'>('all')
   const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -3161,7 +3162,7 @@ function App() {
             <button className="month-title-button" type="button" onClick={()=>openMonthPicker('calendar')} aria-label="快速选择年月">{MONTHS[(isMobileCalendar?mobileActiveMonth:visibleMonth).getMonth()]} {(isMobileCalendar?mobileActiveMonth:visibleMonth).getFullYear()} <span>⌄</span></button>
             <button className="nav-button" type="button" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
             <button className="today-button" type="button" onClick={goToday}>今天</button>
-            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusHabit){setFocusOpen(false);setMainView('habits');return}if(activeFocusNote){setFocusOpen(false);setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusHabit?`习惯专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
+            <button className={`focus-trigger${activeFocusSession?' running':''}`} type="button" onClick={()=>{if(activeTimerTask){setViewingTask(activeTimerTask);return}if(activeFocusHabit){setFocusOpen(false);setRequestedHabitId(previous=>({id:activeFocusHabit.id,request:(previous?.request??0)+1}));setMainView('habits');return}if(activeFocusNote){setFocusOpen(false);setMainView('notes');setRequestedNoteId(activeFocusNote.id);return}if(!activeFocusSession){const last=[...activeFocusSessions(focusSessions)].filter(item=>item.endedAt).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];const lastOrdinary=last?.tagIds.find(id=>id===DEFAULT_TAG_ID||(!isImportSourceTagId(id)&&tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus'))));setFocusTagIds([lastOrdinary??DEFAULT_TAG_ID])}setFocusOpen(true)}}>{activeTimerTask?`任务专注 ${formatClock(activeFocusElapsed)}`:activeFocusNote?`笔记专注 ${formatClock(activeFocusElapsed)}`:activeFocusHabit?`习惯专注 ${formatClock(activeFocusElapsed)}`:activeFocusSession?`专注 ${formatClock(activeFocusSession.mode==='countdown'?activeFocusRemaining:activeFocusElapsed)}`:'开始专注'}</button>
           </div>
           <div className="calendar-status-controls">
             <button className="trash-inbox-trigger inbox-trigger" type="button" onClick={()=>setInboxOpen(true)} aria-label={`打开收集箱，共 ${inboxTasks.length} 条`}><svg className="inbox-trigger-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15l1.5 11.5a2 2 0 0 1-2 2.3H5a2 2 0 0 1-2-2.3L4.5 5.5Z"/><path d="M4 14h4.2l1.4 2h4.8l1.4-2H20"/></svg><span>收集箱{inboxTasks.length?` ${compactCount(inboxTasks.length)}`:''}</span></button>
@@ -3432,7 +3433,7 @@ function App() {
         </section>
       )}
 
-      {mainView === 'habits' && <HabitsPage formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} focusSessions={focusSessions} focusNow={timerNow} activeFocusHabitId={activeFocusHabit?.id??null} focusBusy={Boolean(activeFocusSession)} onStartHabitFocus={startHabitFocus} onStopHabitFocus={stopHabitFocus} onEditFocusSession={session=>beginEditFocusSession(session)} onTrashFocusSession={session=>{if(!window.confirm('确定删除这条习惯专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item))}} />}
+      {mainView === 'habits' && <HabitsPage formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} focusSessions={focusSessions} focusNow={timerNow} activeFocusHabitId={activeFocusHabit?.id??null} requestedHabitId={requestedHabitId} focusBusy={Boolean(activeFocusSession)} onStartHabitFocus={startHabitFocus} onStopHabitFocus={stopHabitFocus} onEditFocusSession={session=>beginEditFocusSession(session)} onTrashFocusSession={session=>{if(!window.confirm('确定删除这条习惯专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item))}} />}
 
       {mainView === 'habits' && focusEditId && focusSessions.some(session=>session.id===focusEditId && session.context?.kind==='habit') && (
         <div className="habit-modal-backdrop" role="presentation">

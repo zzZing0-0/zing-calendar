@@ -8,7 +8,9 @@ test('archived habits have a distinct section after completed habits', () => {
   expect(page).toContain('仅查看历史')
 })
 test('archived habit records are read-only in both detail and daily views', () => {
-  expect(page).toContain('{!habit.archivedAt&&<div className="habit-log-editor">')
+  // Archived habits must not expose the check-in entry or its editing dialog.
+  expect(page).toContain('{!habit.archivedAt&&<button className="habit-open-log-button"')
+  expect(page).toContain('{logDialogOpen&&!habit.archivedAt&&<div className="habit-modal-backdrop habit-log-dialog-layer"')
   expect(page).toContain('function removeLog(id:string){if(habit?.archivedAt)return;')
   expect(page).toContain('function saveLog(){if(!habit||habit.archivedAt||')
   expect(app).toContain('if(habit.archivedAt)return;const now')

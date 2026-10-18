@@ -5437,3 +5437,9 @@ button {
 .search-tag-suggestions button{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border-color,#ddd);border-radius:14px;padding:5px 9px;background:transparent;color:inherit;cursor:pointer}
 .search-tag-suggestions button.active{border-color:currentColor}
 .search-tag-suggestions .tag-color-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+
+/* v2.14.8 — note focus controls use the same neutral button vocabulary as the editor. */
+.note-focus-row .note-focus-history-trigger,.note-focus-row>button:last-child{appearance:none;display:inline-flex;align-items:center;justify-content:center;border:1px solid #dce3df!important;border-radius:10px;background:#fff!important;color:#34483e!important;font:inherit;font-size:13px;font-weight:550;line-height:1.4;text-decoration:none!important;padding:9px 12px;min-height:40px;cursor:pointer;box-shadow:none}
+.note-focus-row .note-focus-history-trigger:hover,.note-focus-row>button:last-child:hover{background:#f4f7f5!important}
+.note-focus-row>button:disabled{opacity:.48;cursor:not-allowed}
+@media(max-width:700px){.note-focus-row{gap:8px}.note-focus-row .note-focus-history-trigger,.note-focus-row>button:last-child{font-size:12px;padding:8px 10px;min-width:0;white-space:nowrap}}
