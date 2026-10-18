@@ -87,7 +87,7 @@ test(`shared ${kind} focus editor validates and persists intervals while preserv
   if (kind === 'task') {
     await history.getByRole('button', { name: '查看', exact: true }).click()
     history = page.locator('.task-viewer')
-    await history.getByRole('button', { name: /累计专注/ }).click()
+    await history.locator('.task-focus-card .ui-focus-card-history').click()
   }
   await expect(history.locator('.focus-history-item')).toHaveCount(1)
   await history.getByRole('button', { name: '更改', exact: true }).click()

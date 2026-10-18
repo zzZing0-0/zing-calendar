@@ -5,7 +5,6 @@ import { readStylesheet } from '../helpers/applicationSource'
 const habit = readFileSync('src/features/habits/HabitsPage.tsx', 'utf8')
 const habitCss = readStylesheet('src/features/habits/habits.css')
 const notes = readFileSync('src/features/notes/NotesPage.tsx', 'utf8')
-const appCss = readStylesheet('src/App.css')
 
 test('habit details use a single check-in entry and a separate dialog for date and quantity', () => {
   expect(habit).toContain('className="habit-open-log-button"')
@@ -17,7 +16,11 @@ test('habit details use a single check-in entry and a separate dialog for date a
 })
 
 test('note focus controls use neutral button styling rather than link styling', () => {
-  expect(notes).toContain('className="note-focus-history-trigger"')
-  expect(appCss).toContain('.note-focus-row .note-focus-history-trigger,.note-focus-row>button:last-child')
-  expect(appCss).toContain('text-decoration:none!important')
+  const shared = readFileSync('src/components/ui/FocusCard.tsx', 'utf8')
+  const sharedCss = readStylesheet('src/styles/focus-card.css')
+  expect(notes).toContain('<FocusCard className="note-focus-card"')
+  expect(shared).toContain('className="ui-focus-card-history"')
+  expect(sharedCss).toContain('.ui-focus-card .ui-focus-card-history')
+  expect(sharedCss).toContain('background:#fff')
+  expect(sharedCss).not.toContain('text-decoration:underline')
 })

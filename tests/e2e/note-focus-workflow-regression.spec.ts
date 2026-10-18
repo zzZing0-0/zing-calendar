@@ -41,8 +41,10 @@ test('Today Focus separates free focus notes and tasks and only raw free focus i
 })
 
 test('a note exposes derived total focus and opens its own raw focus history', () => {
-  expect(notesPage).toContain('累计专注')
-  expect(notesPage).toContain('· 历史 ›')
+  expect(notesPage).toContain('<FocusCard className="note-focus-card"')
+  expect(notesPage).toContain('focusSecondsByNoteId[editing.id]')
+  const focusCard = fs.readFileSync('src/components/ui/FocusCard.tsx', 'utf8')
+  expect(focusCard).toContain('{duration} · 历史 ›')
   expect(notesPage).toContain('onOpenFocusHistory(editing)')
   expect(app).toContain('noteFocusHistorySessions.map(session=>')
   expect(app).toContain('beginEditFocusSession(session)')

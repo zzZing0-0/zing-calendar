@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import './styles/components.css'
 import './styles/sorting.css'
+import './styles/focus-card.css'
 import { prepareSettingsCache } from './features/application/settingsCache'
 
 const rootElement = document.getElementById('root')

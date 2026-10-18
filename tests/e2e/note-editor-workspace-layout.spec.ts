@@ -8,7 +8,7 @@ const css = readStylesheet('src/App.css')
 test('note editor follows notebook status title focus tags media content hierarchy', () => {
   const topbar = notesPage.indexOf('className="note-editor-topbar"')
   const title = notesPage.indexOf('className="note-title-row"')
-  const focus = notesPage.indexOf('className="note-focus-row"')
+  const focus = notesPage.indexOf('<FocusCard className="note-focus-card"')
   const tags = notesPage.indexOf('className="note-tag-editor"', focus)
   const media = notesPage.indexOf('className="note-media-toggle-row"')
   const tabs = notesPage.indexOf('className="note-mobile-tabs"')

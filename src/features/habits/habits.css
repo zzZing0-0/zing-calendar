@@ -253,7 +253,7 @@
 }
 
 /* Habit focus: independent from check-in state */
-.habit-focus-panel{display:grid;gap:10px;padding:12px;border:1px solid #dce7de;border-radius:var(--radius-card);background:#f8fbf8;margin:12px 0}
+.habit-focus-panel{margin:12px 0}
 .habit-focus-heading,.habit-focus-running,.habit-focus-history-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .habit-focus-panel button{border:1px solid #bfd6c4;border-radius:var(--radius-control);padding:7px 10px;background:white;color:#37694a;cursor:pointer}
 .habit-focus-panel button:disabled{opacity:.5;cursor:default}

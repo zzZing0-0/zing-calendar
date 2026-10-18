@@ -17,6 +17,8 @@ test('task time is derived only from task-context FocusSessions',()=>{
 test('recurring tasks expose no timer path and legacy task timer fields are gone',()=>{
   const app=readApplicationSource()
   const types=fs.readFileSync(path.resolve('src/types.ts'),'utf8')
-  expect(app).toContain("viewingTask.status === 'todo' && !viewingTask.recurrence && !viewingTask.seriesId")
+  const details=fs.readFileSync(path.resolve('src/features/tasks/TaskDetails.tsx'),'utf8')
+  expect(details).toContain("!viewingTask.recurrence && !viewingTask.seriesId && (viewingTask.status === 'todo' || taskFocusHistorySeconds > 0)")
+  expect(details).toContain("viewingTask.status === 'todo' && (activeTimerTask")
   for(const legacy of ['actualDurationMinutes','timerSessions','timerSecondsRemainder','activeTimerStartedAt','activeTimerFocusTagIds']) expect(types).not.toContain(legacy)
 })

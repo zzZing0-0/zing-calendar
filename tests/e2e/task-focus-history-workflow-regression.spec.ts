@@ -17,11 +17,14 @@ test('task focus history regression › compact task viewer owns raw task focus 
 test('task focus history regression › task history preserves shared date formatting and contextual edit path', () => {
   expect(app).toContain('formatUiDate(started)')
   expect(app).toContain('saveFocusSessionEdit')
-  expect(app).toContain('累计专注 {formatFocusDuration(taskFocusHistorySeconds)} · 历史 ›')
+  const details=fs.readFileSync(path.resolve(process.cwd(), 'src/features/tasks/TaskDetails.tsx'), 'utf8')
+  expect(details).toContain('duration={formatFocusDuration(taskFocusHistorySeconds)}')
+  expect(details).toContain('onHistory={()=>setTaskFocusHistoryOpen(true)}')
 })
 
 test('task focus history regression › recurring occurrences still expose no task focus history', () => {
   const selectors = fs.readFileSync(path.resolve(process.cwd(), 'src/domain/focusHistorySelectors.ts'), 'utf8')
   expect(selectors).toContain('task && !task.seriesId ? task.id : null')
-  expect(app).toContain('taskFocusHistorySeconds > 0 && !viewingTask.seriesId')
+  const details=fs.readFileSync(path.resolve(process.cwd(), 'src/features/tasks/TaskDetails.tsx'), 'utf8')
+  expect(details).toContain("!viewingTask.recurrence && !viewingTask.seriesId && (viewingTask.status === 'todo' || taskFocusHistorySeconds > 0)")
 })

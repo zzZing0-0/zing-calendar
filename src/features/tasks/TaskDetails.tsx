@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { FocusCard } from '../../components/ui/FocusCard'
 import { focusSessionDurationSeconds, trashFocusSession } from '../../domain/focus'
 import {
   DEFAULT_TAG_ID,
@@ -129,21 +130,14 @@ export function TaskDetails({
                 <span>{isMultiDayTask(viewingTask) ? formatTaskRange(viewingTask) : `${formatUiDate(fromDateKey(viewingTask.date))}${!viewingTask.allDay && viewingTask.time ? ` · ${viewingTask.time}` : ''}`}</span>
               </div>}
 
-              {viewingTask.status === 'todo' && !viewingTask.recurrence && !viewingTask.seriesId && (
-                <section className={`task-timer-panel ${activeTimerTask?.id===viewingTask.id ? 'running' : ''}`}>
-                  {activeTimerTask?.id===viewingTask.id ? (
-                    <>
-                      <span className="task-timer-label">正在专注</span>
-                      <strong className="task-timer-clock">{formatRunningTimer(viewingTask)}</strong>
-                      <Button className="task-timer-stop" type="button" onClick={()=>stopTaskTimer(viewingTask)}>■ 结束计时</Button>
-                      <small>结束本次计时后，可继续浏览或编辑任务。</small>
-                    </>
+              {!viewingTask.recurrence && !viewingTask.seriesId && (viewingTask.status === 'todo' || taskFocusHistorySeconds > 0) && (
+                <FocusCard className="task-focus-card" duration={formatFocusDuration(taskFocusHistorySeconds)} onHistory={()=>setTaskFocusHistoryOpen(true)}>
+                  {viewingTask.status === 'todo' && (activeTimerTask?.id===viewingTask.id ? (
+                    <div className="ui-focus-card-running"><span>正在专注 · {formatRunningTimer(viewingTask)}</span><Button className="ui-focus-card-stop" type="button" onClick={()=>stopTaskTimer(viewingTask)}>■ 结束专注</Button></div>
                   ) : (
-                    <>
-                      <Button className="task-timer-start" type="button" disabled={Boolean(activeFocusSession)} onClick={()=>startTaskTimer(viewingTask)}>▶ 开始计时</Button>{activeFocusSession && <small>已有其他专注正在进行，请先结束后再开始任务计时。</small>}
-                    </>
-                  )}
-                </section>
+                    <><Button className="ui-focus-card-start" type="button" disabled={Boolean(activeFocusSession)} onClick={()=>startTaskTimer(viewingTask)}>▶ 开始任务专注</Button>{activeFocusSession && <small>已有其他专注正在进行，请先结束后再开始任务专注。</small>}</>
+                  ))}
+                </FocusCard>
               )}
 
               {(viewingTask.attachments ?? []).some(item=>item.type==='image') && (
@@ -153,12 +147,6 @@ export function TaskDetails({
                       <AttachmentThumb key={attachment.id} attachment={attachment} onPreview={attachment=>void openImagePreview(attachment)} />
                     )}
                   </div>
-                </section>
-              )}
-
-              {taskFocusHistorySeconds > 0 && !viewingTask.seriesId && (
-                <section className="task-view-section task-view-focus-summary">
-                  <Button type="button" className="task-focus-history-trigger" onClick={()=>setTaskFocusHistoryOpen(true)}>累计专注 {formatFocusDuration(taskFocusHistorySeconds)} · 历史 ›</Button>
                 </section>
               )}
 
