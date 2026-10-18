@@ -2,12 +2,13 @@ import type { FocusSession, Note, Task } from '../types'
 import { noteFocusSeconds, taskFocusSeconds } from './focus'
 
 /** Return immutable, newest-first visible sessions for a single context. */
-export function focusSessionsForContext(sessions: FocusSession[], kind: 'task' | 'note', id: string | null | undefined): FocusSession[] {
+export function focusSessionsForContext(sessions: FocusSession[], kind: 'task' | 'note' | 'habit', id: string | null | undefined): FocusSession[] {
   if (!id) return []
   return sessions.filter(session => {
     if (session.trashedAt || !session.context) return false
     if (kind === 'task') return session.context.kind === 'task' && session.context.taskId === id
-    return session.context.kind === 'note' && session.context.noteId === id
+    if (kind === 'note') return session.context.kind === 'note' && session.context.noteId === id
+    return session.context.kind === 'habit' && session.context.habitId === id
   })
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
 }

@@ -29,7 +29,8 @@ test('focus interval edit regression › finished countdown sessions use their a
 })
 
 test('focus interval edit regression › direct, note, and task history share the same interval editor', () => {
-  expect((app.match(/\{focusHistoryEditFields\}/g) ?? []).length).toBe(3)
+  expect((app.match(/\{focusHistoryEditFields\}/g) ?? []).length).toBe(4)
   expect(app).toContain('noteFocusHistorySessions.map')
   expect(app).toContain('taskFocusHistorySessions.map')
+  expect(app).toContain("session.context?.kind==='habit'")
 })

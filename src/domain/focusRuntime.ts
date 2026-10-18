@@ -16,6 +16,11 @@ export function createNoteFocusSession(input: { id:string; noteId:string; tagIds
     createdAt:input.startedAt, updatedAt:input.startedAt, context:{kind:'note',noteId:input.noteId} }
 }
 
+export function createHabitFocusSession(input: { id:string; habitId:string; tagIds:string[]; startedAt:string }): FocusSession {
+  return { id:input.id, tagIds:input.tagIds.length?input.tagIds:[DEFAULT_TAG_ID], mode:'stopwatch', startedAt:input.startedAt,
+    createdAt:input.startedAt, updatedAt:input.startedAt, context:{kind:'habit',habitId:input.habitId} }
+}
+
 export function lastSelectableFocusTagId(session: FocusSession, tags: Tag[]) {
   return session.tagIds.find(id => id===DEFAULT_TAG_ID || (!isImportSourceTagId(id) && tags.some(tag=>tag.id===id&&!tag.archived&&(tag.scope==='both'||tag.scope==='focus')))) ?? DEFAULT_TAG_ID
 }

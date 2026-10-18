@@ -8,6 +8,7 @@ export function focusSessionParticipatesInStats(session: FocusSession, tasks: Ta
     const task = tasks.find(row => row.id === context.taskId)
     return Boolean(task && !task.trashedAt)
   }
+  if (context.kind === 'habit') return true // Habit archive/delete never silently destroys focus history.
   const note = notes.find(row => row.id === context.noteId)
   return Boolean(note && !note.trashedAt)
 }

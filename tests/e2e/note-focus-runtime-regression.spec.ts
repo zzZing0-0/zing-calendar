@@ -25,7 +25,7 @@ test('starting note focus keeps the originating note workspace available without
 })
 
 test('global focus stop dispatches by context so note focus can end without reload', () => {
-  expect(app).toContain('if(activeFocusNote)stopNoteFocus(activeFocusNote);else if(activeTimerTask)stopTaskTimer(activeTimerTask);else stopDirectFocus(false)')
+  expect(app).toContain('if(activeFocusNote)stopNoteFocus(activeFocusNote);else if(activeFocusHabit)stopHabitFocus(activeFocusHabit);else if(activeTimerTask)stopTaskTimer(activeTimerTask);else stopDirectFocus(false)')
 })
 
 test('hydrated note focus restores the originating note workspace under the focus lock', () => {

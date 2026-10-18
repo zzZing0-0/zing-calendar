@@ -36,7 +36,7 @@ export function countdownMinutes(value: string | number, fallback = 15) {
 
 export type FocusHistoryRecord = {
   id: string
-  kind: 'task' | 'note' | 'direct'
+  kind: 'task' | 'note' | 'habit' | 'direct'
   title: string
   seconds: number
   tagIds: string[]
@@ -158,6 +158,10 @@ export function focusHistoryForDate(tasks: Task[], notes: Note[], sessions: Focu
       const existing = noteRows.get(key)
       if (existing) { existing.seconds += seconds; return }
       noteRows.set(key, { id:`note:${key}`, kind:'note', title:note.title, seconds, tagIds:session.tagIds, note })
+      return
+    }
+    if (session.context?.kind === 'habit') {
+      directRows.push({ id:`habit:${session.id}`, kind:'habit', title:'习惯专注', seconds, tagIds:session.tagIds, session })
       return
     }
     directRows.push({ id:`direct:${session.id}`, kind:'direct', title:'自由专注', seconds, tagIds:session.tagIds, session })

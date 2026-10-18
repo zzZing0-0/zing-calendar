@@ -33,9 +33,9 @@ test('Today Focus aggregates the same note and focus tag but keeps different tag
 })
 
 test('Today Focus separates free focus notes and tasks and only raw free focus is directly editable', () => {
-  expect(app).toContain("(['direct','note','task'] as const).map(kind=>")
-  expect(app).toContain("kind==='direct'?'自由专注':kind==='note'?'笔记':'任务'")
-  expect(app).toContain("record.kind==='direct'&&record.session&&<>")
+  expect(app).toContain("(['direct','note','task','habit'] as const).map(kind=>")
+  expect(app).toContain("kind==='direct'?'自由专注':kind==='note'?'笔记':kind==='habit'?'习惯':'任务'")
+  expect(app).toContain("(record.kind==='direct'||record.kind==='habit')&&record.session&&<>")
   expect(app).toContain("record.kind==='note'&&record.note&&<button")
 })
 

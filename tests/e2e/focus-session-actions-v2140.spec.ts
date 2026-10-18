@@ -6,9 +6,9 @@ import type { FocusSession } from '../../src/types'
 const app = readFileSync('src/App.tsx', 'utf8')
 const sample: FocusSession = { id:'s', tagIds:['old'], mode:'stopwatch', startedAt:'2026-10-01T10:00:00.000Z', endedAt:null, durationSeconds:0, createdAt:'2026-10-01T10:00:00.000Z', updatedAt:'2026-10-01T10:00:00.000Z' }
 
-test('all three focus flows use shared immutable append and end operations', () => {
-  expect(app.match(/appendFocusSession\(current\s*,/g)?.length).toBe(3)
-  expect(app.match(/setFocusSessions\(current\s*=>\s*endFocusSession\(current\s*,/g)?.length).toBe(3)
+test('all four focus flows use shared immutable append and end operations', () => {
+  expect(app.match(/appendFocusSession\(current\s*,/g)?.length).toBe(4)
+  expect(app.match(/setFocusSessions\(current\s*=>\s*endFocusSession\(current\s*,/g)?.length).toBe(4)
   const initial=[sample]
   expect(appendFocusSession(initial,{...sample,id:'s2'})).toHaveLength(2)
   expect(initial).toHaveLength(1)
