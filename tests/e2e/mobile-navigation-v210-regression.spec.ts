@@ -37,11 +37,26 @@ test('mobile navigation settings save default and shortcuts follow hidden destin
   await expect(group.getByText('其他功能')).toHaveCount(0)
   await page.getByRole('button', { name: /导航栏设置/ }).click()
   const dialog = page.getByRole('dialog', { name: '导航栏设置' })
-  // The bottom bar must retain at least four entries: add a fifth before hiding habits.
-  await expect(dialog.getByRole('button', { name: '习惯移至不显示' })).toBeDisabled()
-  await dialog.getByRole('button', { name: '统计移至底部显示' }).click()
-  await expect(dialog.getByRole('button', { name: '习惯移至不显示' })).toBeEnabled()
-  await dialog.getByRole('button', { name: '习惯移至不显示' }).click()
+  // Drag handles replaced the legacy move buttons. Verify the 4–5 item invariant
+  // through real pointer interactions, rather than asserting removed button labels.
+  const dragTo = async (name: string, targetArea: 'shown' | 'hidden') => {
+    const handle = dialog.getByRole('button', { name: `拖动${name}` })
+    const zone = dialog.locator(`[data-nav-area="${targetArea}"].mobile-nav-dropzone`)
+    const from = await handle.boundingBox()
+    const to = await zone.boundingBox()
+    if (!from || !to) throw new Error(`Cannot drag ${name} into ${targetArea}`)
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height - 8, { steps: 12 })
+    await page.mouse.up()
+  }
+  // With four entries, dragging one out cannot remove it.
+  await dragTo('习惯', 'hidden')
+  await expect(dialog.locator('[data-nav-area="shown"] [data-nav-index]')).toHaveCount(2)
+  await dragTo('统计', 'shown')
+  await expect(dialog.locator('[data-nav-area="shown"] [data-nav-index]')).toHaveCount(3)
+  await dragTo('习惯', 'hidden')
+  await expect(dialog.locator('[data-nav-area="shown"] [data-nav-index]')).toHaveCount(2)
   const bottomNav = page.getByRole('navigation', { name: '主要功能' })
   await expect(bottomNav.getByRole('button')).toHaveCount(4)
   await expect(bottomNav.getByRole('button', { name: '统计', exact: true })).toBeVisible()
@@ -57,8 +72,8 @@ test('mobile navigation settings save default and shortcuts follow hidden destin
 })
 
 test('backup includes only synced default navigation, not device-local layout', () => {
-  expect(app).toContain('mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav})')
-  expect(app).not.toContain('mixedPoolItemIds,defaultMobileNavigation:mobileNav})')
+  expect(app).toMatch(/mixedPoolItemIds,defaultMobileNavigation\s*:\s*syncedDefaultMobileNav(?=\s*[,}])/)
+  expect(app).not.toMatch(/mixedPoolItemIds,defaultMobileNavigation\s*:\s*mobileNav(?=\s*[,}])/)
 })
 
 test('desktop and mobile navigation have distinct selectors so mobile locators stay unique', () => {

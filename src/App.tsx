@@ -1,5 +1,5 @@
 import { BUILTIN_MOBILE_NAV, missingMobileNav, normalizeMobileNav } from './features/navigation/navigationConfig'
-import { mobileNavLabel } from './features/navigation/MobileNavigation'
+import { mobileNavLabel, mobileNavIcon } from './features/navigation/MobileNavigation'
 import type { MobileNavConfig } from './features/navigation/navigationConfig'
 import { initialMobileNavigation, loadDefaultNavigation, saveDefaultNavigation, saveLocalNavigation, initializeFromSyncedDefault } from './features/navigation/navigationStorage'
 import { MobileNavigation } from './features/navigation/MobileNavigation'
@@ -15,7 +15,7 @@ import type { SyncEntityType } from './db/calendar'
 import './App.css'
 import './features/navigation/navigation.css'
 
-const APP_VERSION = '2.11.26'
+const APP_VERSION = '2.11.27'
 
 import type {
   Anniversary, AnniversaryDraft, AnniversaryType, Attachment, BackupPreview, EncouragementMessage, EncouragementStyle,
@@ -3419,11 +3419,12 @@ function App() {
       {mainView === 'settings' && (
         <section className="settings-page">
           <div className="page-heading"><div><span className="eyebrow">SETTINGS</span><h2>设置</h2></div></div>
+          <button className="settings-mobile-search-entry" type="button" aria-label="打开全局搜索" onClick={() => { setMobileSearchVisible(true); setSearchOpen(true); window.setTimeout(() => document.querySelector<HTMLInputElement>('.global-search-wrap input')?.focus(), 0) }}><span aria-hidden="true">⌕</span><span>搜索任务、笔记、习惯等内容</span><span aria-hidden="true">›</span></button>
           <div className="settings-group mobile-nav-settings-group">
             <div className="settings-group-title"><h3>导航</h3></div>
+            {missingMobileNav(mobileNav).map(page => <button key={page} className="settings-link-row" type="button" aria-label={mobileNavLabel(page)} onClick={() => switchMainView(page)}><span className="settings-nav-link-label">{mobileNavIcon(page)}<strong>{mobileNavLabel(page)}</strong></span><b>›</b></button>)}
             <button className="settings-link-row" type="button" onClick={() => { setMobileNavToast(''); setMobileNavSettingsOpen(true) }}><span><strong>导航栏设置</strong></span><b>›</b></button>
             <button className="settings-link-row" type="button" onClick={() => setModulePriorityOpen(true)}><span><strong>模块优先级</strong><small>统一搜索、回收站与标签管理的分类顺序</small></span><b>›</b></button>
-            {missingMobileNav(mobileNav).map(page => <button key={page} className="settings-link-row" type="button" aria-label={mobileNavLabel(page)} onClick={() => switchMainView(page)}><span><strong>{mobileNavLabel(page)}</strong></span><b>›</b></button>)}
           </div>
 
 
