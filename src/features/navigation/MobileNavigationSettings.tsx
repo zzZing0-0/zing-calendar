@@ -70,7 +70,7 @@ export function MobileNavigationSettings({ config, onChange, onSaveDefault, onRe
 
   const rows = (area: Area, ids: MobileNavChoice[]) => <div className={`mobile-nav-dropzone ${over?.area === area ? 'drop-active' : ''}`} data-nav-area={area} aria-label={area === 'shown' ? '底部显示' : '不显示'}>
     {ids.map((id, index) => <div key={id} data-nav-area={area} data-nav-index={index} className={`mobile-nav-sort-row ${dragging === id ? 'dragging' : ''} ${over?.area === area && over.index === index ? 'drop-before' : ''}`}>
-      <Button className="mobile-nav-drag-handle" type="button" aria-label={`拖动${mobileNavLabel(id)}`} onPointerDown={event => startPointer(event, id)} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={cancel} onLostPointerCapture={cancel}>⠿</Button>
+      <Button className="mobile-nav-drag-handle" type="button" aria-label={`拖动${mobileNavLabel(id)}`} onPointerDown={event => startPointer(event, id)} onPointerMove={movePointer} onPointerUp={finishPointer} onPointerCancel={cancel} onLostPointerCapture={cancel}><span aria-hidden="true">⠿</span></Button>
       {mobileNavIcon(id)}<span>{mobileNavLabel(id)}</span>
 
     </div>)}

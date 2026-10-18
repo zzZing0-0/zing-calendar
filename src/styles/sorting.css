@@ -1,0 +1,12 @@
+/* Shared reorder presentation: one handle, no competing up/down controls. */
+.unified-sort-dialog .shared-sort-list{display:flex;flex-direction:column;gap:10px;margin:16px 0}
+.unified-sort-dialog .shared-sort-row{display:flex;align-items:center;gap:12px;min-height:54px;padding:8px 14px;background:var(--color-surface-soft);border:1px solid var(--color-border);border-radius:var(--radius-control)}
+.unified-sort-dialog .shared-sort-row strong{flex:1;font-size:16px;color:var(--color-text);font-weight:650}
+.unified-sort-dialog .shared-sort-row.is-dragging{background:#edf4ef;border-color:var(--color-accent)}
+.unified-sort-dialog .shared-sort-handle{display:inline-flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;padding:0;border:0;background:transparent;color:#718579;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;font-size:25px}
+.unified-sort-dialog .shared-sort-handle:active{cursor:grabbing}
+.unified-sort-dialog .shared-sort-handle:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.unified-sort-dialog .shared-sort-fixed{display:flex;align-items:center;justify-content:space-between;min-height:52px;padding:8px 14px;background:var(--color-surface-soft);border-radius:var(--radius-control);font-weight:650}
+.unified-sort-dialog .shared-sort-fixed small{font-size:12px;color:var(--color-text-secondary);font-weight:400}
+.unified-sort-dialog .shared-sort-restore,.mobile-nav-panel .mobile-nav-restore-action{display:block;box-sizing:border-box;width:100%;min-height:46px;margin-top:16px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-surface);color:var(--color-accent);font-size:15px;font-weight:600;cursor:pointer}
+.unified-sort-dialog .shared-sort-restore:hover,.mobile-nav-panel .mobile-nav-restore-action:hover{background:var(--color-surface-soft)}

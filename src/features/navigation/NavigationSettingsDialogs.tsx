@@ -1,8 +1,9 @@
 import type * as React from 'react'
 import { Button } from '../../components/ui/Button'
 import { DialogHeader } from '../../components/ui/DialogHeader'
+import { SortableList } from '../../components/ui/SortableList'
 import { normalizeDaySectionOrder, normalizeSettingsGroupOrder } from '../../domain/layoutPreferences'
-import { DEFAULT_MODULE_ORDER, moveModule } from '../../domain/modulePriority'
+import { DEFAULT_MODULE_ORDER } from '../../domain/modulePriority'
 import { LayoutOrderEditor } from '../layout/LayoutOrderEditor'
 import { MobileNavigationSettings } from './MobileNavigationSettings'
 import type { MobileNavConfig } from './navigationConfig'
@@ -40,7 +41,6 @@ export function NavigationSettingsDialogs({
   mobileNav,
   mobileNavSettingsOpen,
   mobileNavToast,
-  moduleDragRef,
   moduleOrder,
   modulePriorityOpen,
   setDaySectionOrder,
@@ -60,14 +60,11 @@ export function NavigationSettingsDialogs({
 
 {modulePriorityOpen && mainView === 'settings' && <div className="modal-layer" role="presentation">
         <Button className="modal-backdrop" type="button" aria-label="关闭模块优先级" onClick={() => setModulePriorityOpen(false)} />
-        <section className="task-editor module-priority-dialog" role="dialog" aria-modal="true" aria-label="模块优先级">
+        <section className="task-editor module-priority-dialog unified-sort-dialog" role="dialog" aria-modal="true" aria-label="模块优先级">
           <DialogHeader title={<>模块优先级</>} eyebrow={<>MODULE PRIORITY</>} actions={<><Button className="close-button" type="button" onClick={() => setModulePriorityOpen(false)}>×</Button></>} />
-          <div className="editor-body"><p className="module-priority-hint">拖动调整顺序，或使用上下按钮。只改变跨模块分类入口的顺序，不影响内容排序和导航栏。</p>
-            <div className="module-priority-list">{moduleOrder.map((key,index) => <div key={key} className="module-priority-item" draggable onDragStart={event => {moduleDragRef.current=key;event.dataTransfer.effectAllowed='move'}} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();if(moduleDragRef.current)setModuleOrder(current=>moveModule(current,moduleDragRef.current!,key));moduleDragRef.current=null}} onDragEnd={()=>{moduleDragRef.current=null}}>
-              <span className="module-priority-handle" aria-hidden="true">☰</span><strong>{({task:'任务',note:'笔记',habit:'习惯',journal:'记录',anniversary:'纪念日',focus:'专注'} as const)[key]}</strong>
-              <Button type="button" aria-label={`上移${key}`} disabled={index===0} onClick={()=>setModuleOrder(current=>moveModule(current,key,current[index-1]))}>↑</Button><Button type="button" aria-label={`下移${key}`} disabled={index===moduleOrder.length-1} onClick={()=>setModuleOrder(current=>moveModule(current,key,current[index+1],true))}>↓</Button>
-            </div>)}</div>
-            <Button type="button" className="ghost-button" onClick={()=>setModuleOrder([...DEFAULT_MODULE_ORDER])}>恢复默认</Button>
+          <div className="editor-body"><p className="module-priority-hint">长按左侧六点手柄拖动排序；键盘可使用上下方向键。只改变跨模块分类入口的顺序，不影响内容排序和导航栏。</p>
+            <SortableList items={moduleOrder} label={key=>({task:'任务',note:'笔记',habit:'习惯',journal:'记录',anniversary:'纪念日',focus:'专注'} as const)[key]} onChange={setModuleOrder}/>
+            <Button type="button" className="shared-sort-restore" onClick={()=>setModuleOrder([...DEFAULT_MODULE_ORDER])}>恢复默认</Button>
           </div>
         </section>
       </div>}
