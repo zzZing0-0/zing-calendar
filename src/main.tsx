@@ -29,3 +29,5 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     })
   })
 }
+
+import './styles/task-focus-history.css'

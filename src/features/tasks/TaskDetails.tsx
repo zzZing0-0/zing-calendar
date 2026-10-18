@@ -2,6 +2,7 @@ import type * as React from 'react'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { FocusCard } from '../../components/ui/FocusCard'
+import { FocusHistorySummary } from '../../components/ui/FocusHistorySummary'
 import { focusSessionDurationSeconds, trashFocusSession } from '../../domain/focus'
 import {
   DEFAULT_TAG_ID,
@@ -91,7 +92,7 @@ export function TaskDetails({
           <Button className="modal-backdrop" type="button" aria-label="关闭任务详情" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} />
           <section className="task-editor task-viewer" role="dialog" aria-modal="true" aria-labelledby="task-view-title">
             <div className="editor-header task-view-header">
-              <div className="task-view-heading">
+              {taskFocusHistoryOpen ? <div className="task-view-heading task-focus-history-heading"><span className="eyebrow">TASK FOCUS</span><h2 id="task-view-title">{viewingTask.title} · 专注历史</h2></div> : <div className="task-view-heading">
                 <div className="task-view-title-row">
                   <Button
                     type="button"
@@ -109,12 +110,12 @@ export function TaskDetails({
                   >{viewingTask.status==='completed'?'✓':viewingTask.status==='abandoned'?'×':''}</Button>
                   <h2 id="task-view-title">{viewingTask.title}</h2>
                 </div>
-              </div>
-              <Button className="close-button" type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} aria-label="关闭任务详情">×</Button>
+              </div>}
+              {taskFocusHistoryOpen ? <Button className="task-focus-history-return" type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setFocusEditError('')}}>返回</Button> : <Button className="close-button" type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null);setViewingTask(null)}} aria-label="关闭任务详情">×</Button>}
             </div>
             <div className="editor-body task-view-body">
               {taskFocusHistoryOpen ? <section className="task-inline-focus-history" aria-label="任务专注历史">
-                <div className="task-inline-focus-history-head"><Button type="button" onClick={()=>{setTaskFocusHistoryOpen(false);setFocusEditId(null)}}>‹ 返回</Button><div><strong>专注记录</strong><small>{formatFocusDuration(taskFocusHistorySeconds)} · {taskFocusHistorySessions.length} 条</small></div></div>
+                <FocusHistorySummary duration={formatFocusDuration(taskFocusHistorySeconds)} count={taskFocusHistorySessions.length} />
                 {taskFocusHistorySessions.length===0?<EmptyState className="page-empty compact">这个任务还没有专注记录。</EmptyState>:<div className="focus-history-list">{taskFocusHistorySessions.map(session=>{
                   const editing=focusEditId===session.id
                   const focusTag=session.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)

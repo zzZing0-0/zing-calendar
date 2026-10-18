@@ -1,3 +1,4 @@
+import { FocusHistorySummary } from '../../components/ui/FocusHistorySummary'
 import type * as React from 'react'
 import { Button } from '../../components/ui/Button'
 import { DialogHeader } from '../../components/ui/DialogHeader'
@@ -166,7 +167,7 @@ export function FocusDialogs({
           <section className="task-editor focus-history-panel" role="dialog" aria-modal="true" aria-label="笔记专注历史">
             <DialogHeader title={<>{noteFocusHistoryNote.title || '无标题笔记'} · 专注历史</>} eyebrow={<>NOTE FOCUS</>} actions={<><Button className="close-button" type="button" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}}>×</Button></>} />
             <div className="editor-body focus-history-body">
-              <div className="focus-history-summary"><strong>{formatFocusDuration(noteFocusHistorySeconds)}</strong><span>{noteFocusHistorySessions.length} 条记录</span></div>
+              <FocusHistorySummary duration={formatFocusDuration(noteFocusHistorySeconds)} count={noteFocusHistorySessions.length} />
               {noteFocusHistorySessions.length===0?<EmptyState className="page-empty compact">这篇笔记还没有专注记录。</EmptyState>:<div className="focus-history-list">{noteFocusHistorySessions.map(session=>{
                 const editing=focusEditId===session.id
                 const focusTag=session.tagIds.filter(id=>!isImportSourceTagId(id)).map(id=>tags.find(tag=>tag.id===id)).find(Boolean)

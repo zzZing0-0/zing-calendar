@@ -1,0 +1,9 @@
+/* Task focus history uses the same hierarchy as the note focus history. */
+.task-focus-history-heading{min-width:0;display:flex;flex-direction:column;gap:5px}
+.task-focus-history-heading .eyebrow{font-size:11px;letter-spacing:.12em;color:var(--color-text-muted)}
+.task-focus-history-heading h2{min-width:0;overflow-wrap:anywhere}
+.task-focus-history-return{flex-shrink:0;align-self:center;border:1px solid var(--color-border,#dce3df);border-radius:12px;background:var(--color-surface,#fff);color:var(--color-text-strong,#344039);padding:10px 14px;min-height:42px;font:inherit;font-weight:600;cursor:pointer}
+.task-focus-history-return:hover{background:var(--color-surface-soft,#f7f9f8)}
+.task-inline-focus-history{gap:20px}
+.task-inline-focus-history .focus-history-summary{margin:0}
+@media(max-width:700px){.task-focus-history-heading h2{font-size:20px}}
