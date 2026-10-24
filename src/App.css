@@ -5450,3 +5450,11 @@ button {
 .note-editor .note-mobile-tabs button{appearance:none;-webkit-appearance:none;display:inline-flex;align-items:center;justify-content:center;min-height:40px;border:1px solid #dce3df!important;border-radius:10px;background:var(--color-surface)!important;color:var(--color-text-strong)!important;-webkit-text-fill-color:var(--color-text-strong);font:inherit;font-weight:550;text-decoration:none!important;cursor:pointer}
 .note-editor .note-mobile-tabs button.active{border-color:var(--color-text-strong)!important;background:var(--color-text-strong)!important;color:var(--color-surface)!important;-webkit-text-fill-color:var(--color-surface)}
 .note-editor .note-mobile-tabs button:not(.active):hover{background:var(--color-surface-soft)!important}
+
+/* v2.15.17 — self-contained Gacha Lab beside Lucky Wheel */
+.gacha-lab-overlay{position:fixed;inset:0;z-index:245;background:#10101e;display:flex;flex-direction:column}
+.gacha-lab-toolbar{height:52px;flex:none;display:flex;align-items:center;gap:14px;padding:6px 18px;color:#f2eafa;background:#1c1a2d;border-bottom:1px solid #423956}
+.gacha-lab-toolbar button{border:1px solid #645576;border-radius:10px;padding:7px 14px;background:#302941;color:#f2eafa}
+.gacha-lab-toolbar strong{font-size:15px}.gacha-lab-toolbar span{margin-left:auto;font-size:12px;color:#aaa0bd}
+.gacha-lab-frame{display:block;flex:1;min-height:0;width:100%;border:0;background:#10101e}
+@media(max-width:620px){.gacha-lab-toolbar{height:48px;padding:5px 10px;gap:9px}.gacha-lab-toolbar strong{font-size:13px}}

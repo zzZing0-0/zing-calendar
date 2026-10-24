@@ -189,6 +189,7 @@ function App() {
   const [keepScreenAwakeDuringFocus, setKeepScreenAwakeDuringFocus] = useState(() => localStorage.getItem('zing:keepScreenAwakeDuringFocus') === 'true')
   const [randomWheelOpen,setRandomWheelOpen]=useState(false)
   const [randomPoolOpen,setRandomPoolOpen]=useState(false)
+  const [gachaLabOpen,setGachaLabOpen]=useState(false)
   const [randomPoolGroups,setRandomPoolGroups]=useState<RandomPoolGroup[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:randomPoolGroups')||'[]');return Array.isArray(v)?v:[]}catch{return []}})
   const [randomPoolItems,setRandomPoolItems]=useState<RandomPoolItem[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:randomPoolItems')||'[]');return Array.isArray(v)?v:[]}catch{return []}})
   const [mixedPoolItemIds,setMixedPoolItemIds]=useState<string[]>(()=>{try{const v=JSON.parse(localStorage.getItem('zing:mixedPoolItemIds')||'[]');return Array.isArray(v)?v.filter(id=>typeof id==='string'):[]}catch{return []}})
@@ -2204,7 +2205,7 @@ function App() {
         setEncouragementManagerOpen, setEncouragementStyle, setEnvironmentManagerKind, setGithubSyncOpen,
         setGreeting, setKeepScreenAwakeDuringFocus, setLayoutEditor, setMaxFocusHours,
         setMobileNavSettingsOpen, setMobileNavToast, setMobileSearchVisible, setModulePriorityOpen,
-        setPlainExportOpen, setRandomPoolOpen, setRandomWheelOpen, setResetDataConfirm, setSearchOpen,
+        setPlainExportOpen, setRandomPoolOpen, setRandomWheelOpen, setGachaLabOpen, setResetDataConfirm, setSearchOpen,
         setShowAllRecurringTasks, setStorageBrowser, setTagManagerOpen, setWeekStartsMonday,
         setWordIgnoreManagerOpen, settingsGroupStyle, showAllRecurringTasks, storageStats,
         switchMainView, weekStartsMonday, wordCloudIgnored
@@ -2251,12 +2252,12 @@ function App() {
       <ExternalImportModal controller={externalImport} />
 
       <RandomWorkspace {...{
-        mixedPoolItemIds, randomPoolGroups, randomPoolItems, randomPoolOpen, randomWheelOpen,
+        mixedPoolItemIds, randomPoolGroups, randomPoolItems, randomPoolOpen, randomWheelOpen, gachaLabOpen,
         setMixedPoolItemIds, setRandomPoolGroups, setRandomPoolItems, setRandomPoolOpen,
-        setRandomWheelOpen
+        setRandomWheelOpen, setGachaLabOpen
       }} />
 
-      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !noteFocusHistoryId && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && (
+      {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !noteFocusHistoryId && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && !gachaLabOpen && (
       <>
         <MobileNavigation config={mobileNav} active={mainView} onNavigate={switchMainView} />
       </>
