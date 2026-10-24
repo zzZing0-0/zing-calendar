@@ -25,3 +25,34 @@ test('standalone simulator includes actual and theoretical probability, shop and
   expect(html).toContain('id="shop"')
   expect(html).toContain('id="collection"')
 })
+
+test('wheel owns its settings, and simulator has a compact mobile probability control', async () => {
+  const [settings, workspace, wheel, gacha, html] = await Promise.all([
+    read('src/features/settings/SettingsPage.tsx'),
+    read('src/features/random-wheel/RandomWorkspace.tsx'),
+    read('src/features/random-wheel/RandomWheelPage.tsx'),
+    read('src/features/gacha-lab/GachaLabPage.tsx'),
+    read('public/gacha-lab/index.html'),
+  ])
+  expect(settings).toContain('<strong>幸运大转盘</strong>')
+  expect(settings).not.toContain('<strong>幸运池</strong>')
+  expect(workspace).toContain('onSettings={()=>setRandomPoolOpen(true)}')
+  expect(wheel).toContain('onClick={onSettings}>⚙️ 设置')
+  expect(gacha).toContain('‹ 返回</Button>')
+  expect(gacha).not.toContain('返回幸运池')
+  expect(html).not.toContain('本地运行')
+  expect(html).not.toContain('id="soundToggle"')
+  expect(html).toContain('id="showProbability"')
+  expect(html).toContain('aria-controls="probabilityAside"')
+  expect(html).toContain("classList.toggle('mobile-open')")
+  expect(html).toContain('const stats=p.batchStats||{}')
+})
+
+
+test('gacha editor distinguishes alternating reward and trade rows and clears save feedback', async () => {
+  const html = await read('public/gacha-lab/index.html')
+  expect(html).toContain('#rewardRows .reward-entry:nth-child(even)')
+  expect(html).toContain('#tradeRows .trade-row:nth-child(even)')
+  expect(html).toContain('if(feedbackTimer)clearTimeout(feedbackTimer)')
+  expect(html).toContain("f.classList.add('hidden');f.textContent=''")
+})

@@ -14,11 +14,11 @@ test.describe('random wheel regression', () => {
     expect(source).toContain('!randomWheelOpen && !randomPoolOpen')
   })
 
-  test('pool naming is consistently 幸运池', async () => {
+  test('pool manager remains 幸运池 while the settings entry is 幸运大转盘', async () => {
     const app = await readApplicationSource()
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
     const pool = await read('src/features/random-wheel/RandomPoolManager.tsx')
-    expect(app).toContain('<strong>幸运池</strong>')
+    expect(app).toContain('<strong>幸运大转盘</strong>')
     expect(wheel).toContain('还没有幸运池。先去「幸运池」添加分组和项目吧。')
     expect(pool).toContain('<h2>幸运池</h2>')
     expect(`${app}\n${wheel}\n${pool}`).not.toContain('奇遇池')
@@ -38,7 +38,7 @@ test.describe('random wheel v2.8.6 presentation regression', () => {
   test('settings and wheel title stay emoji-free while prize content may remain playful', async () => {
     const app = await readApplicationSource()
     const wheel = await read('src/features/random-wheel/RandomWheelPage.tsx')
-    expect(app).toContain('<strong>抽奖大转盘</strong>')
+    expect(app).toContain('<strong>幸运大转盘</strong>')
     expect(app).not.toContain('<strong>🎡 抽奖大转盘</strong>')
     expect(wheel).toContain('<h2>幸运大转盘</h2>')
     expect(wheel).not.toContain('<h2>🎡 幸运大转盘</h2>')

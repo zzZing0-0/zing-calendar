@@ -99,8 +99,6 @@ export function SettingsPage({
   mobileNav,
   openExternalImport,
   orphanCleanupBusy,
-  randomPoolGroups,
-  randomPoolItems,
   setArchivedTagsOpen,
   setDateFormat,
   setDefaultPriority,
@@ -118,7 +116,6 @@ export function SettingsPage({
   setMobileSearchVisible,
   setModulePriorityOpen,
   setPlainExportOpen,
-  setRandomPoolOpen,
   setRandomWheelOpen,
   setGachaLabOpen,
   setResetDataConfirm,
@@ -185,9 +182,8 @@ export function SettingsPage({
 
           <div className="settings-group random-wheel-settings" style={settingsGroupStyle('random')}>
             <div className="settings-group-title"><h3>随机选择</h3></div>
-            <Button className="settings-link-row" type="button" onClick={()=>setRandomWheelOpen(true)}><span><strong>抽奖大转盘</strong><small>转一下，看看这次的奇遇。结果不是任务，也不是命令。</small></span><b>›</b></Button>
+            <Button className="settings-link-row" type="button" onClick={()=>setRandomWheelOpen(true)}><span><strong>幸运大转盘</strong><small>转一下，看看这次的奇遇。结果不是任务，也不是命令。</small></span><b>›</b></Button>
             <Button className="settings-link-row" type="button" onClick={()=>setGachaLabOpen(true)}><span><strong>抽奖模拟器</strong><small>可配置奖池、收藏图鉴、兑换商店与理论 / 实际命中率。</small></span><b>›</b></Button>
-            <Button className="settings-link-row" type="button" onClick={()=>setRandomPoolOpen(true)}><span><strong>幸运池</strong><small>{randomPoolGroups.length?`${randomPoolGroups.length} 个分组 · ${randomPoolItems.length} 个项目`:'创建分组、项目、数量/单位、权重与参与状态。'}</small></span><b>›</b></Button>
           </div>
 
           <div className="settings-group" style={settingsGroupStyle('tags')}>

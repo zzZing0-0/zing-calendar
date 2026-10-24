@@ -37,7 +37,7 @@ export function RandomWorkspace({
 {gachaLabOpen && <GachaLabPage onClose={()=>setGachaLabOpen(false)} />}
 {randomWheelOpen && (
         <div className="random-feature-overlay">
-          <RandomWheelPage groups={randomPoolGroups} items={randomPoolItems} mixedPoolItemIds={mixedPoolItemIds} onClose={()=>setRandomWheelOpen(false)} />
+          <RandomWheelPage groups={randomPoolGroups} items={randomPoolItems} mixedPoolItemIds={mixedPoolItemIds} onClose={()=>setRandomWheelOpen(false)} onSettings={()=>setRandomPoolOpen(true)} />
         </div>
       )}
 
