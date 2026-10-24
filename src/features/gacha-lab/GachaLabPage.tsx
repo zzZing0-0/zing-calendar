@@ -1,39 +1,26 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../../components/ui/Button'
+import { PageHeading } from '../../components/ui/PageHeading'
+import { APP_VERSION } from '../application/version'
+import { GachaLabBoundary } from './GachaLabBoundary'
+const GachaLabContent = lazy(() => import('./GachaLabContent').then(module => ({ default: module.GachaLabContent })))
+import './gacha-lab.css'
 
-/** The simulator remains isolated; navigation belongs to the host application. */
+/** Host navigation stays mounted even when the native feature cannot render. */
 export function GachaLabPage({ onClose }: { onClose: () => void }) {
-  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'slow' | 'error'>('loading')
-  const [retryKey, setRetryKey] = useState(0)
-
+  const close = useRef<HTMLButtonElement>(null)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
   useEffect(() => {
-    setLoadState('loading')
-    const timer = window.setTimeout(() => setLoadState(state => state === 'loading' ? 'slow' : state), 8000)
-    return () => window.clearTimeout(timer)
-  }, [retryKey])
-
-  useEffect(() => {
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = previous }
+    const previous = document.body.style.overflow, focused = document.activeElement as HTMLElement | null
+    document.body.style.overflow = 'hidden'; close.current?.focus()
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current() }
+    document.addEventListener('keydown', escape)
+    return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', escape); focused?.focus({ preventScroll: true }) }
   }, [])
-
-  return createPortal(
-    <div className="gacha-lab-overlay" role="dialog" aria-modal="true" aria-label="抽奖模拟器">
-      <div className="gacha-lab-toolbar">
-        <Button type="button" onClick={onClose} aria-label="返回日历">‹ 返回</Button>
-        <strong>抽奖模拟器</strong><span>v1.22</span>
-      </div>
-      <div className="gacha-lab-content">
-        <iframe key={retryKey} className="gacha-lab-frame" title="Zing Gacha Lab" src="/gacha-lab/index.html"
-          onLoad={() => setLoadState('ready')} onError={() => setLoadState('error')} />
-        {(loadState === 'slow' || loadState === 'error') && <div className="gacha-lab-recovery" role="status">
-          <p>{loadState === 'slow' ? '抽奖模拟器加载较慢，仍可直接返回日历。' : '抽奖模拟器加载失败，日历数据不受影响。'}</p>
-          <Button type="button" onClick={() => setRetryKey(key => key + 1)}>重试加载</Button>
-          <Button type="button" onClick={onClose}>返回日历</Button>
-        </div>}
-      </div>
-    </div>, document.body,
-  )
+  return createPortal(<div className="gacha-lab-overlay" role="dialog" aria-modal="true" aria-label="抽奖模拟器">
+    <div className="gacha-lab-toolbar"><Button ref={close} onClick={onClose} aria-label="返回日历">‹ 返回</Button><PageHeading title="抽奖模拟器"/><span>v{APP_VERSION}</span></div>
+    <div className="gacha-lab-content"><GachaLabBoundary onClose={onClose}><Suspense fallback={<div className="gacha-lab-recovery" role="status">正在加载抽奖模拟器…<Button onClick={onClose}>返回日历</Button></div>}><GachaLabContent/></Suspense></GachaLabBoundary></div>
+  </div>, document.body)
 }

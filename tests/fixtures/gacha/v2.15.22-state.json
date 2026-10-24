@@ -1,0 +1,447 @@
+{
+  "active": "658c501f-45fd-4bc0-89ba-6c03b84ade4c",
+  "pools": [
+    {
+      "id": "c53b2e41-37b9-4fc7-93c0-d7e26275a5aa",
+      "config": {
+        "trades": [
+          {
+            "id": "f88d2296-6efe-430e-ac37-8a43031e8636",
+            "from": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "cost": 20,
+            "rewardIds": [
+              "5be374c3-acde-4ed5-8975-99230f456aa9"
+            ],
+            "qty": 2,
+            "repeat": true
+          }
+        ],
+        "id": "c53b2e41-37b9-4fc7-93c0-d7e26275a5aa",
+        "name": "网易狼人杀·五日谈",
+        "description": "示例概率与自定义重复兑换规则，仅供模拟",
+        "currency": "点券",
+        "price": 60,
+        "rate": 10,
+        "target": "5478eee1-9c7c-4c7b-98d2-e8f68ace9c55",
+        "cover": null,
+        "chest": null,
+        "rewards": [
+          {
+            "id": "110501fa-c5cf-447d-bccc-a9f26c148cc4",
+            "name": "女巫",
+            "category": "永久皮肤",
+            "p": 0.02,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 5000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "5be374c3-acde-4ed5-8975-99230f456aa9",
+            "name": "狼王",
+            "category": "永久皮肤",
+            "p": 0.02,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 5000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "de03f29b-1146-4655-bc17-05304df56e69",
+            "name": "猎人",
+            "category": "永久皮肤",
+            "p": 0.02,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 5000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "136221bc-83ce-4092-ae77-11edd040e567",
+            "name": "预言家",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "3f321bcf-dbad-40a6-807b-2bec19ea62a0",
+            "name": "孤独少女",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "290c8796-4b64-4550-a6d0-aa0ae06aff76",
+            "name": "魔镜",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "5478eee1-9c7c-4c7b-98d2-e8f68ace9c55",
+            "name": "觉醒隐狼",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "780ba456-d93b-4a15-81cc-6779699ca15d",
+            "name": "守卫",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "079b773a-fac2-4ab3-85f3-9890d1a79495",
+            "name": "女巫碎片",
+            "category": "碎片",
+            "p": 3.5,
+            "min": 1,
+            "max": 3,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "88d30587-cdf5-4548-824a-eb4258929940",
+            "name": "猎人碎片",
+            "category": "碎片",
+            "p": 3.5,
+            "min": 1,
+            "max": 3,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "c6b74c06-6fa0-481b-8418-e23503a811a6",
+            "name": "狼王碎片",
+            "category": "碎片",
+            "p": 3.5,
+            "min": 1,
+            "max": 3,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "name": "徽章",
+            "category": "货币",
+            "p": 88.84,
+            "min": 1,
+            "max": 16,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          }
+        ]
+      },
+      "draws": 50,
+      "counts": {
+        "110501fa-c5cf-447d-bccc-a9f26c148cc4": 50
+      },
+      "collection": {
+        "110501fa-c5cf-447d-bccc-a9f26c148cc4": true,
+        "5be374c3-acde-4ed5-8975-99230f456aa9": true
+      },
+      "duplicates": {
+        "110501fa-c5cf-447d-bccc-a9f26c148cc4": 49,
+        "5be374c3-acde-4ed5-8975-99230f456aa9": 1
+      },
+      "converted": {
+        "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820": 245000
+      },
+      "tradeGained": {},
+      "redeemedSpent": {
+        "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820": 20
+      },
+      "spent": 3000,
+      "history": [],
+      "batchStats": {
+        "10": {
+          "rounds": 1,
+          "hits": 1
+        },
+        "40": {
+          "rounds": 1,
+          "hits": 1
+        }
+      }
+    },
+    {
+      "id": "658c501f-45fd-4bc0-89ba-6c03b84ade4c",
+      "config": {
+        "trades": [
+          {
+            "id": "f88d2296-6efe-430e-ac37-8a43031e8636",
+            "from": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "cost": 20,
+            "rewardIds": [
+              "5be374c3-acde-4ed5-8975-99230f456aa9"
+            ],
+            "qty": 2,
+            "repeat": true
+          }
+        ],
+        "id": "658c501f-45fd-4bc0-89ba-6c03b84ade4c",
+        "name": "网易狼人杀·五日谈（副本）",
+        "description": "示例概率与自定义重复兑换规则，仅供模拟",
+        "currency": "点券",
+        "price": 60,
+        "rate": 10,
+        "target": "5478eee1-9c7c-4c7b-98d2-e8f68ace9c55",
+        "cover": null,
+        "chest": null,
+        "rewards": [
+          {
+            "id": "110501fa-c5cf-447d-bccc-a9f26c148cc4",
+            "name": "女巫",
+            "category": "永久皮肤",
+            "p": 0.02,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 5000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "5be374c3-acde-4ed5-8975-99230f456aa9",
+            "name": "狼王",
+            "category": "永久皮肤",
+            "p": 0.02,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 5000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "de03f29b-1146-4655-bc17-05304df56e69",
+            "name": "猎人",
+            "category": "永久皮肤",
+            "p": 0.02,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 5000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "136221bc-83ce-4092-ae77-11edd040e567",
+            "name": "预言家",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "3f321bcf-dbad-40a6-807b-2bec19ea62a0",
+            "name": "孤独少女",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "290c8796-4b64-4550-a6d0-aa0ae06aff76",
+            "name": "魔镜",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "5478eee1-9c7c-4c7b-98d2-e8f68ace9c55",
+            "name": "觉醒隐狼",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "780ba456-d93b-4a15-81cc-6779699ca15d",
+            "name": "守卫",
+            "category": "永久皮肤",
+            "p": 0.12,
+            "min": 1,
+            "max": 1,
+            "collect": true,
+            "duplicate": "convert",
+            "convertAmount": 1000,
+            "convertTo": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "079b773a-fac2-4ab3-85f3-9890d1a79495",
+            "name": "女巫碎片",
+            "category": "碎片",
+            "p": 3.5,
+            "min": 1,
+            "max": 3,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "88d30587-cdf5-4548-824a-eb4258929940",
+            "name": "猎人碎片",
+            "category": "碎片",
+            "p": 3.5,
+            "min": 1,
+            "max": 3,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "c6b74c06-6fa0-481b-8418-e23503a811a6",
+            "name": "狼王碎片",
+            "category": "碎片",
+            "p": 3.5,
+            "min": 1,
+            "max": 3,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          },
+          {
+            "id": "0504ea6a-f4bc-46a9-84cf-4ccb9f23f820",
+            "name": "徽章",
+            "category": "货币",
+            "p": 88.84,
+            "min": 1,
+            "max": 16,
+            "collect": false,
+            "duplicate": "keep",
+            "convertAmount": 0,
+            "convertTo": null,
+            "image": null,
+            "redeemCost": null
+          }
+        ]
+      },
+      "draws": 1,
+      "counts": {
+        "110501fa-c5cf-447d-bccc-a9f26c148cc4": 1
+      },
+      "collection": {
+        "110501fa-c5cf-447d-bccc-a9f26c148cc4": true
+      },
+      "duplicates": {},
+      "converted": {},
+      "tradeGained": {},
+      "redeemedSpent": {},
+      "spent": 60,
+      "history": [],
+      "batchStats": {
+        "1": {
+          "rounds": 1,
+          "hits": 1
+        }
+      }
+    }
+  ]
+}

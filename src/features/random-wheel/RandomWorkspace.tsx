@@ -16,7 +16,7 @@ export interface RandomWorkspaceProps {
   setRandomPoolItems: React.Dispatch<React.SetStateAction<RandomPoolItem[]>>
   setRandomPoolOpen: React.Dispatch<React.SetStateAction<boolean>>
   setRandomWheelOpen: React.Dispatch<React.SetStateAction<boolean>>
-  setGachaLabOpen: React.Dispatch<React.SetStateAction<boolean>>
+  onGachaClose: () => void
 }
 
 export function RandomWorkspace({
@@ -31,10 +31,10 @@ export function RandomWorkspace({
   setRandomPoolItems,
   setRandomPoolOpen,
   setRandomWheelOpen,
-  setGachaLabOpen
+  onGachaClose
 }: RandomWorkspaceProps) {
   return <>
-{gachaLabOpen && <GachaLabPage onClose={()=>setGachaLabOpen(false)} />}
+{gachaLabOpen && <GachaLabPage onClose={onGachaClose} />}
 {randomWheelOpen && (
         <div className="random-feature-overlay">
           <RandomWheelPage groups={randomPoolGroups} items={randomPoolItems} mixedPoolItemIds={mixedPoolItemIds} onClose={()=>setRandomWheelOpen(false)} onSettings={()=>setRandomPoolOpen(true)} />

@@ -5451,22 +5451,6 @@ button {
 .note-editor .note-mobile-tabs button.active{border-color:var(--color-text-strong)!important;background:var(--color-text-strong)!important;color:var(--color-surface)!important;-webkit-text-fill-color:var(--color-surface)}
 .note-editor .note-mobile-tabs button:not(.active):hover{background:var(--color-surface-soft)!important}
 
-/* v2.15.17 — self-contained Gacha Lab beside Lucky Wheel */
-.gacha-lab-overlay{position:fixed;inset:0;z-index:245;background:#10101e;display:flex;flex-direction:column}
-.gacha-lab-toolbar{height:52px;flex:none;display:flex;align-items:center;gap:14px;padding:6px 18px;color:#f2eafa;background:#1c1a2d;border-bottom:1px solid #423956}
-.gacha-lab-toolbar button{border:1px solid #645576;border-radius:10px;padding:7px 14px;background:#302941;color:#f2eafa}
-.gacha-lab-toolbar strong{font-size:15px}.gacha-lab-toolbar span{margin-left:auto;font-size:12px;color:#aaa0bd}
-.gacha-lab-frame{display:block;flex:1;min-height:0;width:100%;border:0;background:#10101e}
-@media(max-width:620px){.gacha-lab-toolbar{height:48px;padding:5px 10px;gap:9px}.gacha-lab-toolbar strong{font-size:13px}}
 
 .random-wheel-settings-button{border:1px solid #dcded8;border-radius:10px;padding:6px 12px;background:#fffdf8;color:#536454;font-size:14px;font-weight:700;white-space:nowrap}
 .random-wheel-title-row{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px}
-
-/* Gacha navigation is hosted outside the scrollable application tree. */
-.gacha-lab-overlay{z-index:2147483000;overflow:hidden;height:100dvh;height:100svh}
-.gacha-lab-toolbar{position:relative;z-index:2;flex-shrink:0;min-height:52px;padding-top:env(safe-area-inset-top);height:auto;box-sizing:content-box}
-.gacha-lab-content{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
-.gacha-lab-frame{flex:1;min-height:0}
-.gacha-lab-recovery{position:absolute;left:12px;right:12px;top:12px;z-index:1;background:#302941;border:1px solid #645576;border-radius:12px;padding:12px;color:#f2eafa;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.gacha-lab-recovery p{margin:0;flex-basis:100%}
-@media(max-width:620px){.gacha-lab-toolbar{min-height:48px;height:auto;padding-top:env(safe-area-inset-top)}}

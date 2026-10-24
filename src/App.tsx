@@ -2254,7 +2254,7 @@ function App() {
       <RandomWorkspace {...{
         mixedPoolItemIds, randomPoolGroups, randomPoolItems, randomPoolOpen, randomWheelOpen, gachaLabOpen,
         setMixedPoolItemIds, setRandomPoolGroups, setRandomPoolItems, setRandomPoolOpen,
-        setRandomWheelOpen, setGachaLabOpen
+        setRandomWheelOpen, onGachaClose: () => { setGachaLabOpen(false); setMainView('calendar') }
       }} />
 
       {!editorOpen && !journalEditorOpen && !anniversaryEditorOpen && !tagManagerOpen && !archivedTagsOpen && !viewingJournalId && !viewingTask && !storageBrowser && !orphanCleanupOpen && !backupPreview && !resetDataConfirm && !externalImportOpen && !inboxOpen && !overdueInboxOpen && !trashOpen && !focusOpen && !focusHistoryDate && !noteFocusHistoryId && !monthPickerTarget && !dayDetailOpen && !imagePreview && !seriesAction && !confirmSingleTask && !randomWheelOpen && !randomPoolOpen && !gachaLabOpen && (
