@@ -56,3 +56,12 @@ test('gacha editor distinguishes alternating reward and trade rows and clears sa
   expect(html).toContain('if(feedbackTimer)clearTimeout(feedbackTimer)')
   expect(html).toContain("f.classList.add('hidden');f.textContent=''")
 })
+
+test('mobile editor alternates visibly light and purple cards and draw controls remain compact', async () => {
+  const html = await read('public/gacha-lab/index.html')
+  expect(html).toContain('background:#f5f1ff')
+  expect(html).toContain('background:#35254f')
+  expect(html).toContain('#tradeRows .trade-row:nth-child(odd) input')
+  expect(html).toContain('.secondary-actions #resetPool{grid-column:3;grid-row:2')
+  expect(html).toContain('.top .tabs button{padding:7px 12px')
+})
