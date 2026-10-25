@@ -1,3 +1,4 @@
+import { normalizeHabitDayStart } from '../../domain/habitDay'
 import { loadUserSettings } from '../../db/calendar'
 import type { SyncedUserSettings } from '../../types'
 
@@ -13,6 +14,8 @@ export function writeLocalCache(key: string, value: string): boolean {
 export async function prepareSettingsCache(storage: Pick<Storage, 'getItem' | 'setItem'> = localStorage): Promise<void> {
   const [settings] = await loadUserSettings<SyncedUserSettings>()
   if (!settings) return
+  const habitStart = normalizeHabitDayStart(settings.habitDayStart)
+  if (storage.getItem('zing:habitDayStart') !== habitStart) storage.setItem('zing:habitDayStart', habitStart)
   const jsonFields = new Set(['wordCloudIgnored','encouragementMessages','weatherOptions','thermalOptions','emotionOptions','randomPoolGroups','randomPoolItems','mixedPoolItemIds','modulePriority','daySectionOrder','settingsGroupOrder','defaultMobileNavigation'])
   const scalarFields = ['greeting','weekStart','dateFormat','defaultPriority','showEndedTasks','showAllRecurringTasks','excludeDefaultFocusStats','encouragementStyle','maxFocusHours','keepScreenAwakeDuringFocus']
   for (const field of [...scalarFields, ...jsonFields]) {

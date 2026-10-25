@@ -215,6 +215,7 @@ export type SyncedUserSettings = {
   encouragementMessages?: EncouragementMessage[]
   encouragementStyle?: EncouragementStyle
   maxFocusHours?: number
+  habitDayStart?: string
   keepScreenAwakeDuringFocus?: boolean
   weatherOptions?: EnvironmentOption[]
   thermalOptions?: EnvironmentOption[]
@@ -252,6 +253,7 @@ export type BackupPreview = {
     encouragementMessages?: EncouragementMessage[]
     encouragementStyle?: EncouragementStyle
     maxFocusHours?: number
+  habitDayStart?: string
   keepScreenAwakeDuringFocus?: boolean
     weatherOptions?: EnvironmentOption[]
     thermalOptions?: EnvironmentOption[]

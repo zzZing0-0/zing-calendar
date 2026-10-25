@@ -8,6 +8,7 @@ function storage(values: Record<string, string> = {}) {
 test.describe('app preferences hook regression', () => {
   test('missing storage keeps the stable application defaults', () => {
     expect(readAppPreferences(storage())).toEqual({
+      habitDayStart: '00:00',
       greeting: 'Hello, Zing',
       weekStartsMonday: true,
       dateFormat: 'dmy',
@@ -21,6 +22,7 @@ test.describe('app preferences hook regression', () => {
 
   test('stored scalar preferences preserve the existing localStorage semantics', () => {
     expect(readAppPreferences(storage({
+      'zing:habitDayStart': '05:00',
       'zing:greeting': 'Hi',
       'zing:weekStart': 'sunday',
       'zing:dateFormat': 'mdy',
@@ -30,6 +32,7 @@ test.describe('app preferences hook regression', () => {
       'zing:maxFocusHours': '7',
       'zing:defaultPriority': '3',
     }))).toEqual({
+      habitDayStart: '05:00',
       greeting: 'Hi',
       weekStartsMonday: false,
       dateFormat: 'mdy',

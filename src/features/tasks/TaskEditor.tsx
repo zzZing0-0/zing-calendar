@@ -1,4 +1,6 @@
 import type * as React from 'react'
+import { TaskRecurrenceFields } from './TaskRecurrenceFields'
+import { recurrenceDraftInvalid } from './taskRecurrenceDraft'
 import { Button } from '../../components/ui/Button'
 import { DialogHeader } from '../../components/ui/DialogHeader'
 import { Field } from '../../components/ui/Field'
@@ -154,6 +156,7 @@ export function TaskEditor({
                   <Field className="field"><span>时间</span><input type="time" value={draft.time} onChange={event => setDraft(current => ({ ...current, time: event.target.value }))} /></Field>
                 </div>
               )}
+              <TaskRecurrenceFields draft={draft} setDraft={setDraft} />
             </div>
 
             <div className="editor-footer">
@@ -181,7 +184,7 @@ export function TaskEditor({
                   if (editingOccurrenceDate && series?.recurrence && draft.repeatPreset === 'none') setConfirmSingleTask(true)
                   else if (editingOccurrenceDate && series?.recurrence) setSeriesAction('save')
                   else saveTask('series')
-                }} disabled={!draft.title.trim()}>{editingTaskId ? '保存修改' : '保存任务'}</Button>
+                }} disabled={!draft.title.trim() || recurrenceDraftInvalid(draft)}>{editingTaskId ? '保存修改' : '保存任务'}</Button>
               </div>
             </div>
           </section>

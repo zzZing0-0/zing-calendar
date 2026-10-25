@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { Button } from './Button'
 
 /** Reorder only on the handle. Touch requires a hold so list scrolling stays available. */
-export function SortableList<T extends string>({ items, label, onChange }: {
+export function SortableList<T extends string>({ items, label, onChange, renderItem }: {
   items: readonly T[]
   label: (item: T) => string
   onChange: (next: T[]) => void
+  renderItem?: (item: T) => ReactNode
 }) {
   const [active, setActive] = useState<T | null>(null)
   const drag = useRef<{ key: T; pointerId: number; startX: number; startY: number; ready: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null)
@@ -45,6 +46,7 @@ export function SortableList<T extends string>({ items, label, onChange }: {
       return
     }
     const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-sort-index]')
+    if (row?.closest('.shared-sort-list') !== event.currentTarget.closest('.shared-sort-list')) return
     const targetIndex = Number(row?.dataset.sortIndex)
     if (!row || !Number.isInteger(targetIndex)) return
     const target = current.current[targetIndex]
@@ -60,7 +62,7 @@ export function SortableList<T extends string>({ items, label, onChange }: {
           if (event.key === 'ArrowUp' && index > 0) { event.preventDefault(); reorder(item, items[index - 1]) }
           if (event.key === 'ArrowDown' && index < items.length - 1) { event.preventDefault(); reorder(item, items[index + 1], true) }
         }}><span aria-hidden="true">⠿</span></Button>
-      <strong>{label(item)}</strong>
+      {renderItem ? <div className="shared-sort-content">{renderItem(item)}</div> : <strong>{label(item)}</strong>}
     </div>)}
   </div>
 }

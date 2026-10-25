@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 const legacy = JSON.parse(readFileSync('tests/fixtures/gacha/v2.15.22-state.json', 'utf8'))
 
+const releaseVersion = JSON.parse(readFileSync('package.json', 'utf8')).version
 const key = 'zing-gacha-v1'
 async function open(page: Page) {
   await page.locator('.bottom-nav').getByRole('button', { name: '设置', exact: true }).click()
@@ -27,7 +28,7 @@ async function downloadedJSON(page: Page, selector: string) {
 test('native module opens from settings; wheel keeps its own settings and independent navigation', async ({ page }) => {
   await start(page)
   await expect(page.locator('iframe')).toHaveCount(0)
-  await expect(page.locator('.gacha-lab-toolbar')).toContainText('v2.16.0')
+  await expect(page.locator('.gacha-lab-toolbar')).toContainText('v' + releaseVersion)
   await expect(page.locator('#inventory')).toContainText('还没有获得')
   await expect(page.locator('#collection')).toContainText('未获得')
   await expect(page.locator('#shop')).toContainText('尚未配置兑换规则')

@@ -15,6 +15,7 @@ export interface HabitWorkspaceProps {
   focusHistoryEditFields: React.JSX.Element
   focusSessions: FocusSession[]
   formatUiDate: (date: Date) => string
+  habitToday: string
   habitCheckIns: HabitCheckIn[]
   habits: Habit[]
   mainView: MainView
@@ -40,6 +41,7 @@ export function HabitWorkspace({
   focusHistoryEditFields,
   focusSessions,
   formatUiDate,
+  habitToday,
   habitCheckIns,
   habits,
   mainView,
@@ -57,7 +59,7 @@ export function HabitWorkspace({
   undoHabitCheckIn
 }: HabitWorkspaceProps) {
   return <>
-{mainView === 'habits' && <HabitsPage formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onDeleteHabit={habitId=>{const now=new Date().toISOString();setHabits(current=>current.map(h=>h.id===habitId?{...h,deletedAt:now,updatedAt:now}:h));setFocusSessions(current=>cascadeTrashHabitFocus(current,habitId,now))}} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} focusSessions={focusSessions} focusNow={timerNow} activeFocusHabitId={activeFocusHabit?.id??null} requestedHabitId={requestedHabitId} focusBusy={Boolean(activeFocusSession)} onStartHabitFocus={startHabitFocus} onStopHabitFocus={stopHabitFocus} onEditFocusSession={session=>beginEditFocusSession(session)} onTrashFocusSession={session=>{if(!window.confirm('确定删除这条习惯专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item))}} />}
+{mainView === 'habits' && <HabitsPage habitToday={habitToday} formatUiDate={formatUiDate} habits={habits} checkIns={habitCheckIns} tags={tags} onHabitsChange={setHabits} onDeleteHabit={habitId=>{const now=new Date().toISOString();setHabits(current=>current.map(h=>h.id===habitId?{...h,deletedAt:now,updatedAt:now}:h));setFocusSessions(current=>cascadeTrashHabitFocus(current,habitId,now))}} onCheckInsChange={setHabitCheckIns} onQuickCheckIn={quickHabitCheckIn} onUndoCheckIn={undoHabitCheckIn} focusSessions={focusSessions} focusNow={timerNow} activeFocusHabitId={activeFocusHabit?.id??null} requestedHabitId={requestedHabitId} focusBusy={Boolean(activeFocusSession)} onStartHabitFocus={startHabitFocus} onStopHabitFocus={stopHabitFocus} onEditFocusSession={session=>beginEditFocusSession(session)} onTrashFocusSession={session=>{if(!window.confirm('确定删除这条习惯专注记录吗？'))return;const now=new Date().toISOString();setFocusSessions(cur=>cur.map(item=>item.id===session.id?trashFocusSession(item,now):item))}} />}
 
 {mainView === 'habits' && focusEditId && focusSessions.some(session=>session.id===focusEditId && session.context?.kind==='habit') && (
         <div className="habit-modal-backdrop" role="presentation">

@@ -1,8 +1,10 @@
+import { isHabitDayStart } from './habitDay'
 import type { JournalEntry, Note, Task } from '../types'
 import { referencedAttachmentKeys } from './attachments'
 
 /** Validate fields the restore coordinator dereferences before any destructive write. */
 export function validateBackupSettings(settings: Record<string, unknown>) {
+  if (settings.habitDayStart !== undefined && !isHabitDayStart(settings.habitDayStart)) throw new Error('备份设置字段无效：habitDayStart')
   for (const name of ['showEndedTasks','showAllRecurringTasks','excludeDefaultFocusStats','keepScreenAwakeDuringFocus']) {
     if (settings[name] !== undefined && typeof settings[name] !== 'boolean') throw new Error(`备份设置字段无效：${name}`)
   }

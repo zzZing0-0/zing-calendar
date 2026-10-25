@@ -1,4 +1,5 @@
 import type * as React from 'react'
+import { habitDetailDate } from '../../domain/habitDay'
 import { Button } from '../../components/ui/Button'
 import { Field } from '../../components/ui/Field'
 import {
@@ -43,6 +44,7 @@ export interface DayDetailProps {
   endedTasksViewToggle: (className?: string) => React.JSX.Element
   energyByDate: Map<string, DailyEnergy>
   formatUiDate: (date: Date) => string
+  habitToday: string
   habitCheckIns: HabitCheckIn[]
   habits: Habit[]
   handleEnvironmentLocation: () => void
@@ -103,6 +105,7 @@ export function DayDetail({
   endedTasksViewToggle,
   energyByDate,
   formatUiDate,
+  habitToday,
   habitCheckIns,
   habits,
   handleEnvironmentLocation,
@@ -150,6 +153,7 @@ export function DayDetail({
   weatherOptions,
   weekStartsMonday
 }: DayDetailProps) {
+  const selectedHabitDate = selectedDate ? habitDetailDate(toDateKey(selectedDate), toDateKey(new Date()), habitToday) : ''
   return <>
 {selectedDate && dayDetailOpen && (
         <>
@@ -368,7 +372,7 @@ export function DayDetail({
               <Button className="add-button" type="button" onClick={openJournalEditor}>＋ 添加记录</Button>
             </section>
 
-            {selectedDate && orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).length>0 && <section className="detail-section habit-daily-section" style={daySectionStyle("habit")}><div className="section-heading"><h3>习惯</h3></div>{orderedDailyHabits(habits,habitCheckIns,toDateKey(selectedDate),toDateKey(today)).map(habit=>{const rows=liveCheckIns(habit.id,habitCheckIns).filter(row=>row.occurredDate===toDateKey(selectedDate));const progress=progressForDate(habit,habitCheckIns,toDateKey(selectedDate));const done=progress.met;const hasLog=rows.length>0;return <div className="habit-daily-row" key={habit.id}><span className="habit-daily-name"><HabitIcon name={habit.icon} color={tags.find(t=>t.id===habit.tagId)?.color} />{habit.name}</span>{habit.archivedAt?<span className="habit-daily-archived">{done?'✓ 已达标 · 已归档':hasLog?'已打卡 · 已归档':'已归档'}</span>:<Button type="button" onClick={()=>hasLog?undoHabitCheckIn(habit,toDateKey(selectedDate)):quickHabitCheckIn(habit,toDateKey(selectedDate))}>{done?'✓ 已达标':hasLog?`已打卡 ${progress.done}/${progress.target??'-'} · 撤销`:'○ 打卡'}</Button>}</div>})}</section>}
+            {selectedDate && orderedDailyHabits(habits,habitCheckIns,selectedHabitDate,habitToday).length>0 && <section className="detail-section habit-daily-section" style={daySectionStyle("habit")}><div className="section-heading"><h3>习惯</h3></div>{orderedDailyHabits(habits,habitCheckIns,selectedHabitDate,habitToday).map(habit=>{const rows=liveCheckIns(habit.id,habitCheckIns).filter(row=>row.occurredDate===selectedHabitDate);const progress=progressForDate(habit,habitCheckIns,selectedHabitDate);const done=progress.met;const hasLog=rows.length>0;return <div className="habit-daily-row" key={habit.id}><span className="habit-daily-name"><HabitIcon name={habit.icon} color={tags.find(t=>t.id===habit.tagId)?.color} />{habit.name}</span>{habit.archivedAt?<span className="habit-daily-archived">{done?'✓ 已达标 · 已归档':hasLog?'已打卡 · 已归档':'已归档'}</span>:<Button type="button" onClick={()=>hasLog?undoHabitCheckIn(habit,selectedHabitDate):quickHabitCheckIn(habit,selectedHabitDate)}>{done?'✓ 已达标':hasLog?`已打卡 ${progress.done}/${progress.target??'-'} · 撤销`:'○ 打卡'}</Button>}</div>})}</section>}
             <section className="detail-section menstrual-section" style={daySectionStyle("period")}>
               <div className="section-heading">
                 <h3>{selectedIsFuture ? '预计经期' : '月经记录'}</h3>

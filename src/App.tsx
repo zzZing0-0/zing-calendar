@@ -1,3 +1,6 @@
+import { useHabitToday } from './features/habits/useHabitToday'
+import { useHabitCheckIns } from './features/habits/useHabitCheckIns'
+import { normalizeHabitDayStart } from './domain/habitDay'
 import { writeLocalCache } from './features/application/settingsCache'
 import { useEntityPersistence } from './features/sync/useEntityPersistence'
 import type { CSSProperties } from 'react'
@@ -236,8 +239,10 @@ function App() {
     greeting, setGreeting, weekStartsMonday, setWeekStartsMonday, dateFormat, setDateFormat,
     showEndedTasks, setShowEndedTasks, showAllRecurringTasks, setShowAllRecurringTasks,
     excludeDefaultFocusStats, setExcludeDefaultFocusStats, maxFocusHours, setMaxFocusHours,
-    defaultPriority, setDefaultPriority,
+    defaultPriority, setDefaultPriority, habitDayStart, setHabitDayStart,
   } = useAppPreferences()
+
+  const habitToday = useHabitToday(habitDayStart)
 
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksHydrated, setTasksHydrated] = useState(false)
@@ -257,8 +262,7 @@ function App() {
   useEffect(() => { let active=true; Promise.all([loadHabits<Habit>(),loadHabitCheckIns<HabitCheckIn>()]).then(([h,c])=>{if(active){setHabits(h);setHabitCheckIns(c);setHabitsHydrated(true)}}).catch(error=>{console.error('Habit hydration failed',error)});return ()=>{active=false} },[])
   useEntityPersistence('habit', habits, habitsHydrated, setLocalWriteRevision)
   useEntityPersistence('habitCheckIn', habitCheckIns, habitsHydrated, setLocalWriteRevision)
-  const quickHabitCheckIn=(habit:Habit,date:string)=>{if(habit.archivedAt)return;const now=new Date().toISOString();setHabitCheckIns(current=>[...current,{id:crypto.randomUUID(),habitId:habit.id,occurredDate:date,quantity:habit.quantityTarget,createdAt:now,updatedAt:now}])}
-  const undoHabitCheckIn=(habit:Habit,date:string)=>{if(habit.archivedAt)return;setHabitCheckIns(current=>{const entry=[...current].reverse().find(row=>row.habitId===habit.id&&row.occurredDate===date&&!row.deletedAt);if(!entry)return current;const now=new Date().toISOString();return current.map(row=>row.id===entry.id?{...row,deletedAt:now,updatedAt:now}:row)})}
+  const { quickHabitCheckIn, undoHabitCheckIn } = useHabitCheckIns(setHabitCheckIns)
   const [menstrualPeriods, setMenstrualPeriods] = useState<MenstrualPeriod[]>([])
   const [energyHydrated, setEnergyHydrated] = useState(false)
   const [environmentHydrated, setEnvironmentHydrated] = useState(false)
@@ -941,7 +945,7 @@ function App() {
     const clocks = advanceWordClock(wordCloudIgnored, settingsWordClockRef.current, now)
     settingsWordClockRef.current = clocks
     const next = buildSyncedSettings({
-      greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
+      habitDayStart, greeting, weekStartsMonday, dateFormat, defaultPriority, showEndedTasks, showAllRecurringTasks,
       excludeDefaultFocusStats, wordCloudIgnored, encouragementMessages, encouragementStyle, maxFocusHours, keepScreenAwakeDuringFocus, weatherOptions, thermalOptions, emotionOptions, randomPoolGroups, randomPoolItems, mixedPoolItemIds, defaultMobileNavigation: syncedDefaultMobileNav, modulePriority: moduleOrder, daySectionOrder, settingsGroupOrder,
     }, clocks, now)
     if (!settingsSyncReadyRef.current) {
@@ -969,7 +973,7 @@ function App() {
     if (settingsEqualIgnoringUpdatedAt(previous[0], next)) return
     syncSnapshotsRef.current.settings = [next]
     void saveEntityWithSync('settings',[next]).then(changed=>{if(changed)setLocalWriteRevision(value=>value+1)}).catch(error=>console.error('Failed to save settings sync',error))
-  }, [greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav,moduleOrder,daySectionOrder,settingsGroupOrder])
+  }, [habitDayStart,greeting,weekStartsMonday,dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,syncedDefaultMobileNav,moduleOrder,daySectionOrder,settingsGroupOrder])
   useEffect(() => { writeLocalCache('zing:githubSyncOwner', githubSyncOwner) }, [githubSyncOwner])
   useEffect(() => { writeLocalCache('zing:githubSyncRepo', githubSyncRepo) }, [githubSyncRepo])
   useEffect(() => { writeLocalCache('zing:githubSyncBranch', githubSyncBranch) }, [githubSyncBranch])
@@ -1865,7 +1869,7 @@ function App() {
         {path:'data/focus.json',bytes:json(focusSessions)},
         {path:'data/habits.json',bytes:json(habits)},
         {path:'data/habit-checkins.json',bytes:json(habitCheckIns)},
-        {path:'data/settings.json',bytes:json({greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav,modulePriority:moduleOrder,daySectionOrder,settingsGroupOrder})},
+        {path:'data/settings.json',bytes:json({habitDayStart,greeting,weekStart:weekStartsMonday?'monday':'sunday',dateFormat,defaultPriority,showEndedTasks,showAllRecurringTasks,excludeDefaultFocusStats,wordCloudIgnored,encouragementMessages,encouragementStyle,maxFocusHours,keepScreenAwakeDuringFocus,weatherOptions,thermalOptions,emotionOptions,randomPoolGroups,randomPoolItems,mixedPoolItemIds,defaultMobileNavigation:syncedDefaultMobileNav,modulePriority:moduleOrder,daySectionOrder,settingsGroupOrder})},
       ]
       for (let index=0; index<allStoredAttachments.length; index+=1) {
         const attachment=allStoredAttachments[index]
@@ -1921,6 +1925,7 @@ function App() {
       const restoredAt=new Date().toISOString()
       const restoredWords=Array.isArray(s.wordCloudIgnored)?s.wordCloudIgnored:wordCloudIgnored
       const restoredSettings:SyncedUserSettings={
+        habitDayStart:normalizeHabitDayStart(s.habitDayStart),
         id:'settings',updatedAt:restoredAt,greeting:s.greeting??greeting,
         weekStart:s.weekStart??(weekStartsMonday?'monday':'sunday'),dateFormat:s.dateFormat??dateFormat,
         defaultPriority:s.defaultPriority??defaultPriority,showEndedTasks:s.showEndedTasks??showEndedTasks,
@@ -1951,6 +1956,7 @@ function App() {
       setTasks(restoredTasks); setJournalEntries(backupPreview.journals); setNotes(backupPreview.notes); setNotebooks(ensureDefaultNotebook(backupPreview.notebooks)); setDailyMoods(backupPreview.moods); setDailyEnergy(backupPreview.energies); setDailyEnvironment(backupPreview.environments); setMenstrualPeriods(backupPreview.periods)
       setTags(restoredTags); setAnniversaries(backupPreview.anniversaries); setFocusSessions(backupPreview.focusSessions);setHabits(backupPreview.habits);setHabitCheckIns(backupPreview.habitCheckIns)
       suppressNextSettingsSyncRef.current = true
+      setHabitDayStart(restoredSettings.habitDayStart!)
       if (s.greeting!==undefined) setGreeting(s.greeting || 'Hello, Zing')
       if (s.weekStart) setWeekStartsMonday(s.weekStart==='monday')
       if (s.dateFormat) setDateFormat(s.dateFormat)
@@ -2065,10 +2071,11 @@ function App() {
         writeLocalCache('zing:wordCloudIgnored',JSON.stringify(incoming.wordCloudIgnored))
         writeLocalCache('zing:encouragementMessages',JSON.stringify(incoming.encouragementMessages))
         writeLocalCache('zing:encouragementStyle',incoming.encouragementStyle)
+        writeLocalCache('zing:habitDayStart',incoming.habitDayStart)
         writeLocalCache('zing:maxFocusHours',String(incoming.maxFocusHours))
         writeLocalCache('zing:keepScreenAwakeDuringFocus',String(incoming.keepScreenAwakeDuringFocus))
         writeLocalCache('zing:randomPoolGroups',JSON.stringify(incoming.randomPoolGroups)); writeLocalCache('zing:randomPoolItems',JSON.stringify(incoming.randomPoolItems)); writeLocalCache('zing:mixedPoolItemIds',JSON.stringify(incoming.mixedPoolItemIds))
-        setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setKeepScreenAwakeDuringFocus(incoming.keepScreenAwakeDuringFocus); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions); setRandomPoolGroups(incoming.randomPoolGroups); setRandomPoolItems(incoming.randomPoolItems); setMixedPoolItemIds(incoming.mixedPoolItemIds)
+        setHabitDayStart(incoming.habitDayStart); setGreeting(incoming.greeting); setWeekStartsMonday(incoming.weekStartsMonday); setDateFormat(incoming.dateFormat); setDefaultPriority(incoming.defaultPriority); setShowEndedTasks(incoming.showEndedTasks); setShowAllRecurringTasks(incoming.showAllRecurringTasks); setExcludeDefaultFocusStats(incoming.excludeDefaultFocusStats); setWordCloudIgnored(incoming.wordCloudIgnored); setEncouragementMessages(incoming.encouragementMessages); setEncouragementStyle(incoming.encouragementStyle); setMaxFocusHours(incoming.maxFocusHours); setKeepScreenAwakeDuringFocus(incoming.keepScreenAwakeDuringFocus); setWeatherOptions(incoming.weatherOptions); setThermalOptions(incoming.thermalOptions); setEmotionOptions(incoming.emotionOptions); setRandomPoolGroups(incoming.randomPoolGroups); setRandomPoolItems(incoming.randomPoolItems); setMixedPoolItemIds(incoming.mixedPoolItemIds)
       }
     } catch (error) {
       setGithubSyncMessageKind('error')
@@ -2179,7 +2186,7 @@ function App() {
 
       <HabitWorkspace {...{
         activeFocusHabit, activeFocusSession, beginEditFocusSession, focusEditId, focusHistoryEditFields,
-        focusSessions, formatUiDate, habitCheckIns, habits, mainView, quickHabitCheckIn,
+        focusSessions, formatUiDate, habitToday, habitCheckIns, habits, mainView, quickHabitCheckIn,
         requestedHabitId, saveFocusSessionEdit, setFocusEditId, setFocusSessions, setHabitCheckIns,
         setHabits, startHabitFocus, stopHabitFocus, tags, timerNow, undoHabitCheckIn
       }} />
@@ -2199,7 +2206,7 @@ function App() {
         allStoredAttachments, archivedTags, backupExporting, backupInputRef, backupMessage, dateFormat,
         defaultPriority, effectiveAttachmentBytes, effectiveAudioBytes, effectiveImageBytes,
         encouragementMessages, encouragementStyle, exportFullBackup, formatBytes, greeting,
-        inspectB2Orphans, inspectBackupFile, keepScreenAwakeDuringFocus, lastGithubSyncAt, mainView,
+        habitDayStart, setHabitDayStart, inspectB2Orphans, inspectBackupFile, keepScreenAwakeDuringFocus, lastGithubSyncAt, mainView,
         maxFocusHours, mobileNav, openExternalImport, orphanCleanupBusy, randomPoolGroups,
         randomPoolItems, setArchivedTagsOpen, setDateFormat, setDefaultPriority, setEmotionManagerOpen,
         setEncouragementManagerOpen, setEncouragementStyle, setEnvironmentManagerKind, setGithubSyncOpen,
@@ -2292,7 +2299,7 @@ function App() {
       <DayDetail {...{
         cancelDayDetailCloseTimer, closeDayDetail, dayDetailClosing, dayDetailOpen, daySectionStyle,
         deletePeriod, displayWeekdays, endPeriod, endedTasksViewToggle, energyByDate, formatUiDate,
-        habitCheckIns, habits, handleEnvironmentLocation, journalDates, journalThreadDates,
+        habitToday, habitCheckIns, habits, handleEnvironmentLocation, journalDates, journalThreadDates,
         menstrualPrediction, moodDays, moodMonth, moodsByDate, openAnniversaryEditor, openJournalEditor,
         openTaskDetail, openTaskEditor, periodForDate, quickHabitCheckIn, selectedAnniversaries,
         selectedDate, selectedEnergy, selectedEnvironment, selectedFocusSeconds, selectedImpactTotal,

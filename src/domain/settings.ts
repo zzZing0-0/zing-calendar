@@ -1,3 +1,4 @@
+import { normalizeHabitDayStart } from './habitDay'
 import { normalizeDaySectionOrder, normalizeSettingsGroupOrder } from './layoutPreferences'
 import { normalizeModuleOrder } from './modulePriority'
 import { normalizeMobileNav } from '../features/navigation/navigationConfig'
@@ -45,6 +46,7 @@ export function advanceWordClock(words: string[], clock: WordClock, now: string)
 }
 
 type BuildSettingsInput = {
+  habitDayStart?: string
   greeting: string
   weekStartsMonday: boolean
   dateFormat: 'dmy' | 'mdy'
@@ -71,6 +73,7 @@ type BuildSettingsInput = {
 
 export function buildSyncedSettings(input: BuildSettingsInput, clock: WordClock, now: string): SyncedUserSettings {
   return {
+    habitDayStart: normalizeHabitDayStart(input.habitDayStart),
     id: 'settings', updatedAt: now, greeting: input.greeting || 'Hello, Zing',
     weekStart: input.weekStartsMonday ? 'monday' : 'sunday', dateFormat: input.dateFormat,
     defaultPriority: input.defaultPriority, showEndedTasks: input.showEndedTasks,
@@ -89,6 +92,7 @@ export function settingsEqualIgnoringUpdatedAt(previous: SyncedUserSettings | un
 
 export function normalizedIncomingSettings(settings: SyncedUserSettings) {
   return {
+    habitDayStart: normalizeHabitDayStart(settings.habitDayStart),
     greeting: settings.greeting || 'Hello, Zing',
     weekStartsMonday: settings.weekStart === 'monday',
     dateFormat: settings.dateFormat,

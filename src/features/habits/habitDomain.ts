@@ -1,3 +1,4 @@
+import { baseOrderedHabits } from './habitOrder'
 /** Habit facts are immutable in meaning: scheduled goals never manufacture check-ins. */
 export type HabitSchedule =
   | { kind: 'flexible'; period: 'day' | 'week' | 'month'; times: number }
@@ -7,6 +8,7 @@ export type HabitSchedule =
 export type Habit = {
   id: string
   name: string
+  sortOrder?: number
   icon?: string
   schedule: HabitSchedule
   quantityTarget: number
@@ -21,7 +23,7 @@ export type Habit = {
 export type HabitCheckIn = {
   id: string
   habitId: string
-  /** Local calendar day on which the activity actually happened. */
+  /** Explicit habit date; quick check-ins use the configured local day boundary. */
   occurredDate: string
   /** Optional actual time; never inferred from when a record was created. */
   occurredTime?: string
@@ -68,10 +70,10 @@ export function progressForDate(habit: Habit, checkIns: HabitCheckIn[], key: str
 
 /** Daily details only show scheduled, still-needed habits and actually logged habits. */
 export function visibleOnDay(habit: Habit, checkIns: HabitCheckIn[], key: string, today: string): boolean {
-  if (habit.deletedAt || key > today || key < habit.createdAt.slice(0, 10)) return false
+  if (habit.deletedAt || key > today) return false
   // Archiving stops future prompts, but never conceals actual historical check-ins.
   if (liveCheckIns(habit.id, checkIns).some(row => row.occurredDate === key)) return true
-  if (habit.archivedAt) return false
+  if (habit.archivedAt || (key < habit.createdAt.slice(0, 10) && key !== today)) return false
   if (habit.schedule.kind === 'free') return false
   if (habit.schedule.kind === 'fixed') return habit.schedule.weekdays.includes(dayNumber(key))
   // Flexible weekly/monthly goals are suggested today, not on every past date.
@@ -79,7 +81,7 @@ export function visibleOnDay(habit: Habit, checkIns: HabitCheckIn[], key: string
 }
 
 export function orderedDailyHabits(habits: Habit[], checkIns: HabitCheckIn[], key: string, today: string): Habit[] {
-  return habits.filter(habit => visibleOnDay(habit, checkIns, key, today))
+  return baseOrderedHabits(habits).filter(habit => visibleOnDay(habit, checkIns, key, today))
     .sort((a, b) => Number(progressForDate(a, checkIns, key).met) - Number(progressForDate(b, checkIns, key).met))
 }
 

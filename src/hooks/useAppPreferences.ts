@@ -1,3 +1,4 @@
+import { normalizeHabitDayStart } from '../domain/habitDay'
 import { writeLocalCache } from '../features/application/settingsCache'
 import { useEffect, useState } from 'react'
 import type { TaskPriority } from '../types'
@@ -8,6 +9,7 @@ export { clampMaxFocusHours, parseDefaultPriority } from '../domain/settings'
 export type DateFormat = 'dmy' | 'mdy'
 
 export type AppPreferences = {
+  habitDayStart: string
   greeting: string
   weekStartsMonday: boolean
   dateFormat: DateFormat
@@ -20,6 +22,7 @@ export type AppPreferences = {
 
 export function readAppPreferences(storage: Pick<Storage, 'getItem'>): AppPreferences {
   return {
+    habitDayStart: normalizeHabitDayStart(storage.getItem('zing:habitDayStart')),
     greeting: storage.getItem('zing:greeting') || 'Hello, Zing',
     weekStartsMonday: storage.getItem('zing:weekStart') !== 'sunday',
     dateFormat: storage.getItem('zing:dateFormat') === 'mdy' ? 'mdy' : 'dmy',
@@ -33,6 +36,7 @@ export function readAppPreferences(storage: Pick<Storage, 'getItem'>): AppPrefer
 
 export function useAppPreferences() {
   const [initial] = useState(() => readAppPreferences(localStorage))
+  const [habitDayStart, setHabitDayStart] = useState(initial.habitDayStart)
   const [greeting, setGreeting] = useState(initial.greeting)
   const [weekStartsMonday, setWeekStartsMonday] = useState(initial.weekStartsMonday)
   const [dateFormat, setDateFormat] = useState<DateFormat>(initial.dateFormat)
@@ -42,6 +46,7 @@ export function useAppPreferences() {
   const [maxFocusHours, setMaxFocusHours] = useState(initial.maxFocusHours)
   const [defaultPriority, setDefaultPriority] = useState<TaskPriority>(initial.defaultPriority)
 
+  useEffect(() => { writeLocalCache('zing:habitDayStart', habitDayStart) }, [habitDayStart])
   useEffect(() => { writeLocalCache('zing:greeting', greeting || 'Hello, Zing') }, [greeting])
   useEffect(() => { writeLocalCache('zing:weekStart', weekStartsMonday ? 'monday' : 'sunday') }, [weekStartsMonday])
   useEffect(() => { writeLocalCache('zing:dateFormat', dateFormat) }, [dateFormat])
@@ -52,6 +57,7 @@ export function useAppPreferences() {
   useEffect(() => { writeLocalCache('zing:defaultPriority', String(defaultPriority)) }, [defaultPriority])
 
   return {
+    habitDayStart, setHabitDayStart,
     greeting, setGreeting,
     weekStartsMonday, setWeekStartsMonday,
     dateFormat, setDateFormat,

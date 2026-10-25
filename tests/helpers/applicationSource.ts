@@ -21,6 +21,7 @@ const views = [
 const controllers = [
   'application/version', 'calendar/calendarLabels', 'calendar/createCalendarRenderers',
   'navigation/useMobileNavigationPreferences', 'tags/useTagManagement', 'search/useGlobalSearch',
+  'habits/useHabitCheckIns', 'tasks/TaskRecurrenceFields',
   'focus/useFocusRuntime', 'focus/useFocusHistoryEditor', 'tasks/useTaskNotesEditor',
   'sync/recordSyncDiff', 'sync/syncLabels', 'attachments/AttachmentMedia',
   'journal/StatusIndicators', 'environment/environmentPreferences',

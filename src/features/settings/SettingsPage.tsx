@@ -27,6 +27,8 @@ export interface SettingsPageProps {
   encouragementStyle: EncouragementStyle
   exportFullBackup: () => Promise<void>
   formatBytes: (bytes: number) => string
+  habitDayStart: string
+  setHabitDayStart: React.Dispatch<React.SetStateAction<string>>
   greeting: string
   inspectB2Orphans: () => Promise<void>
   inspectBackupFile: (file: File) => Promise<void>
@@ -89,6 +91,7 @@ export function SettingsPage({
   encouragementStyle,
   exportFullBackup,
   formatBytes,
+  habitDayStart, setHabitDayStart,
   greeting,
   inspectB2Orphans,
   inspectBackupFile,
@@ -157,6 +160,7 @@ export function SettingsPage({
             </Field>
 
             <div className="setting-row"><span><strong>每周开始日</strong></span><div className="setting-segment"><Button className={weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(true)}>周一</Button><Button className={!weekStartsMonday?'active':''} onClick={()=>setWeekStartsMonday(false)}>周日</Button></div></div>
+            <div className="setting-row"><span><strong>习惯日开始时间</strong><small>设置习惯一天的开始时间。例如设为05:00，则凌晨00:00–04:59的习惯打卡计入前一天。仅影响习惯，不改变任务、日历及其他记录的自然日期。</small></span><Field><input type="time" aria-label="习惯日开始时间" value={habitDayStart} onChange={e=>{if(e.target.value)setHabitDayStart(e.target.value)}} /></Field></div>
             <div className="setting-row"><span><strong>日期格式</strong></span><div className="setting-segment"><Button className={dateFormat==='dmy'?'active':''} onClick={()=>setDateFormat('dmy')}>22 Sep 2026</Button><Button className={dateFormat==='mdy'?'active':''} onClick={()=>setDateFormat('mdy')}>Sep 22, 2026</Button></div></div>
             <div className="setting-row">
               <span><strong>重复任务显示</strong><small>“逐个显示”会保留已完成/已放弃的历史记录，未完成的重复序列只显示最早一个；完成或放弃后再显示下一个。</small></span>
