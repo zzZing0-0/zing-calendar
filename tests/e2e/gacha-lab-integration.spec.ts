@@ -288,7 +288,8 @@ test('integer weighted selection, closed quantity boundaries, duplicates and pro
   expect(result.draws).toEqual([{id:'a',qty:2},{id:'a',qty:4},{id:'b',qty:1},{id:'b',qty:1}])
   expect(result.record).toMatchObject({n:2,got:{a:4},dup:{a:3},converted:{b:15},newCollected:['a'],cost:120})
   expect(result.p).toMatchObject({draws:2,spent:120,counts:{a:4},collection:{a:true},duplicates:{a:3},converted:{b:15},batchStats:{'2':{rounds:1,hits:1}}})
-  expect(result.stats.find(x=>x.n===2)).toMatchObject({observed:1,theoretical:.4375})
+  expect(result.stats.find(x=>x.n===2)).toMatchObject({observed:1})
+  expect(result.stats.find(x=>x.n===2)?.theoretical).toBeCloseTo(.4375,12)
   expect(result.bad.every(Boolean)).toBe(true);expect(result.nBad).toEqual([true,true,true,true,true]);expect(result.large).toBe(10000)
   expect(result.zero.every(x=>x.theoretical===0)).toBe(true);expect(result.one.every(x=>x.theoretical===1)).toBe(true)
 })
@@ -417,4 +418,49 @@ test('editing config keeps the already displayed draw result names and cost snap
   await page.locator('#playTab').click()
   expect(await page.locator('#results').innerText()).toBe(result)
   await expect(page.locator('#priceLabel')).toContainText('新货币')
+})
+
+
+test('bulk shop redemption spends and grants atomically with safe quantity limits', async ({ page }) => {
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const { redeem } = await import('/src/domain/gacha/trades.ts')
+    const { makePool, sample } = await import('/src/domain/gacha/defaults.ts')
+    const { balance } = await import('/src/domain/gacha/inventory.ts')
+    const c = sample(), source = c.rewards.find(r => r.name === '徽章')!, target = c.rewards.find(r => r.name === '女巫碎片')!
+    c.trades = [{ id:'bulk', from:source.id, cost:100, rewardIds:[target.id], qty:1, repeat:true }]
+    const p = makePool(c)
+    p.counts[source.id] = 50000
+    redeem(p,'bulk',target.id,500)
+    const after = { spent:p.redeemedSpent![source.id], gained:p.tradeGained![target.id], remaining:balance(p,source.id) }
+    const snapshot = structuredClone(p)
+    const invalid = []
+    for (const times of [0,-1,1.5,501,Number.MAX_SAFE_INTEGER,NaN]) {
+      try { redeem(p,'bulk',target.id,times);invalid.push(false) } catch { invalid.push(true) }
+    }
+    return { after, invalid, unchanged:JSON.stringify(p)===JSON.stringify(snapshot) }
+  })
+  expect(result.after).toEqual({spent:50000,gained:500,remaining:0})
+  expect(result.invalid).toEqual([true,true,true,true,true,true])
+  expect(result.unchanged).toBe(true)
+})
+
+test('shop supports selecting 500 redemptions in one confirmed action', async ({ page }) => {
+  const data=structuredClone(legacy),p=data.pools[0]
+  const t=p.config.trades[0]
+  const source=p.config.rewards.find(r=>r.id===t.from)!
+  const target=p.config.rewards.find(r=>!r.collect && r.id!==source.id)!
+  t.rewardIds=[target.id];t.cost=100;t.qty=1;t.repeat=true
+  p.counts[source.id]=50000;p.redeemedSpent={};p.converted={};p.tradeGained={}
+  // The legacy fixture defaults to pool[1]. Explicitly activate the modified pool.
+  data.active=p.id
+  await start(page,data)
+  await expect(page.locator('#poolSelect')).toHaveValue(p.id)
+  await expect(page.locator('#shop')).toContainText('余额 50,000')
+  await page.getByRole('spinbutton',{name:`兑换次数：${target.name}`}).fill('500')
+  page.once('dialog',d=>{expect(d.message()).toContain('50000');d.accept()})
+  await page.locator(`[data-shop="${t.id}"][data-reward="${target.id}"]`).click()
+  const next=(await saved(page)).pools[0]
+  expect(next.redeemedSpent[source.id]).toBe(50000)
+  expect(next.tradeGained[target.id]).toBe(500)
 })

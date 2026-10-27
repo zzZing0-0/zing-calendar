@@ -39,9 +39,27 @@ export function chineseLunarDayName(day: number) {
   return names[day - 1]
 }
 
+/** ICU implementations may return lunar days as Arabic digits or Chinese text (notably iOS Safari). */
+export function parseLunarDay(value: string): number {
+  const normalized = value.trim().replace(/日$/, '')
+  const numeric = Number(normalized)
+  if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 30) return numeric
+  const names = Array.from({ length: 30 }, (_, index) => chineseLunarDayName(index + 1))
+  const index = names.indexOf(normalized)
+  if (index >= 0) return index + 1
+  const digits: Record<string, number> = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10 }
+  if (digits[normalized]) return digits[normalized]
+  if (normalized.startsWith('十') && normalized.length === 2) return 10 + (digits[normalized[1]] ?? 0)
+  if (normalized === '二十') return 20
+  if (normalized.startsWith('二十') && normalized.length === 3) return 20 + (digits[normalized[2]] ?? 0)
+  if (normalized === '三十') return 30
+  return 0
+}
+
 export function lunarCalendarLabel(date: Date) {
   const { month, day } = lunarParts(date)
-  return day === '1' || day === '初一' ? month : chineseLunarDayName(Number.parseInt(day, 10))
+  const numericDay = parseLunarDay(day)
+  return numericDay === 1 ? month : chineseLunarDayName(numericDay)
 }
 
 export function lunarMonthNumber(monthText: string) {

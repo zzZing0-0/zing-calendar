@@ -31,10 +31,10 @@ export function useGachaLab() {
     let record: DrawResult
     if (commit(s => { record = performDraw(current(s), n) })) { setResult(record!); setResultConfig(clone(current(snapshotRef.current).config)); playSound() }
   }
-  const trade = (id: string, rewardId: string) => {
+  const trade = (id: string, rewardId: string, times = 1) => {
     const t = pool.config.trades.find(t => t.id === id)!, src = pool.config.rewards.find(r => r.id === t.from)!, dst = pool.config.rewards.find(r => r.id === rewardId)!
-    if (!confirm(`消耗 ${t.cost} ${src.name}，兑换 ${t.qty} ${dst.name}？`)) return
-    if (commit(s => redeem(current(s), id, rewardId))) { setMessage('兑换成功：' + dst.name + ' ×' + t.qty); playSound() }
+    if (!confirm(`消耗 ${t.cost * times} ${src.name}，兑换 ${t.qty * times} ${dst.name}（${times}次）？`)) return
+    if (commit(s => redeem(current(s), id, rewardId, times))) { setMessage('兑换成功：' + dst.name + ' ×' + (t.qty * times)); playSound() }
   }
   const add = (copy: boolean) => {
     const c = copy ? clone(pool.config) : sample()

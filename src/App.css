@@ -5454,3 +5454,53 @@ button {
 
 .random-wheel-settings-button{border:1px solid #dcded8;border-radius:10px;padding:6px 12px;background:#fffdf8;color:#536454;font-size:14px;font-weight:700;white-space:nowrap}
 .random-wheel-title-row{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px}
+
+/* v2.17.1 — iOS task editor form and compact action bar layout fixes. */
+.task-editor .editor-body,
+.task-editor .field,
+.task-editor .field-grid,
+.task-editor .task-recurrence-fields {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.task-editor .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.task-editor input[type="date"],
+.task-editor input[type="time"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  line-height: normal;
+  text-align: center;
+  -webkit-appearance: none;
+  appearance: none;
+}
+@media (max-width: 760px) {
+  .task-editor .field-grid { grid-template-columns: minmax(0, 1fr); }
+  .task-editor .editor-footer {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .task-editor .editor-secondary-actions,
+  .task-editor .editor-primary-actions {
+    display: flex;
+    min-width: 0;
+    width: 100%;
+    gap: 8px;
+  }
+  .task-editor .editor-secondary-actions { flex-wrap: wrap; }
+  .task-editor .editor-primary-actions { margin-left: 0; }
+  .task-editor .editor-secondary-actions > button,
+  .task-editor .editor-primary-actions > button {
+    min-width: 0;
+    flex: 1 1 0;
+    height: auto;
+    min-height: 40px;
+    white-space: nowrap;
+    padding: 8px 6px;
+  }
+  .task-editor .editor-primary-actions .save-button { flex: 1.5 1 0; }
+}

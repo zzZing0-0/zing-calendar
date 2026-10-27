@@ -9,6 +9,8 @@ import {
   buildAnniversaryPageRows,
   calendarFestival,
   chineseLunarDayName,
+  parseLunarDay,
+  lunarCalendarLabel,
   daysInMonth,
   emptyAnniversaryDraft,
   isoWeekNumber,
@@ -76,6 +78,13 @@ test.describe('calendar domain regression', () => {
     expect(chineseLunarDayName(1)).toBe('初一')
     expect(chineseLunarDayName(30)).toBe('三十')
     expect(chineseLunarDayName(31)).toBe('')
+    expect(parseLunarDay('19')).toBe(19)
+    expect(parseLunarDay('十九')).toBe(19)
+    expect(parseLunarDay('初九')).toBe(9)
+    expect(parseLunarDay('廿一')).toBe(21)
+    expect(parseLunarDay('二十九')).toBe(29)
+    expect(parseLunarDay('unknown')).toBe(0)
+    expect(lunarCalendarLabel(new Date(2026, 9, 28))).toBe('十九')
     expect(lunarMonthNumber('闰六月')).toBe(6)
     expect(lunarMonthNumber('腊月')).toBe(12)
     expect(calendarFestival(new Date(2026, 0, 1))).toEqual({ label: '元旦', kind: 'statutory' })
