@@ -78,3 +78,21 @@ button.ui-button[data-variant="secondary"] {
   .app-shell .ui-page-heading { min-height: 76px; padding: var(--space-4); }
   .ui-dialog-header { padding: var(--space-4); }
 }
+
+/* Context histories share the task history presentation, including narrow phones. */
+.habit-focus-history-view .ui-dialog-header{padding:0 0 var(--space-4);gap:12px;flex-wrap:wrap}
+.habit-focus-history-view .ui-dialog-header>div{min-width:0;flex:1}
+.habit-focus-history-view .ui-dialog-header h2{overflow-wrap:anywhere}
+.habit-focus-history-view .task-focus-history-return{font-size:13px;white-space:nowrap}
+.habit-modal .focus-history-actions button:not(.danger){color:#647168}
+.habit-focus-history-view .focus-history-actions button.danger{color:#a34e49}
+.habit-focus-history-pages button{border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-surface);padding:8px 10px;font:inherit;font-size:13px}
+.focus-history-item,.focus-history-list,.focus-history-summary{min-width:0}
+.focus-history-actions{flex-shrink:0;white-space:nowrap}
+.focus-history-summary{gap:10px;flex-wrap:wrap}
+@media(max-width:430px){
+  .focus-history-item{grid-template-columns:minmax(0,1fr)}
+  .focus-history-actions{justify-self:end}
+  .focus-history-meta span{white-space:normal;overflow-wrap:anywhere}
+  .habit-modal{box-sizing:border-box;max-height:calc(100dvh - 24px);overscroll-behavior:contain}
+}

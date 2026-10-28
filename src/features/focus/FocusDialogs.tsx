@@ -165,7 +165,7 @@ export function FocusDialogs({
         <div className="modal-layer note-focus-history-layer" role="presentation">
           <Button className="modal-backdrop" type="button" aria-label="关闭笔记专注历史" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}} />
           <section className="task-editor focus-history-panel" role="dialog" aria-modal="true" aria-label="笔记专注历史">
-            <DialogHeader title={<>{noteFocusHistoryNote.title || '无标题笔记'} · 专注历史</>} eyebrow={<>NOTE FOCUS</>} actions={<><Button className="close-button" type="button" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}}>×</Button></>} />
+            <DialogHeader title={<>{noteFocusHistoryNote.title || '无标题笔记'} · 专注历史</>} eyebrow={<>NOTE FOCUS</>} actions={<><Button className="task-focus-history-return" type="button" onClick={()=>{setNoteFocusHistoryId(null);setFocusEditId(null)}}>返回</Button></>} />
             <div className="editor-body focus-history-body">
               <FocusHistorySummary duration={formatFocusDuration(noteFocusHistorySeconds)} count={noteFocusHistorySessions.length} />
               {noteFocusHistorySessions.length===0?<EmptyState className="page-empty compact">这篇笔记还没有专注记录。</EmptyState>:<div className="focus-history-list">{noteFocusHistorySessions.map(session=>{
