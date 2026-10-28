@@ -274,3 +274,10 @@
 .habits-list .shared-sort-handle{flex:none;width:28px;min-height:44px;padding:0;border:0;background:transparent;color:var(--color-text-secondary);font-size:25px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
 .habits-list .shared-sort-row.is-dragging .habit-card{outline:2px solid var(--color-accent)}
 .habit-calendar-add{margin-top:12px;padding:9px 12px;border:1px solid var(--color-border);border-radius:var(--radius-control);background:var(--color-surface);color:var(--color-accent)}
+
+/* v2.17.5: habit focus history is a separate, bounded view. */
+.habit-focus-history-view{display:grid;gap:12px;min-width:0}
+.habit-focus-history-toolbar,.habit-focus-history-pages{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.habit-focus-history-toolbar>span{font-size:13px;color:var(--color-text-muted,#68766d)}
+.habit-focus-history-pages{padding:12px 0;border-top:1px solid var(--color-border)}
+.habit-focus-history-row>span{min-width:0;overflow-wrap:anywhere}

@@ -33,3 +33,15 @@
 .gacha-lab-native .shop-picker-menu{width:min(440px,85vw)}
 .gacha-lab-native .shop-choice{flex-wrap:wrap;min-width:0}
 @media(max-width:620px){.gacha-lab-native .shop-row{grid-template-columns:minmax(0,1fr)}.gacha-lab-native .shop-operation{justify-content:flex-start;min-width:0}.gacha-lab-native .shop-exchange-controls{justify-content:flex-start}.gacha-lab-native .shop-exchange-total{text-align:left}.gacha-lab-native .shop-picker-menu{max-width:calc(100vw - 40px)}}
+
+/* v2.17.5: expand shop options in normal flow on narrow screens. */
+@media(max-width:620px){
+  .gacha-lab-native .shop-row{grid-template-columns:minmax(0,1fr)}
+  .gacha-lab-native .shop-row>div{min-width:0;grid-column:1/-1}
+  .gacha-lab-native .shop-operation,.gacha-lab-native .shop-picker{display:block;width:100%;min-width:0}
+  .gacha-lab-native .shop-picker-menu{position:static;top:auto;right:auto;width:100%;max-width:100%;max-height:none;overflow:visible;box-sizing:border-box;margin-top:8px;box-shadow:none}
+  .gacha-lab-native .shop-choice{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:12px 4px;border-bottom:1px solid var(--color-border)}
+  .gacha-lab-native .shop-choice:last-child{border-bottom:0}
+  .gacha-lab-native .shop-exchange-controls{width:100%;justify-content:flex-start}
+  .gacha-lab-native .shop-quantity-label input{width:92px;max-width:100%}
+}

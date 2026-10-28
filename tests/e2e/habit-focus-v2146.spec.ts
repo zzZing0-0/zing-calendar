@@ -4,6 +4,7 @@ import { readApplicationSource } from '../helpers/applicationSource'
 
 const app = readApplicationSource()
 const page = readFileSync('src/features/habits/HabitsPage.tsx','utf8')
+const historyView = readFileSync('src/features/habits/HabitFocusHistory.tsx','utf8')
 const runtime = readFileSync('src/domain/focusRuntime.ts','utf8')
 const selectors = readFileSync('src/domain/focusHistorySelectors.ts','utf8')
 const lifecycle = readFileSync('src/domain/focusContextLifecycle.ts','utf8')
@@ -28,8 +29,10 @@ test('habit focus never writes a habit check-in and is protected by global singl
 
 test('habit focus history supports edit and trash without deleting habit check-ins', () => {
   expect(selectors).toContain("session.context.kind === 'habit' && session.context.habitId === id")
-  expect(page).toContain('onEditFocusSession(session)')
-  expect(page).toContain('onTrashFocusSession(session)')
+  expect(page).toContain('onEdit={onEditFocusSession}')
+  expect(historyView).toContain('onEdit(session)')
+  expect(page).toContain('onTrash={onTrashFocusSession}')
+  expect(historyView).toContain('onTrash(session)')
   expect(app).toContain('aria-label="修改习惯专注记录"')
   expect(app).toContain('onClick={saveFocusSessionEdit}')
   expect(app).toContain('trashFocusSession(item,now)')
